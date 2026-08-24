@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/wyze69-sys/Quantara/security/advisories/new
+    about: Do not disclose suspected vulnerabilities in a public issue.

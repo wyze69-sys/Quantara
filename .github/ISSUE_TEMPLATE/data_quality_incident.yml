@@ -1,0 +1,91 @@
+name: Data-quality incident
+description: Report a bounded market-data integrity, provenance, schema, or temporal-quality failure.
+title: "[Data quality]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for data-quality incidents without a security impact. Do not upload provider archives or data that you are not permitted to share.
+  - type: input
+    id: data_provider
+    attributes:
+      label: Provider
+      description: Name the provider and market-data surface.
+      placeholder: Binance USD-M public archive
+    validations:
+      required: true
+  - type: input
+    id: data_instrument
+    attributes:
+      label: Instrument
+      description: Provide the exact symbol and contract type.
+      placeholder: BTCUSDT perpetual
+    validations:
+      required: true
+  - type: input
+    id: data_interval
+    attributes:
+      label: Interval
+      description: State the source interval or affected derived interval.
+      placeholder: 1m
+    validations:
+      required: true
+  - type: input
+    id: data_time_range
+    attributes:
+      label: Affected UTC time range
+      description: Use explicit UTC boundaries.
+      placeholder: 2024-01-01T00:00:00Z to 2024-02-01T00:00:00Z
+    validations:
+      required: true
+  - type: textarea
+    id: data_invariant
+    attributes:
+      label: Failed invariant
+      description: Identify the schema, temporal, integrity, provenance, or quality-state contract that failed.
+    validations:
+      required: true
+  - type: input
+    id: data_source_identity
+    attributes:
+      label: Source URL or artifact identity
+      description: Optional when unavailable. Provide a safe provider URL, archive name, or source artifact identifier.
+      placeholder: https://provider.example/archive.zip or archive-name.zip
+    validations:
+      required: false
+  - type: input
+    id: data_source_checksum
+    attributes:
+      label: Source checksum
+      description: Optional when unavailable. Provide a SHA-256 digest, not the provider file itself.
+      placeholder: sha256:...
+    validations:
+      required: false
+  - type: input
+    id: data_manifest
+    attributes:
+      label: Affected manifest
+      description: Optional when unavailable. Provide a safe manifest identifier or content hash.
+      placeholder: content or attempt manifest ID
+    validations:
+      required: false
+  - type: textarea
+    id: data_observation
+    attributes:
+      label: Observation and reproduction
+      description: Explain how the failure was detected and how to reproduce it without sharing restricted data.
+    validations:
+      required: true
+  - type: checkboxes
+    id: data_confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I used UTC and identified the affected boundaries explicitly.
+          required: true
+        - label: I did not attach provider archives, credentials, or restricted data.
+          required: true
+        - label: This incident does not contain an undisclosed security vulnerability.
+          required: true

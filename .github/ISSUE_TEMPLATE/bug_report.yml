@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible defect in Quantara repository material or implemented behavior.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bounded, reproducible defect. Do not include credentials, private provider data, or security-sensitive details.
+  - type: textarea
+    id: bug_description
+    attributes:
+      label: Defect description
+      description: Describe the observed defect and why it is incorrect.
+      placeholder: A concise description of the failure.
+    validations:
+      required: true
+  - type: textarea
+    id: bug_reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest deterministic sequence that reproduces the defect.
+      placeholder: |
+        1. Start from...
+        2. Run...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: bug_expected
+    attributes:
+      label: Expected behavior
+      description: State the contract or behavior you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: bug_actual
+    attributes:
+      label: Actual behavior
+      description: State what happened, including exact error text where safe.
+    validations:
+      required: true
+  - type: input
+    id: bug_environment
+    attributes:
+      label: Environment
+      description: Include operating system, commit, runtime, and relevant tool versions.
+      placeholder: Windows 10, commit abc1234, Python 3.11
+    validations:
+      required: true
+  - type: textarea
+    id: bug_logs
+    attributes:
+      label: Sanitized logs or evidence
+      description: Provide the smallest useful evidence. Remove tokens, credentials, local secrets, and private data.
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: bug_confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues and did not find the same report.
+          required: true
+        - label: This report is not a private security vulnerability and contains no credentials or private provider data.
+          required: true
+        - label: I can reproduce this behavior from the information provided.
+          required: true

@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use Quantara or its design contracts, please cite this repository."
+title: Quantara
+type: software
+authors:
+  - name: wyze69-sys
+repository-code: "https://github.com/wyze69-sys/Quantara"
+url: "https://github.com/wyze69-sys/Quantara"
+license: Apache-2.0
+abstract: >-
+  Foundation-stage design for correctness-first, point-in-time market-data
+  and machine-learning infrastructure for reproducible quantitative research.
+keywords:
+  - quantitative-finance
+  - market-data
+  - point-in-time-data
+  - data-provenance
+  - reproducible-research

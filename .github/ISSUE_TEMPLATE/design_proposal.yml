@@ -1,0 +1,70 @@
+name: Design proposal
+description: Propose one bounded capability, contract change, or architectural decision.
+title: "[Design]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Quantara designs one bounded subproject at a time. Define the problem and verification contract before proposing implementation scaffolding.
+  - type: textarea
+    id: design_problem
+    attributes:
+      label: Problem
+      description: What specific problem needs to be solved, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: design_scope
+    attributes:
+      label: Bounded scope
+      description: Define the smallest independently verifiable capability and its explicit boundaries.
+    validations:
+      required: true
+  - type: textarea
+    id: design_temporal_safety
+    attributes:
+      label: Temporal-safety and leakage impact
+      description: Explain event time, availability time, decision time, and any leakage risks. State why this is not applicable if it truly is not.
+    validations:
+      required: true
+  - type: textarea
+    id: design_provenance
+    attributes:
+      label: Provenance and legal-use impact
+      description: Describe source identity, manifests, deterministic serialization, provider rights, and operation-specific legal gates.
+    validations:
+      required: true
+  - type: textarea
+    id: design_alternatives
+    attributes:
+      label: Alternatives considered
+      description: Compare at least one credible alternative and explain the trade-off.
+    validations:
+      required: true
+  - type: textarea
+    id: design_verification
+    attributes:
+      label: Verification plan
+      description: Define tests, adversarial cases, live checks, and acceptance evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: design_non_goals
+    attributes:
+      label: Non-goals
+      description: List adjacent work that this proposal intentionally does not include.
+    validations:
+      required: true
+  - type: checkboxes
+    id: design_confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: This proposal covers one bounded, independently reviewable capability.
+          required: true
+        - label: It does not claim that planned behavior is already implemented.
+          required: true
+        - label: It includes failure, rollback, and stabilization considerations.
+          required: true

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Quantara social preview</title>
+  <desc id="desc">Quantara, point-in-time market intelligence infrastructure. Foundation-stage, specified but not implemented. A source passes through verification before canonical publication.</desc>
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#173451" stroke-width="1" opacity="0.38"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="640" fill="#07182E"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+  <rect x="56" y="56" width="1168" height="528" fill="none" stroke="#24445F" stroke-width="2"/>
+
+  <circle cx="136" cy="168" r="46" fill="none" stroke="#F4F1E8" stroke-width="13"/>
+  <path d="M164 197L195 228" stroke="#F4F1E8" stroke-width="13"/>
+  <circle cx="136" cy="168" r="7" fill="#66C8D1"/>
+  <path d="M88 168H184" stroke="#66C8D1" stroke-width="3"/>
+
+  <text x="230" y="207" fill="#F4F1E8" font-family="Arial, Helvetica, sans-serif" font-size="108" font-weight="700" letter-spacing="6">QUANTARA</text>
+  <text x="96" y="313" fill="#B6C7D5" font-family="Arial, Helvetica, sans-serif" font-size="38">Point-in-time market intelligence infrastructure</text>
+
+  <path d="M100 414H1178" stroke="#7792A8" stroke-width="4"/>
+  <circle cx="100" cy="414" r="15" fill="#07182E" stroke="#F4F1E8" stroke-width="4"/>
+  <circle cx="640" cy="414" r="25" fill="#0B223C" stroke="#66C8D1" stroke-width="4"/>
+  <path d="M627 414L637 424L655 401" fill="none" stroke="#F4F1E8" stroke-width="5"/>
+  <circle cx="1178" cy="414" r="15" fill="#66C8D1"/>
+
+  <rect x="96" y="480" width="862" height="64" rx="3" fill="#0B223C" stroke="#66C8D1" stroke-width="3"/>
+  <circle cx="128" cy="512" r="7" fill="#66C8D1"/>
+  <text x="157" y="523" fill="#F4F1E8" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" letter-spacing="0.6">FOUNDATION-STAGE — SPECIFIED, NOT IMPLEMENTED</text>
+</svg>
