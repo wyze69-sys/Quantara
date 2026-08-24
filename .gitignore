@@ -1,0 +1,21 @@
+# Quantara market-data artifacts are local/internal and must never be committed.
+/data/
+
+# Local secrets and Python/runtime artifacts
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editor and operating-system artifacts
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
