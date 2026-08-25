@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import yaml
+
 from quantara.aggregation import aggregate_timeframe, rows_from_persisted
 from quantara.canonical import (
     read_canonical_rows,
@@ -491,6 +493,175 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
     }
 
 
+class DerivedGraphVerificationFailed(QuantaraError):
+    error_id = "derived_current_verification_failed"
+
+
+def _authenticate_quality_document(
+    commit_dir: Path,
+    manifest: dict,
+    content_evidence: dict | None = None,
+) -> dict:
+    """Closure 2.2/2.6: load, shape-check, and authenticate a committed
+    quality.json against its own findings and every recorded identity."""
+    quality_path = commit_dir / "quality.json"
+    try:
+        quality_bytes = quality_path.read_bytes()
+    except OSError as exc:
+        raise QuantaraError(
+            f"quality.json missing or unreadable: {exc}"
+        ) from exc
+    try:
+        quality_doc = json.loads(quality_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"quality.json not valid JSON: {exc}") from exc
+    if not isinstance(quality_doc, dict):
+        raise QuantaraError("quality.json must be a JSON object")
+    expected_keys = {"state", "policy_version", "identity", "findings"}
+    if set(quality_doc) != expected_keys:
+        raise QuantaraError(
+            f"quality.json keys must be exactly {sorted(expected_keys)}, "
+            f"got {sorted(quality_doc)}"
+        )
+    committed_findings = quality_doc["findings"]
+    if not isinstance(committed_findings, list) or not committed_findings:
+        raise QuantaraError("quality findings must be a non-empty list")
+    finding_keys = {"check_id", "outcome", "severity", "count", "evidence"}
+    for position, finding in enumerate(committed_findings):
+        if not isinstance(finding, dict) or set(finding) != finding_keys:
+            raise QuantaraError(
+                f"quality finding {position} must carry exactly "
+                f"{sorted(finding_keys)}"
+            )
+    authenticated_identity = quality_identity(committed_findings)
+    if quality_doc["identity"] != authenticated_identity:
+        raise QuantaraError(
+            "quality identity disagrees with its committed findings"
+        )
+    if manifest.get("quality_state") not in (None, quality_doc["state"]):
+        raise QuantaraError(
+            f"manifest quality state {manifest['quality_state']!r} disagrees "
+            f"with quality.json state {quality_doc['state']!r}"
+        )
+    if manifest.get("quality_policy_version") is not None and str(
+        manifest["quality_policy_version"]
+    ) != str(quality_doc["policy_version"]):
+        raise QuantaraError(
+            "manifest quality policy version disagrees with quality.json"
+        )
+    if manifest.get("quality_identity") not in (None, authenticated_identity):
+        raise QuantaraError(
+            "manifest quality identity disagrees with the authenticated "
+            "committed quality evidence"
+        )
+    if content_evidence is not None:
+        content_quality = content_evidence.get("quality_identity")
+        if content_quality is not None and content_quality != (
+            authenticated_identity
+        ):
+            raise QuantaraError(
+                "content.json quality identity disagrees with the "
+                "authenticated committed quality evidence"
+            )
+    return quality_doc
+
+
+def verify_derived_current_graph(dataset_dir: Path, data_root: Path) -> dict:
+    """Closure 2.6: full authentication of a derived current graph.
+
+    Enforces strict pointer structure and protocol, 64-hex digests, the
+    deterministic lineage-bound address equation ``pointer commit ==
+    derived_commit_identity(content cch, lineage)``, commit-directory/content/
+    manifest address agreement, manifest-content mutual consistency, object
+    hashes, manifest digest pinning, and authenticated quality evidence.
+    VERIFIED_NO_OP may only follow this verification.
+    """
+    pointer_path = dataset_dir / "current.json"
+    try:
+        raw_pointer = pointer_path.read_text(encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        raise QuantaraError(f"unreadable current.json: {exc}") from exc
+    try:
+        pointer = json.loads(raw_pointer)
+    except ValueError as exc:
+        raise QuantaraError(f"current.json not valid JSON: {exc}") from exc
+    if not isinstance(pointer, dict):
+        raise QuantaraError("current.json must be a JSON object")
+    expected_pointer_keys = {
+        "publication_protocol_version",
+        "commit",
+        "manifest_sha256",
+    }
+    if set(pointer) != expected_pointer_keys:
+        raise QuantaraError(
+            f"current.json keys must be exactly {sorted(expected_pointer_keys)}, "
+            f"got {sorted(pointer)}"
+        )
+    if pointer["publication_protocol_version"] != PUBLICATION_PROTOCOL_VERSION:
+        raise QuantaraError("unsupported publication protocol version")
+    for label in ("commit", "manifest_sha256"):
+        value = str(pointer[label]).lower()
+        if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise QuantaraError(f"pointer {label} is not a sha256 hex digest")
+
+    address = str(pointer["commit"]).lower()
+    commit_dir = dataset_dir / "commits" / address
+    content = verify_commit_graph(Path(data_root), commit_dir)
+
+    try:
+        manifest_bytes = (commit_dir / "manifest.json").read_bytes()
+    except OSError as exc:
+        raise QuantaraError(f"manifest.json unreadable: {exc}") from exc
+    if sha256_hex(manifest_bytes) != str(pointer["manifest_sha256"]).lower():
+        raise QuantaraError(
+            "manifest bytes disagree with current.json manifest_sha256"
+        )
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"manifest not valid JSON: {exc}") from exc
+
+    lineage = content.get("derived_from")
+    content_cch = content.get("canonical_content_hash")
+    recorded_address = content.get("derived_commit_identity")
+    if lineage is None or content_cch is None or recorded_address is None:
+        raise QuantaraError(
+            "content.json lacks lineage/canonical/commit identity evidence"
+        )
+    recomputed_address = derived_commit_identity(content_cch, lineage)
+    if recomputed_address != address or recorded_address != address:
+        raise DerivedGraphVerificationFailed(
+            f"address binding mismatch: recomputed {recomputed_address!r}, "
+            f"recorded {recorded_address!r}, pointer/commit {address!r}"
+        )
+    for key in (
+        "schema_fingerprint",
+        "parser_version",
+        "canonical_content_hash",
+        "quality_identity",
+        "object_refs",
+        "derived_from",
+    ):
+        if manifest.get(key) != content.get(key):
+            raise QuantaraError(f"manifest/content disagreement on {key!r}")
+    if manifest.get("commit_identity") != address:
+        raise QuantaraError(
+            "manifest commit_identity disagrees with the commit address"
+        )
+    normalized_refs = [
+        ref for ref in content.get("object_refs", [])
+        if ref.get("kind") == "normalized"
+    ]
+    if len(normalized_refs) != 1 or manifest.get("parquet_sha256") != (
+        normalized_refs[0]["sha256"]
+    ):
+        raise QuantaraError(
+            "manifest Parquet SHA-256 disagrees with the object ref"
+        )
+    _authenticate_quality_document(commit_dir, manifest, content)
+    return {**content, "commit": address}
+
+
 def run_derivation_pipeline(
     descriptor_path: str | Path,
     data_root: str | Path,
@@ -504,13 +675,17 @@ def run_derivation_pipeline(
     # Step 1: load + validate the derived descriptor; gate normalize_internal.
     try:
         descriptor = load_derived_descriptor(descriptor_file)
-    except QuantaraError as exc:
+    except (QuantaraError, OSError, yaml.YAMLError) as exc:
         print(f"invalid descriptor: {exc}", file=sys.stderr)
         return EXIT_FAILED
 
-    rights_record = load_rights_record(
-        _resolve_rights(descriptor_file, descriptor.legal_record)
-    )
+    try:
+        rights_record = load_rights_record(
+            _resolve_rights(descriptor_file, descriptor.legal_record)
+        )
+    except (QuantaraError, OSError, yaml.YAMLError) as exc:
+        print(f"rights record unavailable: {exc}", file=sys.stderr)
+        return EXIT_FAILED
     if not rights_record.permits("normalize_internal"):
         print("legal gate blocks normalize_internal", file=sys.stderr)
         _write_attempt(
@@ -547,15 +722,60 @@ def run_derivation_pipeline(
         # Steps 1–2 verification only; no mutation of any dataset directory.
         return EXIT_OK
 
-    # Recovery: stale staging directories are safe orphans; discard them.
-    for stale in (derived_dir / "commits").glob(".staging-*"):
-        shutil.rmtree(stale, ignore_errors=True)
-
+    # Recovery/cleanup re-armed per attempt: no normal or dot-prefixed
+    # staging residue may survive any terminal path (closure 2.5).
     attempt_id = attempt_id_now()
     staging = data / "staging" / attempt_id
-    staging.mkdir(parents=True, exist_ok=True)
+    derived_dot_staging = derived_dir / "commits" / f".staging-{attempt_id}"
+    milestones = {
+        "attempt_staged": False,
+        "object_written": False,
+        "commit_renamed": False,
+        "pointer_replaced": False,
+        "discovery_verified": False,
+    }
     parquet_state = "not_written"
+
+    def _cleanup_attempt() -> None:
+        shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(derived_dot_staging, ignore_errors=True)
+
+    def _dispositions(extra: dict | None = None) -> dict:
+        dispositions = {
+            "normalized_parquet": parquet_state,
+            **milestones,
+            "attempt_staging": "discarded",
+        }
+        if extra:
+            dispositions.update(extra)
+        return dispositions
+
+    def _terminal_failure(
+        diagnostic: str,
+        referenced: str | None,
+        extra: dict | None = None,
+        exc: Exception | None = None,
+    ) -> int:
+        _cleanup_attempt()
+        detail = f"{diagnostic}: {exc}" if exc is not None else diagnostic
+        print(f"derivation failed: {detail}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions=_dispositions(extra),
+            referenced_commit=referenced,
+            diagnostics=[diagnostic],
+        )
+        return EXIT_FAILED
+
     try:
+        for stale in (derived_dir / "commits").glob(".staging-*"):
+            shutil.rmtree(stale, ignore_errors=True)
+
+        staging.mkdir(parents=True, exist_ok=True)
+        milestones["attempt_staged"] = True
+
         minutes, bars, parquet_path, report = _derive_rows(
             parent["parquet_path"], descriptor, staging
         )
@@ -563,26 +783,22 @@ def run_derivation_pipeline(
 
         # PASS-only policy: exactly PASS publishes.
         if report.state != "PASS":
-            print(f"quality state {report.state} blocks publication",
-                  file=sys.stderr)
             failing_checks = [
                 f.check_id for f in report.findings if f.outcome != "pass"
             ] or [f"quality_state_{report.state}"]
-            shutil.rmtree(staging, ignore_errors=True)
+            print(f"quality state {report.state} blocks publication",
+                  file=sys.stderr)
+            _cleanup_attempt()
             _write_attempt(
                 data,
                 root,
                 terminal_result="BLOCKED",
-                dispositions={
-                    "normalized_parquet": parquet_state,
-                    "attempt_staging": "discarded",
-                },
+                dispositions=_dispositions(),
                 referenced_commit=None,
                 diagnostics=failing_checks,
             )
             return EXIT_BLOCKED
 
-        # Identities over the parameterized fingerprint.
         fingerprint = schema_fingerprint(descriptor.schema_version)
         descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
         content_hash = canonical_content_hash(
@@ -592,77 +808,89 @@ def run_derivation_pipeline(
         parquet_sha = sha256_hex(parquet_bytes)
         normalized_ref = put_object(data, "normalized", parquet_bytes)
         parquet_state = "object_written"
-    except QuantaraError as exc:
-        shutil.rmtree(staging, ignore_errors=True)
-        print(f"derivation failed: {exc}", file=sys.stderr)
-        _write_attempt(
-            data,
-            root,
-            terminal_result="FAILED",
-            dispositions={"normalized_parquet": parquet_state},
-            referenced_commit=None,
-            diagnostics=[getattr(exc, "error_id", "quantara_error")],
-        )
-        return EXIT_FAILED
+        milestones["object_written"] = True
 
-    object_refs = [{"kind": "normalized", "sha256": normalized_ref}]
-    lineage = {
-        "parent_dataset_id": base.dataset_id,
-        "parent_canonical_content_hash": parent["canonical_content_hash"],
-        "parent_parquet_sha256": parent["parquet_sha256"],
-        "parent_parquet_size": parent["parquet_size"],
-        "parent_descriptor_sha256": descriptor_hash(base.canonical_semantics()),
-        "parent_schema_fingerprint": schema_fingerprint(base.schema_version),
-        "transformation": {
-            "name": descriptor.transformation["name"],
-            "version": descriptor.transformation["version"],
-            "timeframe_ms": descriptor.timeframe_ms,
-        },
-    }
+        object_refs = [{"kind": "normalized", "sha256": normalized_ref}]
+        lineage = {
+            "parent_dataset_id": base.dataset_id,
+            "parent_canonical_content_hash": parent["canonical_content_hash"],
+            "parent_parquet_sha256": parent["parquet_sha256"],
+            "parent_parquet_size": parent["parquet_size"],
+            "parent_descriptor_sha256": descriptor_hash(
+                base.canonical_semantics()
+            ),
+            "parent_schema_fingerprint": schema_fingerprint(
+                base.schema_version
+            ),
+            "transformation": {
+                "name": descriptor.transformation["name"],
+                "version": descriptor.transformation["version"],
+                "timeframe_ms": descriptor.timeframe_ms,
+            },
+        }
+        identity_evidence = {
+            # Derivation input bytes stand where the source ZIP stood in 001.
+            "source_sha256": parent["parquet_sha256"],
+            "descriptor_sha256": descriptor_sha,
+            "schema_fingerprint": fingerprint,
+            "parser_version": PARSER_VERSION,
+            "canonical_content_hash": content_hash,
+            "quality_identity": report.identity(),
+            "object_refs": object_refs,
+            "derived_from": lineage,
+        }
+        # Closure: the commit address binds canonical content to the
+        # authenticated lineage evidence.
+        commit_address = derived_commit_identity(content_hash, lineage)
+        identity_evidence["derived_commit_identity"] = commit_address
 
-    # Step 6: identity evidence = slice 001 key set + derived_from lineage.
-    identity_evidence = {
-        # Derivation input bytes stand where the source ZIP stood in slice 001.
-        "source_sha256": parent["parquet_sha256"],
-        "descriptor_sha256": descriptor_sha,
-        "schema_fingerprint": fingerprint,
-        "parser_version": PARSER_VERSION,
-        "canonical_content_hash": content_hash,
-        "quality_identity": report.identity(),
-        "object_refs": object_refs,
-        "derived_from": lineage,
-    }
-
-    # Correction 3: the commit address binds canonical content to the
-    # authenticated lineage, so changed lineage yields a distinct commit
-    # even when every aggregated row is unchanged.
-    commit_address = derived_commit_identity(content_hash, lineage)
-    identity_evidence["derived_commit_identity"] = commit_address
-
-    try:
-        # Idempotent rerun: verify the existing commit incl. parent binding.
+        # Idempotency is allowed only after full derived-graph authentication
+        # (closure 2.6): renamed, misaddressed, or fabricated graphs are
+        # rejected rather than honored or silently republished.
         pointer = derived_dir / "current.json"
         if pointer.exists():
-            current_commit = json.loads(
-                pointer.read_text(encoding="utf-8")
-            ).get("commit", "")
-            existing_dir = derived_dir / "commits" / current_commit
-            if existing_dir.is_dir() and existing_commit_matches(
-                data, existing_dir, identity_evidence,
-                keys=DERIVED_EVIDENCE_KEYS,
-            ):
-                shutil.rmtree(staging, ignore_errors=True)
-                _write_attempt(
-                    data,
-                    root,
-                    terminal_result="VERIFIED_NO_OP",
-                    dispositions={"normalized_parquet": "already_published"},
-                    referenced_commit=current_commit,
-                    diagnostics=[],
+            try:
+                parsed_pointer = json.loads(
+                    pointer.read_text(encoding="utf-8")
                 )
-                return EXIT_OK
+                pointer_commit_name = str(
+                    parsed_pointer.get("commit", "")
+                ).lower()
+            except (OSError, ValueError) as exc:
+                raise QuantaraError(
+                    f"unreadable current.json: {exc}"
+                ) from exc
+            # A pointer whose target directory is missing or incomplete is a
+            # LOST pointer: safe recovery proceeds below. Any graph that IS
+            # present must pass full authentication or the run is rejected.
+            pointer_target = derived_dir / "commits" / pointer_commit_name
+            pointer_lost = not (pointer_target / "COMMITTED").is_file()
+            if not pointer_lost:
+                try:
+                    verify_derived_current_graph(derived_dir, data)
+                except QuantaraError as exc:
+                    raise DerivedGraphVerificationFailed(str(exc)) from exc
+                current_commit = parsed_pointer["commit"]
+                existing_dir = derived_dir / "commits" / current_commit
+                if existing_commit_matches(
+                    data, existing_dir, identity_evidence,
+                    keys=DERIVED_EVIDENCE_KEYS,
+                ):
+                    _cleanup_attempt()
+                    _write_attempt(
+                        data,
+                        root,
+                        terminal_result="VERIFIED_NO_OP",
+                        dispositions={
+                            "normalized_parquet": "already_published",
+                            **{k: True for k in milestones},
+                            "attempt_staging": "discarded",
+                        },
+                        referenced_commit=current_commit,
+                        diagnostics=[],
+                    )
+                    return EXIT_OK
 
-        # Steps 7–8: staged evidence, atomic publication, verified pointer.
         manifest = build_dataset_manifest(
             dataset_id=descriptor.dataset_id,
             instrument_id=descriptor.instrument_id,
@@ -706,7 +934,6 @@ def run_derivation_pipeline(
                 staged_commit, derived_dir / "commits", commit_address
             )
         except QuantaraError:
-            # Recovery: an equivalent commit already exists (pointer loss).
             candidate = derived_dir / "commits" / commit_address
             if not (
                 candidate.is_dir()
@@ -719,26 +946,27 @@ def run_derivation_pipeline(
                     "commit rename failed and no equivalent commit exists"
                 ) from None
             commit_dir = candidate
-
+            # The retained commit is authoritative: pin the pointer to ITS
+            # manifest bytes so digest and storage agree exactly.
+            manifest_bytes = (commit_dir / "manifest.json").read_bytes()
+        milestones["commit_renamed"] = True
         verify_commit_graph(data, commit_dir)
         write_current(derived_dir, commit_address, sha256_hex(manifest_bytes))
-        read_and_verify_current(derived_dir, data)
-    except QuantaraError as exc:
-        # A renamed commit is a safe orphan; nothing is discoverable because
-        # current.json was never replaced.
-        shutil.rmtree(staging, ignore_errors=True)
-        print(f"publication failed: {exc}", file=sys.stderr)
-        _write_attempt(
-            data,
-            root,
-            terminal_result="FAILED",
-            dispositions={"normalized_parquet": parquet_state},
-            referenced_commit=None,
-            diagnostics=[getattr(exc, "error_id", "quantara_error")],
+        milestones["pointer_replaced"] = True
+        verify_derived_current_graph(derived_dir, data)
+        milestones["discovery_verified"] = True
+    except (QuantaraError, OSError) as exc:
+        diagnostic = getattr(exc, "error_id", None) or (
+            "os_error" if isinstance(exc, OSError) else "derivation_failure"
         )
-        return EXIT_FAILED
+        post_pointer = milestones["pointer_replaced"]
+        extra = (
+            {"post_pointer": "published_unverified"} if post_pointer else None
+        )
+        referenced = commit_address if post_pointer else None
+        return _terminal_failure(diagnostic, referenced, extra, exc)
 
-    shutil.rmtree(staging, ignore_errors=True)
+    _cleanup_attempt()
     _write_attempt(
         data,
         root,

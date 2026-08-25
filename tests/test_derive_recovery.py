@@ -677,34 +677,64 @@ def test_fault_injection_pointer_replacement_failure(tmp_path, monkeypatch) -> N
 
 
 def test_fault_injection_discovery_readback_failure(tmp_path, monkeypatch) -> None:
+    """Closure 2.7: pointer replacement succeeded but discovery verification
+    failed — evidence must record the actual published-but-unverified state,
+    and the next invocation must recover it as VERIFIED_NO_OP without
+    duplicating or mutating the retained commit."""
     import quantara.derive_pipeline as dp
-    from quantara.errors import QuantaraError
 
     root, data_root, *_ = _valid_parent(tmp_path)
     descriptor = write_derived_descriptor(root, "1h")
 
-    real = dp.read_and_verify_current
+    real = dp.verify_derived_current_graph
     calls = {"n": 0}
 
-    def flaky(*a, **k):
+    def flaky(dataset_dir, data_root_arg):
         calls["n"] += 1
-        if calls["n"] == 2:  # 1st = parent verification, 2nd = final discovery
-            raise QuantaraError("injected discovery failure")
-        return real(*a, **k)
+        if calls["n"] == 1:
+            # The only call so far is the final post-pointer discovery.
+            raise OSError("injected discovery io failure")
+        return real(dataset_dir, data_root_arg)
 
-    monkeypatch.setattr(dp, "read_and_verify_current", flaky)
+    monkeypatch.setattr(dp, "verify_derived_current_graph", flaky)
     code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
-    assert code == 3
-    # Pointer replacement already happened, so the canonical state is complete
-    # and must independently verify; the fault only broke the final re-check.
-    derived = _derived_dir(data_root)
-    real_read = dp.read_and_verify_current.__wrapped__ if hasattr(
-        dp.read_and_verify_current, "__wrapped__"
-    ) else real
-    assert real_read(derived, data_root)
-    attempts = list((data_root / "attempts").glob("*.json"))
-    assert json.loads(attempts[-1].read_text())["terminal_result"] == "FAILED"
+    assert code == 3  # policy-approved non-success: verification incomplete
 
+    derived = _derived_dir(data_root)
+    pointer_commit = json.loads((derived / "current.json").read_text())["commit"]
+    payload = _attempt_payloads(data_root)[-1]
+    assert payload["terminal_result"] == "FAILED"
+    assert payload["referenced_commit"] == pointer_commit
+    assert payload["artifact_dispositions"]["pointer_replaced"] is True
+    assert payload["artifact_dispositions"]["discovery_verified"] is False
+    assert payload["artifact_dispositions"]["post_pointer"] == (
+        "published_unverified"
+    )
+    # The atomic pointer/commit graph remains internally valid.
+    real(derived, data_root)
+
+    # Recovery: the next invocation verifies the published state fully and
+    # reports VERIFIED_NO_OP without duplicating or mutating the commit.
+    commits_before = {
+        p.name for p in (derived / "commits").iterdir()
+        if not p.name.startswith(".")
+    }
+    attempts_before = {p.name for p in (data_root / "attempts").glob("*.json")}
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    assert json.loads((derived / "current.json").read_text())["commit"] == (
+        pointer_commit
+    )
+    commits_after = {
+        p.name for p in (derived / "commits").iterdir()
+        if not p.name.startswith(".")
+    }
+    assert commits_after == commits_before
+    recovery = {
+        p.name: json.loads(p.read_text())
+        for p in (data_root / "attempts").glob("*.json")
+        if p.name not in attempts_before
+    }
+    assert [a["terminal_result"] for a in recovery.values()] == ["VERIFIED_NO_OP"]
 
 def test_attempt_manifest_write_failure_does_not_mask_result(
     tmp_path, monkeypatch, capsys
@@ -1056,3 +1086,145 @@ def test_trade_count_overflow_pipeline_exit_failed_with_cleanup(
         if not p.name.startswith("parent-build")
     ]
     assert residue == []
+
+
+# --- phase closure 2.5/2.6/2.7: termination, addressing, outcomes ------------
+
+
+def _attempt_payloads(data_root: Path):
+    return [
+        json.loads(p.read_text())
+        for p in sorted((data_root / "attempts").glob("*.json"))
+    ]
+
+
+def test_invalid_descriptor_returns_exit_3(tmp_path: Path) -> None:
+    root, data_root = _setup(tmp_path)
+    bad = root / "configs" / "datasets" / "broken.yaml"
+    bad.write_text("::: [not: yaml:\n  - x", encoding="utf-8")
+    code = run_derivation_pipeline(bad, data_root, repo_root=root)
+    assert code == 3
+
+
+def test_rights_record_load_failure_returns_exit_3(tmp_path: Path) -> None:
+    root, data_root, *_ = _valid_parent(tmp_path)
+    legal = root / "configs" / "legal" / "binance-usdm-provider-rights.v1.yaml"
+    legal.write_bytes(b"::: [broken: yaml\n")
+    descriptor = write_derived_descriptor(root, "1h")
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+
+
+def test_staging_mkdir_failure_returns_exit_3_with_evidence(
+    tmp_path: Path,
+) -> None:
+    root, data_root, *_ = _valid_parent(tmp_path)
+    import shutil as _shutil
+
+    _shutil.rmtree(data_root / "staging", ignore_errors=True)
+    (data_root / "staging").write_bytes(b"not a directory")
+    descriptor = write_derived_descriptor(root, "1h")
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    payloads = _attempt_payloads(data_root)
+    assert payloads[-1]["terminal_result"] == "FAILED"
+
+
+def test_unreadable_derived_pointer_returns_exit_3(tmp_path: Path) -> None:
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    derived = _derived_dir(data_root)
+    (derived / "current.json").write_bytes(b"\xff\xfe\x00binary")
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    payloads = _attempt_payloads(data_root)
+    assert payloads[-1]["terminal_result"] == "FAILED"
+
+
+def test_oserror_at_stage_commit_boundary_is_controlled(
+    tmp_path, monkeypatch
+) -> None:
+    import quantara.derive_pipeline as dp
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+
+    def boom(*a, **k):
+        raise OSError("injected fsync failure")
+
+    monkeypatch.setattr(dp, "stage_commit", boom)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    payloads = _attempt_payloads(data_root)
+    assert payloads[-1]["terminal_result"] == "FAILED"
+    derived = _derived_dir(data_root)
+    assert not list((derived / "commits").glob(".staging-*"))
+    residue = [
+        p for p in (data_root / "staging").glob("*")
+        if not p.name.startswith("parent-build")
+    ]
+    assert residue == []
+
+
+def test_oserror_at_commit_verification_before_pointer(tmp_path, monkeypatch):
+    import quantara.derive_pipeline as dp
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+
+    def boom(*a, **k):
+        raise OSError("injected verification io failure")
+
+    monkeypatch.setattr(dp, "verify_commit_graph", boom)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    payload = _attempt_payloads(data_root)[-1]
+    assert payload["terminal_result"] == "FAILED"
+    assert payload["referenced_commit"] is None  # pre-pointer replacement
+    assert payload["artifact_dispositions"]["pointer_replaced"] is False
+    assert "post_pointer" not in payload["artifact_dispositions"]
+
+
+def test_renamed_derived_commit_is_rejected_never_no_op(tmp_path: Path) -> None:
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    derived = _derived_dir(data_root)
+    old_commit = json.loads((derived / "current.json").read_text())["commit"]
+    forged_name = sha256_hex(b"forged-address")
+    (derived / "commits" / old_commit).rename(derived / "commits" / forged_name)
+    pointer = json.loads((derived / "current.json").read_text())
+    pointer["commit"] = forged_name
+    (derived / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3  # rejected — never VERIFIED_NO_OP, never silent republish
+    payload = _attempt_payloads(data_root)[-1]
+    assert payload["terminal_result"] == "FAILED"
+    assert "derived_current_verification_failed" in payload["diagnostics"]
+
+
+def test_verified_download_exhaustion_sleeps_exactly_n_minus_1() -> None:
+    from types import SimpleNamespace
+
+    import pytest
+
+    from test_integration_derivation import _verified_download
+
+    calls = {"n": 0}
+
+    def fake_get(url, timeout):
+        calls["n"] += 1
+        return SimpleNamespace(status_code=503, content=b"")
+
+    sleeps = []
+    with pytest.raises(AssertionError, match="after 4 attempts"):
+        _verified_download(
+            "https://data.binance.vision/data/futures/x.zip",
+            retries=4,
+            transport=fake_get,
+            sleeper=sleeps.append,
+        )
+    assert calls["n"] == 4
+    assert len(sleeps) == 3  # never sleeps after the final exhausted attempt

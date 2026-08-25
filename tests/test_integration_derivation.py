@@ -235,7 +235,8 @@ def _verified_download(
             return response.content
         except (_RetryableStatus, httpx.TransportError) as exc:
             last_error = exc
-            sleeper(0.5 * (2**attempt))
+            if attempt < retries - 1:  # never sleep after the final attempt
+                sleeper(0.5 * (2**attempt))
     raise AssertionError(f"download failed after {retries} attempts: {last_error}")
 
 
