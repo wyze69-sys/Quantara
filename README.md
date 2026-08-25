@@ -127,3 +127,19 @@ Original Quantara repository material is licensed under the [Apache License 2.0]
 Raw and normalized Binance artifacts for the first slice remain restricted to private/internal evaluation while commercial-use rights are unresolved. Users are responsible for provider terms, data rights, and applicable law.
 
 Quantara is research and engineering software. It is not investment advice, a recommendation, a representation of expected performance, or a warranty of data fitness. Financial markets involve substantial risk; users remain responsible for independent validation and decisions.
+
+## Data foundation status
+
+Slice 001 (Binance USD-M BTCUSDT perpetual, one-minute klines, January
+2024) is implemented and verified end to end: checksum-verified acquisition,
+exact-decimal normalization, full row reconciliation, immutable
+content-addressed publication, and idempotent reruns.
+
+All artifacts for this slice are restricted to internal use while
+commercial-use rights remain under review; nothing here is customer-facing
+or commercially production-eligible.
+
+Configuration lives in
+[configs/datasets/binance-usdm-btcusdt-1m-2024-01.yaml](configs/datasets/binance-usdm-btcusdt-1m-2024-01.yaml);
+the governing provider-rights record is
+[configs/legal/binance-usdm-provider-rights.v1.yaml](configs/legal/binance-usdm-provider-rights.v1.yaml).
