@@ -1983,4 +1983,3 @@ def test_unrepresentable_exact_aggregate_fails_deterministically() -> None:
     with pytest.raises(QuantaraError) as excinfo:
         aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
     assert excinfo.value.error_id == DECIMAL_PRECISION_OR_SCALE_OVERFLOW
-

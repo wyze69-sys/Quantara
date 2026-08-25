@@ -197,4 +197,3 @@ def evaluate_derived_quality(
            0 if reconciliation_ok else 1)
 
     return DerivedQualityReport(findings=findings)
-

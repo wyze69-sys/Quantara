@@ -335,4 +335,3 @@ def test_official_archive_cross_check(interval: str) -> None:
         "tolerance": "1e-8",
         "deltas": deltas,
     }, indent=2), encoding="utf-8")
-

@@ -650,4 +650,3 @@ def run_derivation_pipeline(
         diagnostics=[],
     )
     return EXIT_OK
-

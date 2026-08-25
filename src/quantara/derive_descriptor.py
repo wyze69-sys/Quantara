@@ -289,4 +289,3 @@ def load_derived_descriptor(path: Path | str) -> DerivedDatasetDescriptor:
         quality_policy_version=str(document["quality_policy_version"]),
         legal_record=document["legal_record"],
     )
-

@@ -1,0 +1,80 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: D:\PROJECT\Quantara
+configfile: pyproject.toml
+plugins: anyio-4.14.2, hypothesis-6.165.10
+collected 1 item
+
+tests\test_derive_recovery.py F                                          [100%]
+
+================================== FAILURES ===================================
+___ test_changed_parent_lineage_identical_aggregates_create_distinct_commit ___
+
+tmp_path = WindowsPath('C:/Users/User/AppData/Local/Temp/pytest-of-User/pytest-650/test_changed_parent_lineage_id0')
+
+    def test_changed_parent_lineage_identical_aggregates_create_distinct_commit(
+        tmp_path: Path,
+    ) -> None:
+        """A parent row change that provably leaves every hourly aggregate
+        untouched (an interior minute's close moves within [low, high], away from
+        the hour's first/last constituents and extremes) changes the authenticated
+        parent lineage while canonical_content_hash stays identical. The derived
+        commit identity must still yield a distinct immutable commit, current.json
+        must advance atomically, and the old commit must remain byte-identical."""
+        rows = build_month_minute_rows()
+        root, data_root = _setup(tmp_path)
+        _, parent_cch_1 = _write_parent_commit(root, data_root, rows, "gen1")
+        descriptor = write_derived_descriptor(root, "1h")
+        assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+        derived = _derived_dir(data_root)
+        old_pointer = (derived / "current.json").read_bytes()
+        old_commit = json.loads(old_pointer)["commit"]
+        old_content = json.loads(
+            (derived / "commits" / old_commit / "content.json").read_text()
+        )
+        old_cch = old_content["canonical_content_hash"]
+        commit_dir_old = derived / "commits" / old_commit
+        old_tree = {
+            p.relative_to(commit_dir_old).as_posix(): sha256_hex(p.read_bytes())
+            for p in commit_dir_old.rglob("*") if p.is_file()
+        }
+    
+        # Interior-minute close change: not an hour boundary constituent (index 10
+        # of 0..59), strictly inside [low, high] of its hour.
+        changed = list(rows)
+        victim = changed[10]
+        assert victim.open_time_ms % HOUR_MS not in (0, HOUR_MS - 60_000)
+        new_close = (victim.low + victim.high) / 2
+        assert victim.low < new_close < victim.high
+        changed[10] = make_minute_row(
+            victim.open_time_ms,
+            o=victim.open, h=victim.high, lo=victim.low, c=new_close,
+            bv=victim.base_asset_volume, qv=victim.quote_asset_volume,
+            n=3210, tbv=victim.taker_buy_base_volume,
+            tqv=victim.taker_buy_quote_volume,
+        )
+        new_sha, parent_cch_2 = _write_parent_commit(
+            root, data_root, changed, "same-aggregates"
+        )
+        assert parent_cch_2 != parent_cch_1  # parent content authentically moved
+    
+        # Rerun publishes a NEW lineage-bound derived commit even though every
+        # 1h bar ù and therefore canonical_content_hash ù is identical.
+        assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+        advanced_pointer = (derived / "current.json").read_bytes()
+        assert advanced_pointer != old_pointer
+        new_commit = json.loads(advanced_pointer)["commit"]
+        assert new_commit != old_commit
+        new_content = json.loads(
+            (derived / "commits" / new_commit / "content.json").read_text()
+        )
+>       assert new_content["canonical_content_hash"] == old_cch
+E       AssertionError: assert 'ed81b3a06098...96f933c768b5a' == '4f6a4e048f7e...5ee48ea724f06'
+E         
+E         - 4f6a4e048f7e6707d52754f0fea0e3d862ddb7941746d52d0bd5ee48ea724f06
+E         + ed81b3a06098fc10b48f902ac9cdc259059db7a9f602071e91196f933c768b5a
+
+tests\test_derive_recovery.py:467: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_derive_recovery.py::test_changed_parent_lineage_identical_aggregates_create_distinct_commit
+============================= 1 failed in 12.30s ==============================

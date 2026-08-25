@@ -207,4 +207,3 @@ def aggregate_timeframe(
             )
         )
     return bars
-
