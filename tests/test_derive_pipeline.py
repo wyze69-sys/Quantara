@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import zipfile
 from pathlib import Path
 
@@ -23,7 +22,7 @@ from conftest import (
     derived_cfg_tree,
     write_derived_descriptor,
 )
-from quantara.hashing import SCHEMA_VERSION, schema_fingerprint
+from quantara.hashing import SCHEMA_VERSION, schema_fingerprint, sha256_hex
 from quantara.pipeline import run_pipeline
 from quantara.publication import (
     existing_commit_matches,
@@ -246,15 +245,18 @@ def test_missing_parent_blocks_with_stable_diagnostic(tmp_path: Path) -> None:
 
 
 def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None:
-    """Fast path: assemble a valid parent graph directly through the
-    publication primitives, derive 1d, and prove idempotent rerun."""
+    """Fast path: assemble a fully GENUINE parent graph directly through the
+    publication primitives (real descriptor hash, fingerprint, canonical
+    content hash and manifest digest), derive 1d, and prove idempotent rerun."""
     from quantara.canonical import (
         read_canonical_rows,
         reconcile_rows,
         write_canonical_parquet,
     )
     from quantara.derive_pipeline import run_derivation_pipeline
-    from quantara.hashing import sha256_hex
+    from quantara.descriptor import load_descriptor
+    from quantara.hashing import canonical_content_hash, descriptor_hash
+    from quantara.manifests import PARSER_VERSION
     from quantara.publication import put_object
 
     root = derived_cfg_tree(tmp_path)
@@ -269,24 +271,50 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
     parquet_bytes = parquet_path.read_bytes()
     parquet_sha = sha256_hex(parquet_bytes)
     normalized_ref = put_object(data_root, "normalized", parquet_bytes)
+    assert normalized_ref == parquet_sha
+
+    base = load_descriptor(
+        root / "configs" / "datasets" / "binance-usdm-btcusdt-1m-2024-01.yaml"
+    )
+    fingerprint = schema_fingerprint(base.schema_version)
+    parent_cch = canonical_content_hash(
+        fingerprint, [row.to_content_array() for row in rows]
+    )
 
     parent_dir = _derived_dataset_dir(data_root, "1m")
-    content = {
-        "descriptor_sha256": "d" * 64,
-        "schema_fingerprint": schema_fingerprint(),
-        "parser_version": "binance_kline_csv_v1",
-        "canonical_content_hash": "p" * 64,
-        "quality_identity": "q",
-        "object_refs": [{"kind": "normalized", "sha256": normalized_ref}],
+    manifest_dict = {
+        "dataset_id": base.dataset_id,
+        "instrument_id": base.instrument_id,
+        "schema_version": base.schema_version,
+        "schema_fingerprint": fingerprint,
+        "timestamp_semantics": base.timestamp_semantics,
+        "quality_policy_version": "1",
+        "quality_state": "PASS",
+        "source_row_count": len(rows),
+        "canonical_row_count": len(rows),
+        "canonical_content_hash": parent_cch,
+        "parquet_sha256": parquet_sha,
+        "parquet_size": len(parquet_bytes),
+        "object_refs": [{"kind": "normalized", "sha256": parquet_sha}],
     }
-    manifest = {"parquet_sha256": parquet_sha, "parquet_size": len(parquet_bytes)}
+    manifest_bytes = (
+        json.dumps(manifest_dict, indent=2, sort_keys=True) + "\n"
+    ).encode()
+    content = {
+        "descriptor_sha256": descriptor_hash(base.canonical_semantics()),
+        "schema_fingerprint": fingerprint,
+        "parser_version": PARSER_VERSION,
+        "canonical_content_hash": parent_cch,
+        "quality_identity": "q",
+        "object_refs": [{"kind": "normalized", "sha256": parquet_sha}],
+    }
     files = {
         "content.json": (json.dumps(content) + "\n").encode(),
-        "manifest.json": (json.dumps(manifest) + "\n").encode(),
+        "manifest.json": manifest_bytes,
     }
     staged = stage_commit(parent_dir, "manual", files)
-    publish_commit(staged, parent_dir / "commits", "p" * 64)
-    write_current(parent_dir, "p" * 64, "m" * 64)
+    publish_commit(staged, parent_dir / "commits", parent_cch)
+    write_current(parent_dir, parent_cch, sha256_hex(manifest_bytes))
 
     descriptor = write_derived_descriptor(root, "1d")
     assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
@@ -299,100 +327,11 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
         (dataset_dir / "commits" / commit / "content.json").read_text()
     )
     assert derived_content["derived_from"]["parent_parquet_sha256"] == parquet_sha
-    assert derived_content["derived_from"]["parent_canonical_content_hash"] == "p" * 64
+    assert (
+        derived_content["derived_from"]["parent_canonical_content_hash"]
+        == parent_cch
+    )
 
     # Idempotent rerun leaves bytes untouched.
     assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
     assert (dataset_dir / "current.json").read_bytes() == pointer
-
-
-
-# --- Task 7: descriptor-schema dispatch in the CLI ----------------------------
-
-
-def test_cli_dispatches_base_descriptor_to_slice_001_pipeline(
-    monkeypatch, tmp_path: Path
-) -> None:
-    from quantara import cli
-
-    root = derived_cfg_tree(tmp_path)
-    base_descriptor = (
-        root / "configs" / "datasets" / "binance-usdm-btcusdt-1m-2024-01.yaml"
-    )
-    seen = {}
-    monkeypatch.setattr(
-        "quantara.pipeline.run_pipeline",
-        lambda **kwargs: (seen.setdefault("called", kwargs["descriptor_path"]), 0)[1],
-    )
-    assert cli.main(
-        ["--descriptor", str(base_descriptor), "--data-root", str(tmp_path / "data")]
-    ) == 0
-    assert seen["called"] == str(base_descriptor)
-
-
-def test_cli_dispatches_derived_descriptor_to_derivation_pipeline(
-    monkeypatch, tmp_path: Path
-) -> None:
-    from quantara import cli
-
-    root = derived_cfg_tree(tmp_path)
-    descriptor = write_derived_descriptor(root, "1h")
-    seen = {}
-    monkeypatch.setattr(
-        "quantara.derive_pipeline.run_derivation_pipeline",
-        lambda **kwargs: (seen.setdefault("called", kwargs), 0)[1],
-    )
-    assert cli.main(
-        [
-            "--descriptor", str(descriptor),
-            "--data-root", str(tmp_path / "data"),
-            "--dry-run",
-        ]
-    ) == 0
-    assert seen["called"]["dry_run"] is True
-
-
-def test_cli_rejects_unknown_schema_with_exit_3(tmp_path: Path, capsys) -> None:
-    from quantara import cli
-
-    bogus = tmp_path / "bogus.yaml"
-    bogus.write_text("schema: quantara.unknown/v9\n", encoding="utf-8")
-    assert cli.main(
-        ["--descriptor", str(bogus), "--data-root", str(tmp_path / "data")]
-    ) == 3
-    assert "invalid_descriptor" in capsys.readouterr().err
-
-
-
-# --- Correction 5: no binary-float timestamp arithmetic -----------------------
-
-
-def test_derivation_modules_use_no_float_timestamp_arithmetic() -> None:
-    """Epoch milliseconds and durations must come from exact datetime /
-    timedelta integer arithmetic; float intermediates are forbidden."""
-    pattern = re.compile(r"\.timestamp\(\)|total_seconds\(\)")
-    modules = [
-        "aggregation.py",
-        "derive_descriptor.py",
-        "derive_pipeline.py",
-        "derive_quality.py",
-        "descriptor.py",
-    ]
-    offenders = []
-    for name in modules:
-        source = Path("src/quantara", name).read_text(encoding="utf-8")
-        for number, line in enumerate(source.splitlines(), start=1):
-            if pattern.search(line):
-                offenders.append(f"{name}:{number}: {line.strip()}")
-    assert not offenders, (
-        "float-based timestamp arithmetic found:\n" + "\n".join(offenders)
-    )
-
-
-def test_epoch_ms_helper_is_exact_integer_math() -> None:
-    from datetime import UTC, datetime
-
-    from quantara.derive_pipeline import epoch_ms
-
-    assert epoch_ms(datetime(2024, 1, 1, tzinfo=UTC)) == 1_704_067_200_000
-

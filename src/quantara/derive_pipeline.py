@@ -44,6 +44,7 @@ from quantara.manifests import (
     write_json,
 )
 from quantara.publication import (
+    PUBLICATION_PROTOCOL_VERSION,
     existing_commit_matches,
     publish_commit,
     put_object,
@@ -175,31 +176,174 @@ def _derive_rows(parent_parquet_path: Path, descriptor, staging: Path):
     return minutes, bars, parquet_path, report
 
 
-def _verify_parent(parent_dir: Path, data_root: Path) -> dict:
-    """Full parent verification; raises QuantaraError on any failure."""
-    pointer = json.loads((parent_dir / "current.json").read_text(encoding="utf-8"))
+def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
+    """Full parent verification before any computation (correction 2).
+
+    Verifies, in order: current.json structure and protocol version, commit
+    directory identity, COMMITTED marker + content.json + every referenced
+    object hash (via read_and_verify_current), canonical content identity
+    against the commit directory name, manifest.json bytes against the
+    pointer's pinned digest, required manifest fields, actual Parquet byte
+    hash and size, and committed descriptor/schema/quality evidence against
+    the approved loaded base descriptor. Any missing, malformed, fabricated,
+    or mismatched evidence raises QuantaraError → BLOCKED.
+    """
+    pointer_path = parent_dir / "current.json"
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise QuantaraError(f"unreadable current.json: {exc}") from exc
+    if not isinstance(pointer, dict):
+        raise QuantaraError("current.json must be a JSON object")
+    expected_pointer_keys = {
+        "publication_protocol_version",
+        "commit",
+        "manifest_sha256",
+    }
+    if set(pointer) != expected_pointer_keys:
+        raise QuantaraError(
+            "current.json keys must be exactly "
+            f"{sorted(expected_pointer_keys)}, got {sorted(pointer)}"
+        )
+    if pointer["publication_protocol_version"] != PUBLICATION_PROTOCOL_VERSION:
+        raise QuantaraError(
+            "current.json protocol version "
+            f"{pointer['publication_protocol_version']!r} is not "
+            f"{PUBLICATION_PROTOCOL_VERSION!r}"
+        )
     commit_hash = pointer["commit"]
+    pinned_digest = pointer["manifest_sha256"]
+    for label, value in (
+        ("commit", commit_hash),
+        ("manifest_sha256", pinned_digest),
+    ):
+        lowered = value.lower() if isinstance(value, str) else ""
+        if len(lowered) != 64 or any(ch not in "0123456789abcdef" for ch in lowered):
+            raise QuantaraError(
+                f"current.json {label} is not a sha256 hex digest: {value!r}"
+            )
+
+    # COMMITTED marker, content.json, object existence and hashes.
     content = read_and_verify_current(parent_dir, data_root)
-    manifest_path = parent_dir / "commits" / commit_hash / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    commit_dir = parent_dir / "commits" / commit_hash
+
+    # Canonical content identity: the commit directory IS the address of the
+    # canonical content it holds.
+    if content.get("canonical_content_hash") != commit_hash:
+        raise QuantaraError(
+            "canonical content identity mismatch: content.json records "
+            f"{content.get('canonical_content_hash')!r} but the commit "
+            f"directory is {commit_hash!r}"
+        )
+
+    # Manifest bytes are pinned by the pointer's digest.
+    manifest_path = commit_dir / "manifest.json"
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+    except OSError as exc:
+        raise QuantaraError(f"parent manifest.json unreadable: {exc}") from exc
+    if sha256_hex(manifest_bytes) != pinned_digest:
+        raise QuantaraError(
+            "parent manifest.json bytes disagree with current.json "
+            "manifest_sha256"
+        )
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"parent manifest not valid JSON: {exc}") from exc
+
+    required_fields = (
+        "dataset_id",
+        "instrument_id",
+        "schema_version",
+        "schema_fingerprint",
+        "timestamp_semantics",
+        "quality_policy_version",
+        "quality_state",
+        "canonical_content_hash",
+        "parquet_sha256",
+        "parquet_size",
+    )
+    missing = [
+        field
+        for field in required_fields
+        if manifest.get(field) in (None, "")
+    ]
+    if missing:
+        raise QuantaraError(
+            f"parent manifest missing required fields: {sorted(missing)}"
+        )
+
+    # Committed descriptor/schema/quality evidence vs the approved base
+    # descriptor — fabricated-but-internally-consistent graphs are caught
+    # here against the authoritative loaded configuration.
+    if manifest["dataset_id"] != base.dataset_id:
+        raise QuantaraError(
+            f"parent dataset_id {manifest['dataset_id']!r} does not match "
+            f"the approved base descriptor's {base.dataset_id!r}"
+        )
+    if manifest["instrument_id"] != base.instrument_id:
+        raise QuantaraError(
+            "parent instrument_id does not match the approved base descriptor"
+        )
+    if manifest["schema_version"] != base.schema_version:
+        raise QuantaraError(
+            f"parent schema_version {manifest['schema_version']!r} does not "
+            f"match the approved base descriptor's {base.schema_version!r}"
+        )
+    expected_fingerprint = schema_fingerprint(base.schema_version)
+    if manifest["schema_fingerprint"] != expected_fingerprint:
+        raise QuantaraError(
+            "parent schema_fingerprint does not match the approved base "
+            "descriptor's logical schema fingerprint"
+        )
+    if manifest["timestamp_semantics"] != base.timestamp_semantics:
+        raise QuantaraError(
+            "parent timestamp_semantics does not match the approved base "
+            "descriptor"
+        )
+    if str(manifest["quality_policy_version"]) != str(base.quality_policy_version):
+        raise QuantaraError(
+            "parent quality_policy_version does not match the approved base "
+            "descriptor"
+        )
+    if manifest["quality_state"] != "PASS":
+        raise QuantaraError(
+            f"parent quality state is {manifest['quality_state']!r}; a "
+            "less-than-verified parent is never a derivation input"
+        )
+    if manifest["canonical_content_hash"] != commit_hash:
+        raise QuantaraError(
+            "parent manifest canonical_content_hash disagrees with the commit "
+            "directory identity"
+        )
+
     normalized_refs = [
-        ref for ref in content.get("object_refs", []) if ref.get("kind") == "normalized"
+        ref
+        for ref in content.get("object_refs", [])
+        if ref.get("kind") == "normalized"
     ]
     if not normalized_refs:
         raise QuantaraError("parent commit references no normalized object")
     stored_sha = normalized_refs[0]["sha256"]
-    if manifest.get("parquet_sha256") != stored_sha:
-        raise QuantaraError("parent manifest Parquet SHA-256 disagrees with object ref")
+    if manifest["parquet_sha256"] != stored_sha:
+        raise QuantaraError(
+            "parent manifest Parquet SHA-256 disagrees with object ref"
+        )
     object_path = data_root / "objects" / "normalized" / "sha256" / stored_sha
-    if not object_path.exists():
-        raise QuantaraError("parent normalized object missing")
+    parquet_bytes = object_path.read_bytes()
+    if sha256_hex(parquet_bytes) != stored_sha:
+        raise QuantaraError("parent Parquet object bytes fail their own digest")
+    if manifest["parquet_size"] != len(parquet_bytes):
+        raise QuantaraError(
+            f"parent Parquet size {len(parquet_bytes)} disagrees with the "
+            f"committed manifest value {manifest['parquet_size']}"
+        )
     return {
         "commit": commit_hash,
-        "canonical_content_hash": content.get(
-            "canonical_content_hash", commit_hash
-        ),
+        "canonical_content_hash": commit_hash,
         "parquet_sha256": stored_sha,
-        "parquet_size": manifest.get("parquet_size"),
+        "parquet_size": len(parquet_bytes),
         "parquet_path": object_path,
     }
 
@@ -243,7 +387,7 @@ def run_derivation_pipeline(
 
     # Step 2: the parent must resolve and fully verify — BLOCKED otherwise.
     try:
-        parent = _verify_parent(parent_dir, data)
+        parent = _verify_parent(parent_dir, data, base)
     except (QuantaraError, OSError, ValueError, KeyError) as exc:
         print(f"parent_dataset_unavailable: {exc}", file=sys.stderr)
         _write_attempt(
