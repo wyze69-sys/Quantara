@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 VALID_DESCRIPTOR_YAML = """\
 schema: quantara.dataset-descriptor/v1
@@ -108,3 +109,97 @@ def dataset_dir_for(data_root):
 @pytest.fixture()
 def valid_path(tmp_path: Path) -> Path:
     return write_text(tmp_path, VALID_DESCRIPTOR_YAML)
+
+
+# --- Additive helpers for data slice 002 (plan Tasks 6+) ----------------------
+
+DERIVED_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.derived-dataset-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_01
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: {interval}
+base_dataset_id: binance_usdm_btcusdt_klines_1m_2024_01
+base_descriptor: configs/datasets/{base_name}
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2024-02-01T00:00:00Z"
+transformation:
+  name: multi_timeframe_aggregation
+  version: "1"
+schema_version: binance_usdm_kline_{interval}_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v1.yaml
+"""
+
+BASE_DESCRIPTOR_NAME = "binance-usdm-btcusdt-1m-2024-01.yaml"
+
+HOUR_MS = 3_600_000
+
+
+def make_minute_row(
+    open_time_ms: int,
+    o="100", h="110", lo="90", c="105",
+    bv="1.5", qv="150", n=10, tbv="0.5", tqv="50",
+    ignore="0",
+):
+    from decimal import Decimal
+
+    from quantara.canonical import CanonicalRow
+
+    d = Decimal
+    return CanonicalRow(
+        identity=("binance", "usd_m_futures",
+                  "binance:usd_m_futures:BTCUSDT:perpetual", "BTCUSDT",
+                  "BTC", "USDT", "USDT", "perpetual", "1m",
+                  "binance_usdm_kline_1m_v1"),
+        open_time_ms=open_time_ms,
+        close_time_ms=open_time_ms + 59_999,
+        nominal_available_ms=open_time_ms + 60_000,
+        open=d(o), high=d(h), low=d(lo), close=d(c),
+        base_asset_volume=d(bv), quote_asset_volume=d(qv),
+        trade_count=int(n),
+        taker_buy_base_volume=d(tbv), taker_buy_quote_volume=d(tqv),
+        source_ignore=ignore,
+    )
+
+
+def build_month_minute_rows(count: int = MONTH_ROW_COUNT) -> list:
+    return [make_minute_row(MONTH_OPEN_START + i * 60_000) for i in range(count)]
+
+
+def derived_cfg_tree(tmp_path: Path) -> Path:
+    """Repo-shaped config tree with the base descriptor and rights record."""
+    datasets = tmp_path / "configs" / "datasets"
+    legal = tmp_path / "configs" / "legal"
+    datasets.mkdir(parents=True, exist_ok=True)
+    legal.mkdir(parents=True, exist_ok=True)
+    (datasets / BASE_DESCRIPTOR_NAME).write_text(
+        VALID_DESCRIPTOR_YAML, encoding="utf-8"
+    )
+    (legal / "binance-usdm-provider-rights.v1.yaml").write_text(
+        yaml.safe_dump(rights_yaml_dict()), encoding="utf-8"
+    )
+    return tmp_path
+
+
+def write_derived_descriptor(root: Path, interval: str) -> Path:
+    target = (
+        root / "configs" / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-01-derived.yaml"
+    )
+    target.write_text(
+        DERIVED_DESCRIPTOR_TEMPLATE.format(
+            interval=interval, base_name=BASE_DESCRIPTOR_NAME
+        ),
+        encoding="utf-8",
+    )
+    return target
