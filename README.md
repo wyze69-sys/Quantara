@@ -142,3 +142,14 @@ Configuration lives in
 [configs/datasets/binance-usdm-btcusdt-1m-2024-01.yaml](configs/datasets/binance-usdm-btcusdt-1m-2024-01.yaml);
 the governing provider-rights record is
 [configs/legal/binance-usdm-provider-rights.v1.yaml](configs/legal/binance-usdm-provider-rights.v1.yaml).
+
+## Derived datasets status
+
+The 1-hour (744 bars) and 1-day (31 bars) klines for January 2024 are
+derived internally from the verified January 2024 one-minute base dataset
+and published through the same immutable, content-addressed protocol with
+full lineage back to the parent commit.
+
+All derived artifacts inherit the parent's restrictions completely: they are
+internal-use only and remain ineligible for commercial use or customer
+display while commercial rights are pending counsel review.
