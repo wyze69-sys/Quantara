@@ -277,6 +277,8 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
     normalized_ref = put_object(data_root, "normalized", parquet_bytes)
     assert normalized_ref == parquet_sha
 
+    from quantara.quality import evaluate_quality
+
     base = load_descriptor(
         root / "configs" / "datasets" / "binance-usdm-btcusdt-1m-2024-01.yaml"
     )
@@ -284,6 +286,27 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
     parent_cch = canonical_content_hash(
         fingerprint, [row.to_content_array() for row in rows]
     )
+    report = evaluate_quality(
+        rows, base, source_order_valid=True,
+        expected_count=base.expected_row_count,
+    )
+    assert report.state == "PASS"
+    identity = report.identity()
+    quality_doc = {
+        "state": report.state,
+        "policy_version": "1",
+        "identity": identity,
+        "findings": [
+            {
+                "check_id": f.check_id,
+                "outcome": f.outcome,
+                "severity": f.severity,
+                "count": f.count,
+                "evidence": f.evidence,
+            }
+            for f in report.findings
+        ],
+    }
 
     parent_dir = _derived_dataset_dir(data_root, "1m")
     manifest_dict = {
@@ -294,6 +317,7 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
         "timestamp_semantics": base.timestamp_semantics,
         "quality_policy_version": "1",
         "quality_state": "PASS",
+        "quality_identity": identity,
         "source_row_count": len(rows),
         "canonical_row_count": len(rows),
         "canonical_content_hash": parent_cch,
@@ -309,12 +333,15 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
         "schema_fingerprint": fingerprint,
         "parser_version": PARSER_VERSION,
         "canonical_content_hash": parent_cch,
-        "quality_identity": "q",
+        "quality_identity": identity,
         "object_refs": [{"kind": "normalized", "sha256": parquet_sha}],
     }
     files = {
         "content.json": (json.dumps(content) + "\n").encode(),
         "manifest.json": manifest_bytes,
+        "quality.json": (
+            json.dumps(quality_doc, indent=2, sort_keys=True) + "\n"
+        ).encode(),
     }
     staged = stage_commit(parent_dir, "manual", files)
     publish_commit(staged, parent_dir / "commits", parent_cch)

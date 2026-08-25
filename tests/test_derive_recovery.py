@@ -40,6 +40,7 @@ from quantara.publication import (
     stage_commit,
     write_current,
 )
+from quantara.quality import evaluate_quality
 
 
 def _parent_dir(data_root: Path) -> Path:
@@ -89,6 +90,29 @@ def _write_parent_commit(
     )
     put_object(data_root, "normalized", parquet_bytes)
 
+    # Genuine Slice 001 quality evidence for these exact rows.
+    report = evaluate_quality(
+        rows, base, source_order_valid=True,
+        expected_count=base.expected_row_count,
+    )
+    assert report.state == "PASS", report.state
+    identity = report.identity()
+    quality_doc = {
+        "state": report.state,
+        "policy_version": "1",
+        "identity": identity,
+        "findings": [
+            {
+                "check_id": f.check_id,
+                "outcome": f.outcome,
+                "severity": f.severity,
+                "count": f.count,
+                "evidence": f.evidence,
+            }
+            for f in report.findings
+        ],
+    }
+
     manifest = {
         "dataset_id": base.dataset_id,
         "instrument_id": base.instrument_id,
@@ -97,6 +121,7 @@ def _write_parent_commit(
         "timestamp_semantics": base.timestamp_semantics,
         "quality_policy_version": "1",
         "quality_state": "PASS",
+        "quality_identity": identity,
         "source_row_count": len(rows),
         "canonical_row_count": len(rows),
         "canonical_content_hash": content_hash_value,
@@ -110,12 +135,15 @@ def _write_parent_commit(
         "schema_fingerprint": fingerprint,
         "parser_version": PARSER_VERSION,
         "canonical_content_hash": content_hash_value,
-        "quality_identity": "q-" + tag,
+        "quality_identity": identity,
         "object_refs": [{"kind": "normalized", "sha256": parquet_sha}],
     }
     staged = stage_commit(_parent_dir(data_root), tag, {
         "content.json": (json.dumps(content) + "\n").encode(),
         "manifest.json": manifest_bytes,
+        "quality.json": (
+            json.dumps(quality_doc, indent=2, sort_keys=True) + "\n"
+        ).encode(),
     })
     publish_commit(staged, _parent_dir(data_root) / "commits", content_hash_value)
     write_current(
@@ -373,7 +401,7 @@ def test_parent_republished_derived_rerun_publishes_new_lineage_commit(
     victim = changed[10]
     changed[10] = make_minute_row(
         victim.open_time_ms,
-        o="42571.90", h="42600.00", lo="42500.10", c="99999.99",
+        o="42571.90", h="50000.00", lo="42500.10", c="42590.50",
         bv=victim.base_asset_volume, qv=victim.quote_asset_volume,
         n=3210, tbv=victim.taker_buy_base_volume,
         tqv=victim.taker_buy_quote_volume,
@@ -763,3 +791,230 @@ def test_verified_download_rejects_non_allowlisted_host() -> None:
 
     with _pytest.raises(AssertionError, match="non-allowlisted host"):
         _verified_download("https://evil.example.com/file.zip")
+
+
+# --- phase closure 2.1: authenticate parent canonical rows --------------------
+
+
+def test_fabricated_canonical_content_identity_blocks_before_derivation(
+    tmp_path: Path,
+) -> None:
+    """Adversarial: a parent graph that is internally consistent at the
+    byte/digest level but whose committed canonical_content_hash does NOT
+    match its actual retained rows must be rejected before any derivation."""
+    from quantara.canonical import write_canonical_parquet as _write_pq
+    from quantara.descriptor import load_descriptor
+    from quantara.hashing import canonical_content_hash, schema_fingerprint
+    from quantara.publication import put_object
+
+    rows = build_month_minute_rows()
+    root, data_root = _setup(tmp_path)
+    _, original_cch = _write_parent_commit(root, data_root, rows, "gen1")
+
+    # Build different valid canonical content and swap the object in,
+    # updating every byte-level pointer consistently.
+    changed = list(rows)
+    victim = changed[100]
+    changed[100] = make_minute_row(
+        victim.open_time_ms,
+        o=victim.open, h=victim.high, lo=victim.low, c="77777.77",
+        bv=victim.base_asset_volume, qv=victim.quote_asset_volume,
+        n=victim.trade_count, tbv=victim.taker_buy_base_volume,
+        tqv=victim.taker_buy_quote_volume,
+    )
+    staging = data_root / "staging" / "adversarial-swap"
+    staging.mkdir(parents=True)
+    swap_path = staging / "canonical.parquet"
+    _write_pq(changed, swap_path)
+    new_bytes = swap_path.read_bytes()
+    new_sha = sha256_hex(new_bytes)
+    put_object(data_root, "normalized", new_bytes)
+
+    commit = json.loads((_parent_dir(data_root) / "current.json").read_text())[
+        "commit"
+    ]
+    assert commit == original_cch  # internally consistent but FALSE identity
+
+    manifest_path = _parent_dir(data_root) / "commits" / commit / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["parquet_sha256"] = new_sha
+    manifest["parquet_size"] = len(new_bytes)
+    manifest["object_refs"] = [{"kind": "normalized", "sha256": new_sha}]
+    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
+    manifest_path.write_bytes(manifest_bytes)
+
+    content_path = _parent_dir(data_root) / "commits" / commit / "content.json"
+    content = json.loads(content_path.read_text())
+    content["object_refs"] = [{"kind": "normalized", "sha256": new_sha}]
+    content_path.write_text(json.dumps(content) + "\n", encoding="utf-8")
+
+    pointer_path = _parent_dir(data_root) / "current.json"
+    pointer = json.loads(pointer_path.read_text())
+    pointer["manifest_sha256"] = sha256_hex(manifest_bytes)
+    pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+
+    # The lie is fully consistent except against the actual retained rows:
+    base = load_descriptor(root / "configs" / "datasets" / BASE_DESCRIPTOR_NAME)
+    recomputed = canonical_content_hash(
+        schema_fingerprint(base.schema_version),
+        [r.to_content_array() for r in changed],
+    )
+    assert recomputed != commit  # the swapped rows hash differently
+
+    descriptor = write_derived_descriptor(root, "1h")
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 2
+    attempts = list((data_root / "attempts").glob("*.json"))
+    diagnostics = [json.loads(p.read_text())["diagnostics"] for p in attempts]
+    assert diagnostics == [["parent_dataset_unavailable"]]
+    assert not _derived_dir(data_root).exists()
+
+
+# --- phase closure 2.2: authenticate parent quality evidence ------------------
+
+
+def _rewrite_quality_consistently(data_root: Path, mutate_doc) -> None:
+    """Tamper quality.json AND keep every digest consistent so only semantic
+    authentication (not byte digests) can reject the graph."""
+    commit = _pointer_commit(data_root)
+    qpath = _parent_dir(data_root) / "commits" / commit / "quality.json"
+    doc = json.loads(qpath.read_text())
+    mutate_doc(doc)
+    qbytes = (json.dumps(doc, indent=2, sort_keys=True) + "\n").encode()
+    qpath.write_bytes(qbytes)
+    pointer_path = _parent_dir(data_root) / "current.json"
+    pointer = json.loads(pointer_path.read_text())
+    pointer["manifest_sha256"] = pointer["manifest_sha256"]  # unchanged
+    pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+
+
+def test_tampered_quality_findings_break_identity_chain(tmp_path: Path) -> None:
+    root, data_root, *_ = _valid_parent(tmp_path)
+
+    def tamper(doc):
+        doc["findings"][0]["count"] = 999999  # forged evidence
+
+    _rewrite_quality_consistently(data_root, tamper)
+    _assert_blocked_with(root, data_root, "parent_dataset_unavailable")
+
+
+def test_manifest_only_pass_lie_blocks(tmp_path: Path) -> None:
+    """quality.json honestly records WARN_BLOCKED while the manifest claims
+    PASS: the disagreement itself must block."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+
+    def degrade(doc):
+        doc["state"] = "WARN_BLOCKED"
+
+    commit = _pointer_commit(data_root)
+    qpath = _parent_dir(data_root) / "commits" / commit / "quality.json"
+    degrade(json.loads(qpath.read_text()))
+    doc = json.loads(qpath.read_text())
+    doc["state"] = "WARN_BLOCKED"
+    qbytes = (json.dumps(doc, indent=2, sort_keys=True) + "\n").encode()
+    qpath.write_bytes(qbytes)
+    # Manifest still claims PASS; digests elsewhere untouched.
+    _assert_blocked_with(root, data_root, "parent_dataset_unavailable")
+
+
+def test_rows_failing_fresh_quality_block_despite_fabricated_metadata(
+    tmp_path: Path,
+) -> None:
+    """Every committed artifact is internally consistent and claims PASS, but
+    the actual retained rows contain an impossible negative volume: the fresh
+    independent evaluation must block."""
+    from quantara.canonical import write_canonical_parquet as _write_pq
+    from quantara.descriptor import load_descriptor
+    from quantara.hashing import canonical_content_hash, descriptor_hash
+    from quantara.publication import put_object
+    from quantara.quality import evaluate_quality
+
+    good_rows = build_month_minute_rows()
+    root, data_root = _setup(tmp_path)
+    _, genuine_cch = _write_parent_commit(root, data_root, good_rows, "gen1")
+
+    # Genuine quality evidence of the GOOD rows, reused as the lie.
+    base = load_descriptor(root / "configs" / "datasets" / BASE_DESCRIPTOR_NAME)
+    good_report = evaluate_quality(
+        good_rows, base, source_order_valid=True,
+        expected_count=base.expected_row_count,
+    )
+    identity = good_report.identity()
+    quality_doc = {
+        "state": good_report.state,
+        "policy_version": "1",
+        "identity": identity,
+        "findings": [
+            {
+                "check_id": f.check_id,
+                "outcome": f.outcome,
+                "severity": f.severity,
+                "count": f.count,
+                "evidence": f.evidence,
+            }
+            for f in good_report.findings
+        ],
+    }
+
+    # Bad rows: impossible negative quote volume on one minute.
+    bad_rows = list(good_rows)
+    v = bad_rows[500]
+    bad_rows[500] = make_minute_row(
+        v.open_time_ms, o=v.open, h=v.high, lo=v.low, c=v.close,
+        bv=v.base_asset_volume, qv="-5", n=v.trade_count,
+        tbv=v.taker_buy_base_volume, tqv=v.taker_buy_quote_volume,
+    )
+    staging = data_root / "staging" / "bad-rows"
+    staging.mkdir(parents=True)
+    pq = staging / "canonical.parquet"
+    _write_pq(bad_rows, pq)
+    bad_bytes = pq.read_bytes()
+    bad_sha = sha256_hex(bad_bytes)
+    fingerprint = schema_fingerprint(base.schema_version)
+    bad_cch = canonical_content_hash(
+        fingerprint, [r.to_content_array() for r in bad_rows]
+    )
+    put_object(data_root, "normalized", bad_bytes)
+
+    manifest = {
+        "dataset_id": base.dataset_id,
+        "instrument_id": base.instrument_id,
+        "schema_version": base.schema_version,
+        "schema_fingerprint": fingerprint,
+        "timestamp_semantics": base.timestamp_semantics,
+        "quality_policy_version": "1",
+        "quality_state": "PASS",
+        "quality_identity": identity,
+        "source_row_count": len(bad_rows),
+        "canonical_row_count": len(bad_rows),
+        "canonical_content_hash": bad_cch,
+        "parquet_sha256": bad_sha,
+        "parquet_size": len(bad_bytes),
+        "object_refs": [{"kind": "normalized", "sha256": bad_sha}],
+    }
+    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
+    content = {
+        "descriptor_sha256": descriptor_hash(base.canonical_semantics()),
+        "schema_fingerprint": fingerprint,
+        "parser_version": PARSER_VERSION,
+        "canonical_content_hash": bad_cch,
+        "quality_identity": identity,
+        "object_refs": [{"kind": "normalized", "sha256": bad_sha}],
+    }
+    staged = stage_commit(_parent_dir(data_root), "bad", {
+        "content.json": (json.dumps(content) + "\n").encode(),
+        "manifest.json": manifest_bytes,
+        "quality.json": (
+            json.dumps(quality_doc, indent=2, sort_keys=True) + "\n"
+        ).encode(),
+    })
+    publish_commit(staged, _parent_dir(data_root) / "commits", bad_cch)
+    write_current(_parent_dir(data_root), bad_cch, sha256_hex(manifest_bytes))
+    assert bad_cch != genuine_cch
+
+    descriptor = write_derived_descriptor(root, "1h")
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 2
+    attempts = list((data_root / "attempts").glob("*.json"))
+    diagnostics = [json.loads(p.read_text())["diagnostics"] for p in attempts]
+    assert diagnostics == [["parent_dataset_unavailable"]]

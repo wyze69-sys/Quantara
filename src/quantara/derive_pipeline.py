@@ -32,6 +32,7 @@ from quantara.errors import QuantaraError
 from quantara.hashing import (
     canonical_content_hash,
     descriptor_hash,
+    quality_identity,
     schema_fingerprint,
     sha256_hex,
 )
@@ -54,6 +55,7 @@ from quantara.publication import (
     verify_commit_graph,
     write_current,
 )
+from quantara.quality import evaluate_quality
 
 EXIT_OK = 0
 EXIT_BLOCKED = 2
@@ -383,6 +385,102 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
         raise QuantaraError(
             f"parent Parquet size {len(parquet_bytes)} disagrees with the "
             f"committed manifest value {manifest['parquet_size']}"
+        )
+
+    # Closure 2.1: authenticate the ACTUAL retained rows — decode the Parquet
+    # through the approved reader without binary floats and recompute the
+    # canonical content identity from every real row in canonical order.
+    decoded_rows = rows_from_persisted(read_canonical_rows(object_path))
+    recomputed_cch = canonical_content_hash(
+        schema_fingerprint(base.schema_version),
+        [row.to_content_array() for row in decoded_rows],
+    )
+    if recomputed_cch != commit_hash:
+        raise QuantaraError(
+            "parent canonical content identity does not match its retained "
+            f"rows: recomputed {recomputed_cch!r} but commit directory and "
+            f"evidence claim {commit_hash!r}"
+        )
+
+    # Closure 2.2: authenticate committed parent quality evidence — never
+    # trust a literal manifest quality_state alone.
+    quality_path = commit_dir / "quality.json"
+    try:
+        quality_bytes = quality_path.read_bytes()
+    except OSError as exc:
+        raise QuantaraError(
+            f"parent quality.json missing or unreadable: {exc}"
+        ) from exc
+    try:
+        quality_doc = json.loads(quality_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"parent quality.json not valid JSON: {exc}") from exc
+    if not isinstance(quality_doc, dict):
+        raise QuantaraError("parent quality.json must be a JSON object")
+    expected_quality_keys = {"state", "policy_version", "identity", "findings"}
+    if set(quality_doc) != expected_quality_keys:
+        raise QuantaraError(
+            "parent quality.json keys must be exactly "
+            f"{sorted(expected_quality_keys)}, got {sorted(quality_doc)}"
+        )
+    committed_findings = quality_doc["findings"]
+    if not isinstance(committed_findings, list) or not committed_findings:
+        raise QuantaraError("parent quality findings must be a non-empty list")
+    finding_keys = {"check_id", "outcome", "severity", "count", "evidence"}
+    for position, finding in enumerate(committed_findings):
+        if not isinstance(finding, dict) or set(finding) != finding_keys:
+            raise QuantaraError(
+                f"parent quality finding {position} must carry exactly "
+                f"{sorted(finding_keys)}"
+            )
+    authenticated_identity = quality_identity(committed_findings)
+    if quality_doc["identity"] != authenticated_identity:
+        raise QuantaraError(
+            "parent quality identity disagrees with its committed findings"
+        )
+    if quality_doc["state"] != manifest["quality_state"]:
+        raise QuantaraError(
+            f"parent quality state {quality_doc['state']!r} disagrees with "
+            f"the manifest's {manifest['quality_state']!r}"
+        )
+    committed_policy = str(quality_doc["policy_version"])
+    if (
+        committed_policy != str(manifest["quality_policy_version"])
+        or committed_policy != str(base.quality_policy_version)
+    ):
+        raise QuantaraError(
+            "parent quality policy version disagrees across quality.json, "
+            "the manifest, and the approved base descriptor"
+        )
+    if manifest["quality_identity"] != authenticated_identity:
+        raise QuantaraError(
+            "manifest quality identity disagrees with the authenticated "
+            "committed quality evidence"
+        )
+    content_quality = content.get("quality_identity")
+    if content_quality is not None and content_quality != authenticated_identity:
+        raise QuantaraError(
+            "content.json quality identity disagrees with the authenticated "
+            "committed quality evidence"
+        )
+
+    # Fresh independent evaluation of the actual retained rows under the
+    # approved Slice 001 evaluator and the approved period/count.
+    fresh_report = evaluate_quality(
+        decoded_rows,
+        base,
+        source_order_valid=True,
+        expected_count=base.expected_row_count,
+    )
+    if fresh_report.state != "PASS":
+        raise QuantaraError(
+            f"fresh parent evaluation is {fresh_report.state}; a less-than-"
+            "PASS parent is never a derivation input"
+        )
+    if fresh_report.identity() != authenticated_identity:
+        raise QuantaraError(
+            "freshly evaluated parent quality identity drifts from the "
+            "authenticated committed quality evidence"
         )
     return {
         "commit": commit_hash,
