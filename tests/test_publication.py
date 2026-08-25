@@ -18,6 +18,7 @@ from quantara.publication import (
     put_object,
     read_and_verify_current,
     stage_commit,
+    store_object,
     verify_commit_graph,
     write_current,
 )
@@ -39,6 +40,74 @@ def test_put_object_dedupes_identical_bytes(tmp_path: Path) -> None:
     first = put_object(tmp_path, "normalized", b"same")
     second = put_object(tmp_path, "normalized", b"same")
     assert first == second
+
+
+def test_store_object_reports_creation_and_deduplication(
+    tmp_path: Path,
+) -> None:
+    """The write primitive itself reports whether THIS call created the
+    object: a deduplicated pre-existing identical object is created=False
+    and leaves the stored bytes untouched (race-safe: no caller-side
+    pre-check on the final artifact)."""
+    payload = b"deterministic-bytes"
+    first = store_object(tmp_path, "normalized", payload)
+    assert first.sha256 == hashlib.sha256(payload).hexdigest()
+    assert first.created is True
+
+    target = tmp_path / "objects" / "normalized" / "sha256" / first.sha256
+    mtime_before = target.stat().st_mtime_ns
+
+    second = store_object(tmp_path, "normalized", payload)
+    assert second.sha256 == first.sha256
+    assert second.created is False
+    assert target.read_bytes() == payload
+    assert target.stat().st_mtime_ns == mtime_before  # never rewritten
+
+
+def test_store_object_losing_creation_race_dedupes_without_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If another publisher wins atomic creation with identical bytes, this
+    invocation reports reuse and never replaces the winner's object."""
+    payload = b"concurrent-identical-bytes"
+    digest = hashlib.sha256(payload).hexdigest()
+    target = tmp_path / "objects" / "normalized" / "sha256" / digest
+
+    def competing_link(source: Path, destination: Path) -> None:
+        del source
+        Path(destination).write_bytes(payload)
+        raise FileExistsError("simulated concurrent winner")
+
+    monkeypatch.setattr("quantara.publication.os.link", competing_link)
+    stored = store_object(tmp_path, "normalized", payload)
+
+    assert stored.sha256 == digest
+    assert stored.created is False
+    assert target.read_bytes() == payload
+    assert not list(target.parent.glob(f".{digest}.*.part"))
+
+
+def test_store_object_losing_creation_race_rejects_different_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A conflicting concurrent winner is authenticated and rejected; its
+    bytes are never overwritten by this invocation."""
+    payload = b"intended-bytes"
+    winner = b"conflicting-winner"
+    digest = hashlib.sha256(payload).hexdigest()
+    target = tmp_path / "objects" / "normalized" / "sha256" / digest
+
+    def competing_link(source: Path, destination: Path) -> None:
+        del source
+        Path(destination).write_bytes(winner)
+        raise FileExistsError("simulated concurrent winner")
+
+    monkeypatch.setattr("quantara.publication.os.link", competing_link)
+    with pytest.raises(ObjectCollision):
+        store_object(tmp_path, "normalized", payload)
+
+    assert target.read_bytes() == winner
+    assert not list(target.parent.glob(f".{digest}.*.part"))
 
 
 def test_collision_with_different_bytes_is_hard_failure(tmp_path: Path) -> None:

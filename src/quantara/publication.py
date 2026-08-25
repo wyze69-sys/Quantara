@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,11 +28,13 @@ __all__ = [
     "InvalidPointer",
     "ObjectCollision",
     "PublicationError",
+    "StoredObject",
     "existing_commit_matches",
     "put_object",
     "publish_commit",
     "read_and_verify_current",
     "stage_commit",
+    "store_object",
     "verify_commit_graph",
     "write_current",
 ]
@@ -58,25 +61,67 @@ def object_path(data_root: Path, kind: str, digest: str) -> Path:
     return Path(data_root) / "objects" / kind / "sha256" / digest
 
 
-def put_object(
+@dataclass(frozen=True)
+class StoredObject:
+    """Result of one content-addressed object write: the address and whether
+    THIS call created the object (False means an identical object was
+    deduplicated and the stored bytes were left untouched)."""
+
+    sha256: str
+    created: bool
+
+
+def store_object(
     data_root: Path, kind: str, payload: bytes, digest: str | None = None
-) -> str:
-    """Write-once content-addressed storage; same bytes dedupe, different
-    bytes forced under one address are a hard collision failure."""
+) -> StoredObject:
+    """Atomically create a content-addressed object and report ownership.
+
+    A unique temporary file is fully written and synced before ``os.link``
+    atomically claims the final path without replacement. If another publisher
+    wins that claim, its retained bytes are authenticated before this call
+    reports deduplication. A forced address remains collision-only on reuse,
+    preserving the original ``put_object`` contract.
+    """
     computed = hashlib.sha256(payload).hexdigest()
     address = digest or computed
     target = object_path(data_root, kind, address)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        if target.read_bytes() == payload and digest is None:
-            return address
-        raise ObjectCollision(
-            f"object address {address} already holds different bytes"
-        )
-    tmp = target.with_name(target.name + ".part")
-    tmp.write_bytes(payload)
-    os.replace(tmp, target)
-    return address
+
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=target.parent,
+            prefix=f".{address}.",
+            suffix=".part",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            if digest is None and target.read_bytes() == payload:
+                return StoredObject(sha256=address, created=False)
+            raise ObjectCollision(
+                f"object address {address} already holds different bytes"
+            ) from None
+        return StoredObject(sha256=address, created=True)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def put_object(
+    data_root: Path, kind: str, payload: bytes, digest: str | None = None
+) -> str:
+    """Write-once content-addressed storage; same bytes dedupe, different
+    bytes forced under one address are a hard collision failure. Returns the
+    content address."""
+    return store_object(data_root, kind, payload, digest).sha256
 
 
 def stage_commit(

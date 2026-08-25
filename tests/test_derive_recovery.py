@@ -611,7 +611,7 @@ def test_fault_injection_object_write_failure(tmp_path, monkeypatch) -> None:
     def boom(*a, **k):
         raise QuantaraError("injected object write failure")
 
-    monkeypatch.setattr(dp, "put_object", boom)
+    monkeypatch.setattr(dp, "store_object", boom)
     code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
     assert code == 3
     attempts = list((data_root / "attempts").glob("*.json"))
@@ -1443,14 +1443,32 @@ def test_early_evidence_write_failure_does_not_mask_primary_result(
     assert "attempt manifest" in (captured.err + captured.out)
 
 
+def _derived_object_path(data_root: Path) -> Path:
+    derived = _derived_dir(data_root)
+    commit = json.loads((derived / "current.json").read_text())["commit"]
+    content = json.loads(
+        (derived / "commits" / commit / "content.json").read_text()
+    )
+    sha = content["object_refs"][0]["sha256"]
+    return data_root / "objects" / "normalized" / "sha256" / sha
+
+
+def _normalized_object_names(data_root: Path) -> set[str]:
+    directory = data_root / "objects" / "normalized" / "sha256"
+    return {p.name for p in directory.glob("*")} if directory.exists() else set()
+
+
 def test_verified_no_op_milestones_are_truthful(tmp_path: Path) -> None:
-    """Slice 4: VERIFIED_NO_OP must describe this invocation — it staged,
-    wrote the deduplicated object, verified the retained graph, and cleaned
-    up; it did NOT rename any commit or replace any pointer."""
+    """VERIFIED_NO_OP must describe this invocation — it staged, verified the
+    retained graph, and cleaned up; it did NOT rename any commit, replace any
+    pointer, or write the already-retained normalized object."""
     root, data_root, *_ = _valid_parent(tmp_path)
     descriptor = write_derived_descriptor(root, "1h")
     assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
     pointer_before = (_derived_dir(data_root) / "current.json").read_bytes()
+    obj = _derived_object_path(data_root)
+    object_bytes_before = obj.read_bytes()
+    object_mtime_before = obj.stat().st_mtime_ns
 
     assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
     assert (_derived_dir(data_root) / "current.json").read_bytes() == (
@@ -1465,21 +1483,81 @@ def test_verified_no_op_milestones_are_truthful(tmp_path: Path) -> None:
     dispositions = noop[0]["artifact_dispositions"]
     assert dispositions["normalized_parquet"] == "already_published"
     assert dispositions["attempt_staged"] is True
-    assert dispositions["object_written"] is True
+    assert dispositions["object_written"] is False  # deduplicated, not written
     assert dispositions["commit_renamed"] is False
     assert dispositions["pointer_replaced"] is False
     assert dispositions["discovery_verified"] is True
     assert dispositions["attempt_staging"] == "discarded"
+    # The pre-existing object was genuinely untouched.
+    assert obj.read_bytes() == object_bytes_before
+    assert obj.stat().st_mtime_ns == object_mtime_before
 
 
-def test_published_attempt_records_true_milestones(tmp_path: Path) -> None:
-    """Slice 4: PUBLISHED evidence records every action that actually
-    occurred during this invocation."""
+def test_lost_pointer_recovery_milestones_are_truthful(tmp_path: Path) -> None:
+    """Recovery over an equivalent retained commit must record exactly what
+    happened: the pointer WAS replaced, but no commit was renamed and the
+    deduplicated CAS object was not written again."""
     root, data_root, *_ = _valid_parent(tmp_path)
     descriptor = write_derived_descriptor(root, "1h")
     assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    derived = _derived_dir(data_root)
+    commit = json.loads((derived / "current.json").read_text())["commit"]
+    obj = _derived_object_path(data_root)
+    object_bytes_before = obj.read_bytes()
+    object_mtime_before = obj.stat().st_mtime_ns
+
+    attempts_before = {p.name for p in (data_root / "attempts").glob("*.json")}
+    (derived / "current.json").unlink()  # pointer lost; commit retained
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+
+    # Recovery really replaced current.json, pointing at the SAME commit.
+    assert json.loads((derived / "current.json").read_text())["commit"] == (
+        commit
+    )
+    commits = [
+        p.name for p in (derived / "commits").iterdir()
+        if not p.name.startswith(".")
+    ]
+    assert commits == [commit]  # no duplicate published
+
+    added = {
+        p.name for p in (data_root / "attempts").glob("*.json")
+    } - attempts_before
+    payloads = [
+        json.loads((data_root / "attempts" / name).read_text()) for name in added
+    ]
+    assert [p["terminal_result"] for p in payloads] == ["PUBLISHED"]
+    dispositions = payloads[0]["artifact_dispositions"]
+    assert dispositions["pointer_replaced"] is True   # really replaced now
+    assert dispositions["commit_renamed"] is False    # retained commit reused
+    assert dispositions["object_written"] is False    # object deduplicated
+    assert dispositions["discovery_verified"] is True
+    assert dispositions["attempt_staging"] == "discarded"
+    assert dispositions["normalized_parquet"] == "published"
+    # The retained object's bytes AND mtime prove no rewrite occurred.
+    assert obj.read_bytes() == object_bytes_before
+    assert obj.stat().st_mtime_ns == object_mtime_before
+
+
+def test_published_attempt_records_true_milestones(tmp_path: Path) -> None:
+    """First publication: object creation and commit rename genuinely occur,
+    and PUBLISHED evidence records every action that actually happened."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    objects_before = _normalized_object_names(data_root)
+
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+
+    # The invocation genuinely created one new CAS object and one commit.
+    new_objects = _normalized_object_names(data_root) - objects_before
+    assert len(new_objects) == 1
     payload = _attempt_payloads(data_root)[-1]
     assert payload["terminal_result"] == "PUBLISHED"
+    commit_dir = (
+        _derived_dir(data_root) / "commits" / payload["referenced_commit"]
+    )
+    content = json.loads((commit_dir / "content.json").read_text())
+    assert content["object_refs"][0]["sha256"] in new_objects
     dispositions = payload["artifact_dispositions"]
     assert dispositions["normalized_parquet"] == "published"
     for key in (

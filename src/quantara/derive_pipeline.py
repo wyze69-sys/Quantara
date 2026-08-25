@@ -51,9 +51,9 @@ from quantara.publication import (
     PUBLICATION_PROTOCOL_VERSION,
     existing_commit_matches,
     publish_commit,
-    put_object,
     read_and_verify_current,
     stage_commit,
+    store_object,
     verify_commit_graph,
     write_current,
 )
@@ -846,9 +846,15 @@ def run_derivation_pipeline(
         )
         parquet_bytes = parquet_path.read_bytes()
         parquet_sha = sha256_hex(parquet_bytes)
-        normalized_ref = put_object(data, "normalized", parquet_bytes)
-        parquet_state = "object_written"
-        milestones["object_written"] = True
+        stored_normalized = store_object(data, "normalized", parquet_bytes)
+        normalized_ref = stored_normalized.sha256
+        # Truthful milestone: only an object this invocation actually created
+        # counts as written; a deduplicated pre-existing identical object was
+        # left byte-for-byte (and mtime) untouched.
+        milestones["object_written"] = stored_normalized.created
+        parquet_state = (
+            "object_written" if stored_normalized.created else "object_reused"
+        )
 
         object_refs = [{"kind": "normalized", "sha256": normalized_ref}]
         lineage = {
@@ -979,6 +985,9 @@ def run_derivation_pipeline(
             commit_dir = publish_commit(
                 staged_commit, derived_dir / "commits", commit_address
             )
+            # Truthful milestone: only a successful atomic rename of THIS
+            # invocation's staged commit counts as renamed.
+            milestones["commit_renamed"] = True
         except QuantaraError:
             candidate = derived_dir / "commits" / commit_address
             if not (
@@ -992,10 +1001,11 @@ def run_derivation_pipeline(
                     "commit rename failed and no equivalent commit exists"
                 ) from None
             commit_dir = candidate
+            # The retained equivalent commit is reused as-is: no rename was
+            # performed by this invocation, so commit_renamed stays False.
             # The retained commit is authoritative: pin the pointer to ITS
             # manifest bytes so digest and storage agree exactly.
             manifest_bytes = (commit_dir / "manifest.json").read_bytes()
-        milestones["commit_renamed"] = True
         verify_commit_graph(data, commit_dir)
         write_current(derived_dir, commit_address, sha256_hex(manifest_bytes))
         milestones["pointer_replaced"] = True
