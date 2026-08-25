@@ -33,8 +33,14 @@ class DerivedQualityReport:
     def __init__(self, findings: list[Finding]) -> None:
         self.findings = findings
         has_fail = any(f.outcome == "fail" for f in findings)
-        has_warn = any(f.outcome == "warn" for f in findings)
-        self.state = "FAIL" if has_fail else ("WARN_BLOCKED" if has_warn else "PASS")
+        # Policy v1 strictness: any warning OR any check that could not be
+        # evaluated blocks publication. Only checks that actually ran and
+        # passed may contribute to a PASS state.
+        blocking = ("warn", "not_evaluated")
+        has_blocking_warning = any(f.outcome in blocking for f in findings)
+        self.state = (
+            "FAIL" if has_fail else ("WARN_BLOCKED" if has_blocking_warning else "PASS")
+        )
 
     def identity(self) -> str:
         """Deterministic JCS identity; operational timestamps excluded."""
@@ -84,9 +90,24 @@ def evaluate_derived_quality(
             )
         )
 
+    def not_evaluated(check_id: str, reason: str) -> None:
+        """Explicit deterministic outcome for checks that could not run.
+        Never represented as a pass; blocks under the strict policy."""
+        findings.append(
+            Finding(
+                check_id=check_id,
+                outcome="not_evaluated",
+                severity="warning",
+                count=0,
+                evidence={"reason": reason},
+            )
+        )
+
     if expected_count is None:
-        record("derived_row_count_matches_expected", True, len(rows),
-               skipped="row-count enforcement disabled")
+        not_evaluated(
+            "derived_row_count_matches_expected",
+            "expected bucket count unavailable; row-count enforcement disabled",
+        )
         complete_series = False
     else:
         complete_series = len(rows) == expected_count
@@ -103,11 +124,15 @@ def evaluate_derived_quality(
                observed_last_close=rows[-1].close_time_ms,
                approved_last_close=start_ms + len(rows) * timeframe_ms - 1)
     elif not rows:
-        record("derived_first_boundary_exact", False, reason="no rows")
-        record("derived_last_boundary_exact", False, reason="no rows")
+        not_evaluated("derived_first_boundary_exact", "no rows")
+        not_evaluated("derived_last_boundary_exact", "no rows")
     else:
-        record("derived_first_boundary_exact", True, skipped="incomplete fixture")
-        record("derived_last_boundary_exact", True, skipped="incomplete fixture")
+        # Exact boundary equality is only decidable for the complete
+        # calendar series; a partial fixture cannot pass these checks.
+        not_evaluated("derived_first_boundary_exact",
+                      "incomplete series; exact first boundary undecidable")
+        not_evaluated("derived_last_boundary_exact",
+                      "incomplete series; exact last boundary undecidable")
 
     times = [row.open_time_ms for row in rows]
     record("derived_unique_open_times", len(set(times)) == len(times),

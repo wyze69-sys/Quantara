@@ -180,3 +180,44 @@ def test_identity_is_deterministic_and_excludes_timestamps() -> None:
     a = evaluate([hour_bar(0)], expected_count=1)
     b = evaluate([hour_bar(0)], expected_count=1)
     assert a.identity() == b.identity()
+
+
+# --- correction 6: unevaluated checks are never represented as passing --------
+
+
+def test_disabled_row_count_check_is_not_evaluated_and_blocks() -> None:
+    # expected_count=None disables count enforcement; the emitted finding must
+    # carry an explicit non-pass outcome compatible with strict blocking.
+    report = evaluate([hour_bar(0)])
+    found = outcomes(report)
+    assert found["derived_row_count_matches_expected"] == "not_evaluated"
+    assert report.state == "WARN_BLOCKED"
+
+
+def test_unverifiable_boundaries_on_partial_series_are_not_evaluated() -> None:
+    # Two bars out of an approved 744: exact calendar boundaries cannot be
+    # decided; they must not be recorded as passing.
+    from quantara.derive_quality import evaluate_derived_quality
+
+    bars = [hour_bar(0), hour_bar(1)]
+    view = type("V", (), {"timeframe_ms": HOUR_MS,
+                          "start_utc_open_ms": 1704067200000})()
+    report = evaluate_derived_quality(bars, view, expected_count=744)
+    found = outcomes(report)
+    assert found["derived_first_boundary_exact"] == "not_evaluated"
+    assert found["derived_last_boundary_exact"] == "not_evaluated"
+    assert report.state == "FAIL"  # row-count failure dominates
+
+
+def test_empty_series_yields_blocking_not_evaluated_boundaries() -> None:
+    report = evaluate([], expected_count=744)
+    found = outcomes(report)
+    assert found["derived_first_boundary_exact"] == "not_evaluated"
+    assert found["derived_last_boundary_exact"] == "not_evaluated"
+    assert report.state != "PASS"
+
+
+def test_not_evaluated_outcome_is_deterministic_in_identity() -> None:
+    a = evaluate([hour_bar(0)])
+    b = evaluate([hour_bar(0)])
+    assert a.identity() == b.identity()
