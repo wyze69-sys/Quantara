@@ -18,8 +18,8 @@ import pytest
 from quantara.acquisition import Acquirer
 from quantara.archive import inspect_zip, read_member_bytes
 from quantara.descriptor import load_descriptor
-from quantara.manifests import attempt_id_now
 from quantara.hashing import sha256_hex
+from quantara.manifests import attempt_id_now
 from quantara.parsing import decode_member, parse_rows
 from quantara.pipeline import run_pipeline
 from quantara.publication import read_and_verify_current
