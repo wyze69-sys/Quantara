@@ -8,9 +8,19 @@ proves idempotent reruns, and proves the parent graph is untouched.
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+import os
+import re
+import tempfile
+import time
+import zipfile
+from decimal import Decimal
 from pathlib import Path
+from urllib.parse import urlparse
 
+import httpx
 import pytest
 
 from quantara.cli import main
@@ -171,3 +181,124 @@ def test_real_parent_multi_timeframe_derivation_acceptance() -> None:
         capture_output=True, text=True, check=True,
     ).stdout
     assert "!! data/" in ignored
+
+
+# --- Task 11: official-archive cross-check (independent evidence) -------------
+
+ALLOWED_HOST = "data.binance.vision"
+CHECKSUM_GRAMMAR = re.compile(r"^([0-9a-f]{64})  (BTCUSDT-(?:1h|1d)-2024-01\.zip)$")
+VOLUME_TOLERANCE = Decimal("1e-8")
+
+
+def _verified_download(url: str, retries: int = 3) -> bytes:
+    """Allow-listed host, bounded exponential backoff for transient failures."""
+    assert urlparse(url).hostname == ALLOWED_HOST, f"non-allowlisted host: {url}"
+    last_error: Exception | None = None
+    for attempt in range(retries):
+        try:
+            response = httpx.get(url, timeout=60.0)
+            response.raise_for_status()
+            return response.content
+        except httpx.TransportError as exc:  # eligible transient failures only
+            last_error = exc
+            time.sleep(0.5 * (2**attempt))
+    raise AssertionError(f"download failed after {retries} attempts: {last_error}")
+
+
+def _official_rows(zip_bytes: bytes) -> list[list[str]]:
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        name = zf.namelist()[0]
+        text = zf.read(name).decode("utf-8")
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines[0].split(",")[0].strip().isdigit():
+        lines = lines[1:]  # newer archives embed a header row
+    return [line.split(",") for line in lines]
+
+
+@pytest.mark.parametrize("interval", ["1h", "1d"])
+def test_official_archive_cross_check(interval: str) -> None:
+    base = (
+        "https://data.binance.vision/data/futures/um/monthly/klines/"
+        f"BTCUSDT/{interval}/BTCUSDT-{interval}-2024-01"
+    )
+    archive_bytes = _verified_download(base + ".zip")
+    checksum_text = _verified_download(base + ".zip.CHECKSUM").decode("utf-8")
+
+    # Strict CHECKSUM grammar, then digest equality over the exact bytes.
+    match = CHECKSUM_GRAMMAR.match(checksum_text.strip())
+    assert match, f"checksum document violates strict grammar: {checksum_text!r}"
+    expected_digest, filename = match.group(1), match.group(2)
+    assert filename == f"BTCUSDT-{interval}-2024-01.zip"
+    assert hashlib.sha256(archive_bytes).hexdigest() == expected_digest
+
+    official = _official_rows(archive_bytes)
+    derived = _derived_dir(interval)
+    pointer = json.loads((derived / "current.json").read_text())
+    manifest = json.loads(
+        (derived / "commits" / pointer["commit"] / "manifest.json").read_text()
+    )
+    from quantara.aggregation import rows_from_persisted
+    from quantara.canonical import read_canonical_rows
+
+    ours = rows_from_persisted(
+        read_canonical_rows(
+            DATA_ROOT / "objects" / "normalized" / "sha256" / manifest["parquet_sha256"]
+        )
+    )
+    assert len(ours) == len(official) == EXPECTED_ROWS[interval]
+
+    deltas = []
+    mismatches = []
+    for bar, row in zip(ours, official, strict=True):
+        open_ms = int(row[0])
+        o, h, lo, c = (Decimal(row[i]) for i in (1, 2, 3, 4))
+        bv, qv = Decimal(row[5]), Decimal(row[7])
+        n = int(row[8])
+        tbv, tqv = Decimal(row[9]), Decimal(row[10])
+        assert open_ms == bar.open_time_ms
+        for field, ours_value, theirs in (
+            ("open", bar.open, o), ("high", bar.high, h),
+            ("low", bar.low, lo), ("close", bar.close, c),
+        ):
+            if ours_value != theirs:  # exact: endpoint/extreme selections
+                mismatches.append((open_ms, field, str(ours_value), str(theirs)))
+        if bar.trade_count != n:  # exact integer counts
+            mismatches.append((open_ms, "count", bar.trade_count, n))
+        for field, ours_value, theirs in (
+            ("base_asset_volume", bar.base_asset_volume, bv),
+            ("quote_asset_volume", bar.quote_asset_volume, qv),
+            ("taker_buy_base_volume", bar.taker_buy_base_volume, tbv),
+            ("taker_buy_quote_volume", bar.taker_buy_quote_volume, tqv),
+        ):
+            delta = abs(ours_value - theirs)
+            deltas.append({
+                "open_time_utc": open_ms, "field": field,
+                "delta": str(delta),
+                "within_tolerance": delta <= VOLUME_TOLERANCE,
+            })
+            assert delta <= VOLUME_TOLERANCE, (
+                f"{field} drift {delta} at {open_ms} exceeds 1e-8"
+            )
+
+    # Every delta is printed and recorded — never hidden.
+    max_delta = max((Decimal(d["delta"]) for d in deltas), default=Decimal(0))
+    print(f"[{interval}] bars compared: {len(ours)}; "
+          f"volume-family max |delta| = {max_delta}")
+    for d in deltas:
+        print(f"  {d['open_time_utc']} {d['field']}: |delta|={d['delta']}")
+    assert not mismatches, f"exact-field mismatches: {mismatches}"
+
+    results_path = (
+        Path(os.environ.get("TEMP", tempfile.gettempdir()))
+        / "quantara-slice-002" / f"crosscheck-results-{interval}.json"
+    )
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    results_path.write_text(json.dumps({
+        "interval": interval,
+        "bars_compared": len(ours),
+        "exact_field_mismatches": len(mismatches),
+        "max_volume_family_delta": str(max_delta),
+        "tolerance": "1e-8",
+        "deltas": deltas,
+    }, indent=2), encoding="utf-8")
+
