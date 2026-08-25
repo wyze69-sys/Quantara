@@ -94,9 +94,13 @@ def _build_commit(tmp_path: Path) -> tuple:
 
 
 def test_default_keys_preserve_current_behavior(tmp_path: Path) -> None:
+    import inspect
+
     from quantara import publication
 
-    assert "derived_from" not in publication.existing_commit_matches.__code__.co_consts or True
+    source = inspect.getsource(publication.existing_commit_matches)
+    # Default key set must be unchanged; derived_from only enters via keys=.
+    assert '"derived_from"' not in source.split("keys is None")[0].split("keys = (")[0]
     data_root, dataset_dir, commit_dir, evidence = _build_commit(tmp_path)
     # Default call ignores the extra lineage key entirely.
     assert existing_commit_matches(data_root, commit_dir, evidence) is True

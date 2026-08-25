@@ -701,3 +701,65 @@ def test_attempt_manifest_write_failure_does_not_mask_result(
     assert (_derived_dir(data_root) / "current.json").exists()
     captured = capsys.readouterr()
     assert "attempt manifest" in (captured.err + captured.out)
+
+
+# --- correction 7: bounded transient-status retries for verified downloads ----
+
+
+
+
+def test_verified_download_retries_eligible_statuses_then_succeeds() -> None:
+    from types import SimpleNamespace
+
+    from test_integration_derivation import _verified_download
+
+    calls = {"n": 0}
+
+    def fake_get(url, timeout):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return SimpleNamespace(status_code=503, content=b"")
+        return SimpleNamespace(status_code=200, content=b"payload-bytes")
+
+    sleeps = []
+    out = _verified_download(
+        "https://data.binance.vision/data/futures/x.zip",
+        retries=4,
+        transport=fake_get,
+        sleeper=sleeps.append,
+    )
+    assert out == b"payload-bytes"
+    assert calls["n"] == 3
+    assert len(sleeps) == 2  # bounded backoff between the two 503s
+
+
+def test_verified_download_fails_fast_on_ineligible_status() -> None:
+    from types import SimpleNamespace
+
+    import pytest as _pytest
+
+    from test_integration_derivation import _verified_download
+
+    calls = {"n": 0}
+
+    def fake_get(url, timeout):
+        calls["n"] += 1
+        return SimpleNamespace(status_code=404, content=b"")
+
+    with _pytest.raises(AssertionError, match="non-retryable HTTP 404"):
+        _verified_download(
+            "https://data.binance.vision/data/futures/x.zip",
+            retries=4,
+            transport=fake_get,
+            sleeper=lambda _s: None,
+        )
+    assert calls["n"] == 1  # no retries for ineligible statuses
+
+
+def test_verified_download_rejects_non_allowlisted_host() -> None:
+    import pytest as _pytest
+
+    from test_integration_derivation import _verified_download
+
+    with _pytest.raises(AssertionError, match="non-allowlisted host"):
+        _verified_download("https://evil.example.com/file.zip")

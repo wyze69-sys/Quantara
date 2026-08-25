@@ -88,12 +88,23 @@ def _attempts() -> int:
     return len(list((DATA_ROOT / "attempts").glob("*.json")))
 
 
+def _dataset_tree_digest(dataset_dir: Path) -> dict[str, str]:
+    """Hash every file under one dataset directory (relative paths inside it)."""
+    snapshot: dict[str, str] = {}
+    for path in sorted(dataset_dir.rglob("*")):
+        rel = path.relative_to(dataset_dir).as_posix()
+        if path.is_file():
+            snapshot[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            snapshot[rel] = "<dir>"
+    return snapshot
+
+
 def test_real_parent_multi_timeframe_derivation_acceptance() -> None:
     parent_dir = _require_parent()
 
     # Parent immutability baseline (pointer + full committed directory).
     baseline = _tree_digest(parent_dir)
-    attempts_before = _attempts()
 
     pointers: dict[str, bytes] = {}
     for interval in ("1h", "1d"):
@@ -143,27 +154,32 @@ def test_real_parent_multi_timeframe_derivation_acceptance() -> None:
         assert lineage["transformation"]["timeframe_ms"] == tf_ms
         assert manifest["schema_version"] == f"binance_usdm_kline_{interval}_v1"
 
-    # Rerun both: VERIFIED_NO_OP; byte-identical commits and pointers;
-    # exactly two new attempt manifests total.
-    attempts_after_publish = _attempts()
+    # Rerun both: VERIFIED_NO_OP; byte-identical pointers AND complete commit
+    # trees; no new commits; exactly two new attempt manifests, identified by
+    # set difference (never lexical UUID slicing).
+    attempts_after_publish = {
+        p.name for p in (DATA_ROOT / "attempts").glob("*.json")
+    }
     for interval in ("1h", "1d"):
+        derived = _derived_dir(interval)
+        tree_before_rerun = _dataset_tree_digest(derived)
+        pointer_before_rerun = (derived / "current.json").read_bytes()
         assert main([
             "--descriptor", str(DESCRIPTORS[interval]),
             "--data-root", str(DATA_ROOT),
         ]) == 0
-        derived = _derived_dir(interval)
-        assert (derived / "current.json").read_bytes() == pointers[interval]
-        commits = [p for p in (derived / "commits").iterdir()
-                   if not p.name.startswith(".")]
-        assert len(commits) == 1
-    attempts_after_rerun = _attempts()
-    rerun_results = []
-    for p in sorted((DATA_ROOT / "attempts").glob("*.json"))[
-        attempts_after_publish:attempts_after_rerun
-    ]:
-        rerun_results.append(json.loads(p.read_text())["terminal_result"])
-    assert rerun_results == ["VERIFIED_NO_OP", "VERIFIED_NO_OP"], rerun_results
-    assert attempts_after_rerun - attempts_before >= 2
+        assert (derived / "current.json").read_bytes() == pointer_before_rerun
+        assert _dataset_tree_digest(derived) == tree_before_rerun
+    attempts_after_rerun = {
+        p.name for p in (DATA_ROOT / "attempts").glob("*.json")
+    }
+    added = attempts_after_rerun - attempts_after_publish
+    assert len(added) == 2, f"expected exactly two rerun manifests, got {added}"
+    rerun_results = [
+        json.loads((DATA_ROOT / "attempts" / name).read_text())["terminal_result"]
+        for name in added
+    ]
+    assert sorted(rerun_results) == ["VERIFIED_NO_OP", "VERIFIED_NO_OP"]
 
     # Parent immutability proof: byte-for-byte unchanged by everything above.
     assert _tree_digest(parent_dir) == baseline
@@ -188,20 +204,38 @@ def test_real_parent_multi_timeframe_derivation_acceptance() -> None:
 ALLOWED_HOST = "data.binance.vision"
 CHECKSUM_GRAMMAR = re.compile(r"^([0-9a-f]{64})  (BTCUSDT-(?:1h|1d)-2024-01\.zip)$")
 VOLUME_TOLERANCE = Decimal("1e-8")
+RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 
-def _verified_download(url: str, retries: int = 3) -> bytes:
-    """Allow-listed host, bounded exponential backoff for transient failures."""
+class _RetryableStatus(Exception):
+    """Eligible transient HTTP status per the bounded-retry policy."""
+
+
+def _verified_download(
+    url: str,
+    retries: int = 4,
+    transport=httpx,
+    sleeper=time.sleep,
+) -> bytes:
+    """Allow-listed host; bounded exponential backoff for eligible transient
+    failures: transport errors AND statuses {429,500,502,503,504}. Any other
+    status fails immediately."""
     assert urlparse(url).hostname == ALLOWED_HOST, f"non-allowlisted host: {url}"
+    getter = transport.get if hasattr(transport, "get") else transport
     last_error: Exception | None = None
     for attempt in range(retries):
         try:
-            response = httpx.get(url, timeout=60.0)
-            response.raise_for_status()
+            response = getter(url, timeout=60.0)
+            if response.status_code in RETRYABLE_STATUSES:
+                raise _RetryableStatus(response.status_code)
+            if response.status_code >= 400:
+                raise AssertionError(
+                    f"non-retryable HTTP {response.status_code} for {url}"
+                )
             return response.content
-        except httpx.TransportError as exc:  # eligible transient failures only
+        except (_RetryableStatus, httpx.TransportError) as exc:
             last_error = exc
-            time.sleep(0.5 * (2**attempt))
+            sleeper(0.5 * (2**attempt))
     raise AssertionError(f"download failed after {retries} attempts: {last_error}")
 
 
