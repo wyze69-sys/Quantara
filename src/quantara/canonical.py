@@ -218,15 +218,18 @@ def write_canonical_parquet(rows: list[CanonicalRow], path: Path) -> None:
     columns.append([row.taker_buy_quote_volume for row in rows])
     columns.append([row.source_ignore for row in rows])
 
-    arrays = [
-        pa.array(values, type=PARQUET_SCHEMA.field(index).type)
-        for index, values in enumerate(columns)
-    ]
-    table = pa.Table.from_arrays(arrays, schema=PARQUET_SCHEMA)
     try:
+        arrays = [
+            pa.array(values, type=PARQUET_SCHEMA.field(index).type)
+            for index, values in enumerate(columns)
+        ]
+        table = pa.Table.from_arrays(arrays, schema=PARQUET_SCHEMA)
         with pq.ParquetWriter(path, PARQUET_SCHEMA, **WRITER_CONFIG) as writer:
             writer.write_table(table)
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
+        # Expected persistence errors (e.g., int64 overflow during Arrow
+        # conversion) become the stable ParquetFailure; the original is
+        # chained so unexpected exception types are not hidden.
         raise ParquetFailure(f"Parquet write failed for {path}: {exc}") from exc
 
 

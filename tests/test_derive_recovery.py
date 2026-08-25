@@ -1018,3 +1018,42 @@ def test_rows_failing_fresh_quality_block_despite_fabricated_metadata(
     attempts = list((data_root / "attempts").glob("*.json"))
     diagnostics = [json.loads(p.read_text())["diagnostics"] for p in attempts]
     assert diagnostics == [["parent_dataset_unavailable"]]
+
+
+def test_trade_count_overflow_pipeline_exit_failed_with_cleanup(
+    tmp_path: Path,
+) -> None:
+    """An int64-unrepresentable hourly count must produce a controlled
+    EXIT_FAILED with accurate FAILED attempt evidence and no residue."""
+    from quantara.aggregation import aggregate_timeframe
+    import pytest as _pytest
+    from quantara.aggregation import IntegerPrecisionOverflow
+
+    rows = build_month_minute_rows()
+    for i in range(60):
+        rows[i] = make_minute_row(rows[i].open_time_ms, n=2**62)
+    # Sanity: the constituents are individually representable.
+    aggregate_timeframe(rows[60:120], (
+        "binance", "usd_m_futures",
+        "binance:usd_m_futures:BTCUSDT:perpetual", "BTCUSDT", "BTC", "USDT",
+        "USDT", "perpetual", "1h", "binance_usdm_kline_1h_v1"), HOUR_MS)
+
+    root, data_root = _setup(tmp_path)
+    _write_parent_commit(root, data_root, rows, "big-counts")
+    descriptor = write_derived_descriptor(root, "1h")
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    attempts = list((data_root / "attempts").glob("*.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text())
+    assert attempt["terminal_result"] == "FAILED"
+    assert attempt["diagnostics"] == ["integer_precision_overflow"]
+    assert attempt["artifact_dispositions"]["normalized_parquet"] == (
+        "not_written"  # overflow fires during aggregation, before staging
+    )
+    assert not (_derived_dir(data_root) / "current.json").exists()
+    residue = [
+        p for p in (data_root / "staging").glob("*")
+        if not p.name.startswith("parent-build")
+    ]
+    assert residue == []

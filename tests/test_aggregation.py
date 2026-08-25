@@ -1983,3 +1983,55 @@ def test_unrepresentable_exact_aggregate_fails_deterministically() -> None:
     with pytest.raises(QuantaraError) as excinfo:
         aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
     assert excinfo.value.error_id == DECIMAL_PRECISION_OR_SCALE_OVERFLOW
+
+
+# --- phase closure 2.3: exact int64 representability for aggregate counts -----
+
+
+INT64_MAX = 2**63 - 1
+
+
+def test_hourly_count_boundary_at_int64_max_is_accepted() -> None:
+    from quantara.aggregation import aggregate_timeframe
+
+    base_count = INT64_MAX // 60
+    remainder = INT64_MAX - base_count * 60
+    rows = []
+    for i in range(60):
+        t = MONTH_OPEN_START + i * 60_000
+        rows.append(minute_row(t, n=base_count + (remainder if i == 59 else 0)))
+    bars = aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
+    assert len(bars) == 1
+    assert bars[0].trade_count == INT64_MAX
+
+
+def test_hourly_count_overflow_raises_stable_error() -> None:
+    from quantara.aggregation import (
+        IntegerPrecisionOverflow,
+        aggregate_timeframe,
+    )
+
+    base_count = INT64_MAX // 60
+    rows = []
+    for i in range(60):
+        t = MONTH_OPEN_START + i * 60_000
+        # Every constituent individually fits int64; the exact sum does not.
+        rows.append(minute_row(t, n=base_count + 1))
+    with pytest.raises(IntegerPrecisionOverflow) as excinfo:
+        aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
+    assert excinfo.value.error_id == "integer_precision_overflow"
+
+
+def test_daily_count_overflow_raises_for_1440_members() -> None:
+    from quantara.aggregation import (
+        IntegerPrecisionOverflow,
+        aggregate_timeframe,
+    )
+
+    day_ms = 86_400_000
+    identity_1d = IDENTITY_1H[:8] + ("1d", "binance_usdm_kline_1d_v1")
+    rows = [
+        minute_row(MONTH_OPEN_START + i * 60_000, n=2**62) for i in range(1440)
+    ]
+    with pytest.raises(IntegerPrecisionOverflow):
+        aggregate_timeframe(rows, identity_1d, day_ms)

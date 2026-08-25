@@ -23,6 +23,7 @@ from quantara.errors import (
 
 __all__ = [
     "IncompleteGroup",
+    "IntegerPrecisionOverflow",
     "NonzeroSourceIgnoreInGroup",
     "UnorderedMinuteInput",
     "aggregate_timeframe",
@@ -45,6 +46,26 @@ class NonzeroSourceIgnoreInGroup(QuantaraError):
 
 class DecimalPrecisionOrScaleOverflow(QuantaraError):
     error_id = DECIMAL_PRECISION_OR_SCALE_OVERFLOW
+
+
+class IntegerPrecisionOverflow(QuantaraError):
+    error_id = "integer_precision_overflow"
+
+
+INT64_MAX = 2**63 - 1
+
+
+def exact_trade_count(members: Sequence[CanonicalRow]) -> int:
+    """Exact integer sum of constituent trade counts, verified to be
+    representable in the persisted int64 column before any CanonicalRow is
+    constructed or persisted."""
+    total = sum(m.trade_count for m in members)
+    if total < 0 or total > INT64_MAX:
+        raise IntegerPrecisionOverflow(
+            f"aggregate trade_count {total} is not representable in int64; "
+            "refusing to truncate or overflow"
+        )
+    return total
 
 
 # decimal128(38,18) bounds: at most 38 coefficient digits with scale 18,
@@ -196,7 +217,7 @@ def aggregate_timeframe(
                 quote_asset_volume=exact_volume_sum(
                     (m.quote_asset_volume for m in members),
                     "quote_asset_volume"),
-                trade_count=sum(m.trade_count for m in members),
+                trade_count=exact_trade_count(members),
                 taker_buy_base_volume=exact_volume_sum(
                     (m.taker_buy_base_volume for m in members),
                     "taker_buy_base_volume"),

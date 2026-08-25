@@ -136,3 +136,28 @@ def test_read_back_matches_content_arrays(tmp_path: Path, descriptor) -> None:
             render_decimal_18(v) if isinstance(v, Decimal) else v for v in persisted
         ]
         assert rendered == original.to_content_array()
+
+
+# --- phase closure 2.3: unrepresentable int64 becomes a stable failure --------
+
+
+def test_unrepresentable_trade_count_becomes_parquet_failure(tmp_path: Path) -> None:
+    """Arrow conversion of an out-of-range int64 must surface as the stable
+    ParquetFailure, never as a raw Arrow exception."""
+    row = CanonicalRow(
+        identity=("p", "m", "i", "s", "b", "q", "sa", "ct", "1m", "sv"),
+        open_time_ms=0,
+        close_time_ms=59_999,
+        nominal_available_ms=60_000,
+        open=Decimal("1"), high=Decimal("2"), low=Decimal("0.5"),
+        close=Decimal("1"),
+        base_asset_volume=Decimal("1"), quote_asset_volume=Decimal("1"),
+        trade_count=2**63,  # one past int64 max
+        taker_buy_base_volume=Decimal("0"),
+        taker_buy_quote_volume=Decimal("0"),
+        source_ignore="0",
+    )
+    from quantara.canonical import ParquetFailure
+
+    with pytest.raises(ParquetFailure):
+        write_canonical_parquet([row], tmp_path / "overflow.parquet")
