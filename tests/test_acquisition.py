@@ -225,4 +225,3 @@ def test_size_cap_enforced_during_transfer(
             good_transport,
             max_zip_bytes=len(ARCHIVE_BYTES) - 1,
         ).acquire()
-

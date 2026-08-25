@@ -85,4 +85,3 @@ def canonicalize(value: Any) -> str:
     out: list[str] = []
     _serialize(value, out)
     return "".join(out)
-

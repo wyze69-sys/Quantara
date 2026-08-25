@@ -103,7 +103,6 @@ No empty API, tutorial, package, source, or speculative architecture directories
 
 ### Planned
 
-- A tested archive-to-canonical reference implementation.
 - Higher-timeframe derivation from the canonical one-minute base.
 - Feature and label contracts with leakage-resistant temporal validation.
 - Research evaluation and calibration workflows.

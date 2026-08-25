@@ -148,4 +148,3 @@ def canonical_content_hash(fingerprint: str, rows: Iterable[Sequence[object]]) -
         parts.append(canonicalize(canonical_row_array(row)).encode("utf-8"))
         parts.append(b"\n")
     return sha256_hex(b"".join(parts))
-

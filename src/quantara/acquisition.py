@@ -341,4 +341,3 @@ class Acquirer:
         os.replace(tmp, destination)
         self.redirect_hops.extend(hops[1:])
         return payload
-
