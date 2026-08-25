@@ -13,6 +13,7 @@ from quantara.publication import (
     PUBLICATION_PROTOCOL_VERSION,
     InvalidPointer,
     ObjectCollision,
+    PublicationError,
     publish_commit,
     put_object,
     read_and_verify_current,
@@ -144,3 +145,65 @@ def test_noop_verification_semantics(tmp_path: Path) -> None:
     drifted = dict(content)
     drifted["source_sha256"] = "ff" * 32
     assert existing_commit_matches(tmp_path, commit_dir, drifted) is False
+
+
+# --- final correction phase: JSON shape validation before use ------------------
+
+
+def test_non_object_current_json_is_an_invalid_pointer(tmp_path: Path) -> None:
+    """Syntactically valid non-object current.json is a controlled
+    InvalidPointer, never a raw AttributeError."""
+    dataset_dir = tmp_path / "datasets" / "d"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "current.json").write_text("[]", encoding="utf-8")
+    with pytest.raises(InvalidPointer):
+        read_and_verify_current(dataset_dir, tmp_path)
+
+
+def test_malformed_current_json_is_an_invalid_pointer(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "datasets" / "d"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "current.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(InvalidPointer):
+        read_and_verify_current(dataset_dir, tmp_path)
+
+
+def test_non_object_content_json_fails_graph_verification(
+    tmp_path: Path,
+) -> None:
+    """content.json containing [] fails graph verification as a controlled
+    PublicationError and never discovers."""
+    dataset_dir = tmp_path / "datasets" / "d"
+    staging = stage_commit(dataset_dir, "a", {"content.json": b"[]\n"})
+    commit_dir = publish_commit(staging, dataset_dir / "commits", "ab" * 32)
+    with pytest.raises(PublicationError):
+        verify_commit_graph(tmp_path, commit_dir)
+    write_current(dataset_dir, "ab" * 32, manifest_digest="ef" * 32)
+    with pytest.raises(QuantaraError):
+        read_and_verify_current(dataset_dir, tmp_path)
+
+
+def test_non_object_content_json_never_matches_as_no_op(tmp_path: Path) -> None:
+    from quantara.publication import existing_commit_matches
+
+    dataset_dir = tmp_path / "datasets" / "d"
+    staging = stage_commit(dataset_dir, "a", {"content.json": b"[]\n"})
+    commit_dir = publish_commit(staging, dataset_dir / "commits", "cd" * 32)
+    assert existing_commit_matches(tmp_path, commit_dir, {}) is False
+
+
+def test_non_mapping_object_refs_fail_verification(tmp_path: Path) -> None:
+    """object_refs entries must be {kind, sha256} mappings; anything else is
+    a controlled verification failure, never a raw TypeError."""
+    dataset_dir = tmp_path / "datasets" / "d"
+    content = {
+        "canonical_content_hash": "11" * 32,
+        "object_refs": ["not-a-mapping"],
+    }
+    staging = stage_commit(
+        dataset_dir, "a", {"content.json": json.dumps(content).encode()}
+    )
+    publish_commit(staging, dataset_dir / "commits", "55" * 32)
+    write_current(dataset_dir, "55" * 32, manifest_digest="66" * 32)
+    with pytest.raises(PublicationError):
+        read_and_verify_current(dataset_dir, tmp_path)

@@ -133,8 +133,27 @@ def verify_commit_graph(data_root: Path, commit_dir: Path) -> dict:
     content_path = commit_dir / "content.json"
     if not marker.exists() or not content_path.exists():
         raise PublicationError(f"incomplete commit directory: {commit_dir}")
-    content = json.loads(content_path.read_text(encoding="utf-8"))
-    for ref in content.get("object_refs", []):
+    try:
+        content = json.loads(content_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise PublicationError(f"invalid content.json: {exc}") from exc
+    if not isinstance(content, dict):
+        raise PublicationError("content.json must be a JSON object")
+    refs = content.get("object_refs", [])
+    if not isinstance(refs, list):
+        raise PublicationError("content.json object_refs must be a list")
+    for ref in refs:
+        if (
+            not isinstance(ref, dict)
+            or set(ref) != {"kind", "sha256"}
+            or not isinstance(ref["kind"], str)
+            or not isinstance(ref["sha256"], str)
+        ):
+            raise PublicationError(
+                'content.json object_refs entries must be {"kind", '
+                '"sha256"} string mappings'
+            )
+    for ref in refs:
         path = object_path(Path(data_root), ref["kind"], ref["sha256"])
         if not path.exists():
             raise PublicationError(f"referenced object missing: {path}")
@@ -150,7 +169,12 @@ def read_and_verify_current(dataset_dir: Path, data_root: Path) -> dict:
     pointer_path = dataset_dir / "current.json"
     if not pointer_path.exists():
         raise InvalidPointer(f"no current.json under {dataset_dir}")
-    pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise InvalidPointer(f"invalid current.json: {exc}") from exc
+    if not isinstance(pointer, dict):
+        raise InvalidPointer("current.json must be a JSON object")
     commit_dir = dataset_dir / "commits" / pointer.get("commit", "")
     if not pointer.get("commit") or not commit_dir.is_dir():
         raise InvalidPointer(

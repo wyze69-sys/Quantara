@@ -1228,3 +1228,297 @@ def test_verified_download_exhaustion_sleeps_exactly_n_minus_1() -> None:
         )
     assert calls["n"] == 4
     assert len(sleeps) == 3  # never sleeps after the final exhausted attempt
+
+
+# --- final correction phase regressions (slices 1–4) ---------------------------
+#
+# Slice 1: PASS-only derived verification.
+# Slice 2: JSON shape validation before use (parent and derived paths).
+# Slice 3: early FAILED attempt evidence that never masks the primary result.
+# Slice 4: milestone evidence truthful for the current invocation.
+
+
+def _degrade_committed_derived_quality(data_root: Path) -> None:
+    """Rewrite the committed derived quality evidence to a mutually consistent
+    WARN_BLOCKED while keeping every digest pinned and every identity intact:
+    only a PASS-only verification policy can reject this graph."""
+    derived = _derived_dir(data_root)
+    commit_dir = derived / "commits" / json.loads(
+        (derived / "current.json").read_text()
+    )["commit"]
+
+    qpath = commit_dir / "quality.json"
+    qdoc = json.loads(qpath.read_text())
+    qdoc["state"] = "WARN_BLOCKED"
+    qpath.write_bytes(
+        (json.dumps(qdoc, indent=2, sort_keys=True) + "\n").encode()
+    )
+
+    mpath = commit_dir / "manifest.json"
+    manifest = json.loads(mpath.read_text())
+    manifest["quality_state"] = "WARN_BLOCKED"
+    manifest_bytes = (
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    ).encode()
+    mpath.write_bytes(manifest_bytes)
+
+    pointer_path = derived / "current.json"
+    pointer = json.loads(pointer_path.read_text())
+    pointer["manifest_sha256"] = sha256_hex(manifest_bytes)
+    pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+
+
+def test_consistent_warn_blocked_graph_never_verifies_as_no_op(
+    tmp_path: Path,
+) -> None:
+    """Slice 1: a fully self-consistent committed graph whose authenticated
+    quality state is WARN_BLOCKED must be rejected — never honored as
+    VERIFIED_NO_OP."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    _degrade_committed_derived_quality(data_root)
+
+    attempts_before = {p.name for p in (data_root / "attempts").glob("*.json")}
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3  # rejected — never VERIFIED_NO_OP, never republished
+    added = {
+        p.name for p in (data_root / "attempts").glob("*.json")
+    } - attempts_before
+    payloads = [
+        json.loads((data_root / "attempts" / name).read_text()) for name in added
+    ]
+    assert [p["terminal_result"] for p in payloads] == ["FAILED"]
+    assert "derived_current_verification_failed" in payloads[0]["diagnostics"]
+
+
+def test_non_object_derived_pointer_is_controlled_failure(
+    tmp_path: Path,
+) -> None:
+    """Slice 2: derived current.json containing [] must produce a controlled
+    FAILED exit with attempt evidence — never a raw AttributeError."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    derived = _derived_dir(data_root)
+    (derived / "current.json").write_text("[]", encoding="utf-8")
+
+    attempts_before = {p.name for p in (data_root / "attempts").glob("*.json")}
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    added = {
+        p.name for p in (data_root / "attempts").glob("*.json")
+    } - attempts_before
+    payloads = [
+        json.loads((data_root / "attempts" / name).read_text()) for name in added
+    ]
+    assert [p["terminal_result"] for p in payloads] == ["FAILED"]
+
+
+def test_non_object_derived_manifest_is_controlled_failure(
+    tmp_path: Path,
+) -> None:
+    """Slice 2: derived manifest.json containing [] must be rejected through
+    the controlled failure path — never a raw AttributeError."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    derived = _derived_dir(data_root)
+    commit_dir = derived / "commits" / json.loads(
+        (derived / "current.json").read_text()
+    )["commit"]
+    (commit_dir / "manifest.json").write_bytes(b"[]\n")
+    pointer_path = derived / "current.json"
+    pointer = json.loads(pointer_path.read_text())
+    pointer["manifest_sha256"] = sha256_hex(b"[]\n")
+    pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    payloads = _attempt_payloads(data_root)
+    assert payloads[-1]["terminal_result"] == "FAILED"
+
+
+def test_non_object_parent_content_json_blocks(tmp_path: Path) -> None:
+    """Slice 2: parent content.json containing [] blocks as
+    parent_dataset_unavailable — never a raw AttributeError/TypeError."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    content_path = (
+        _parent_dir(data_root) / "commits" / _pointer_commit(data_root)
+        / "content.json"
+    )
+    content_path.write_bytes(b"[]\n")
+    _assert_blocked_with(root, data_root, "parent_dataset_unavailable")
+    assert not _derived_dir(data_root).exists()
+
+
+def test_non_object_parent_manifest_blocks(tmp_path: Path) -> None:
+    """Slice 2: syntactically valid non-object parent manifest.json blocks as
+    parent_dataset_unavailable — never a raw AttributeError."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    manifest_path = (
+        _parent_dir(data_root) / "commits" / _pointer_commit(data_root)
+        / "manifest.json"
+    )
+    manifest_path.write_bytes(b"[]\n")
+    pointer_path = _parent_dir(data_root) / "current.json"
+    pointer = json.loads(pointer_path.read_text())
+    pointer["manifest_sha256"] = sha256_hex(b"[]\n")
+    pointer_path.write_text(json.dumps(pointer), encoding="utf-8")
+    _assert_blocked_with(root, data_root, "parent_dataset_unavailable")
+
+
+def test_non_mapping_parent_object_ref_blocks(tmp_path: Path) -> None:
+    """Slice 2 (inspection finding): a content.json object_refs entry that is
+    not a {kind, sha256} mapping blocks as parent_dataset_unavailable —
+    never a raw TypeError."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    content_path = (
+        _parent_dir(data_root) / "commits" / _pointer_commit(data_root)
+        / "content.json"
+    )
+    content = json.loads(content_path.read_text())
+    content["object_refs"] = ["not-a-mapping"]
+    content_path.write_text(json.dumps(content) + "\n", encoding="utf-8")
+    _assert_blocked_with(root, data_root, "parent_dataset_unavailable")
+    assert not _derived_dir(data_root).exists()
+
+
+def test_invalid_descriptor_writes_failed_attempt_evidence(
+    tmp_path: Path,
+) -> None:
+    """Slice 3: an invalid descriptor records accurate FAILED attempt
+    evidence when the attempt store is writable."""
+    root, data_root = _setup(tmp_path)
+    bad = root / "configs" / "datasets" / "broken.yaml"
+    bad.write_text("::: [not: yaml:\n  - x", encoding="utf-8")
+    code = run_derivation_pipeline(bad, data_root, repo_root=root)
+    assert code == 3
+    payloads = _attempt_payloads(data_root)
+    assert len(payloads) == 1
+    assert payloads[0]["terminal_result"] == "FAILED"
+    assert payloads[0]["diagnostics"] == ["invalid_descriptor"]
+    assert payloads[0]["artifact_dispositions"]["normalized_parquet"] == (
+        "not_written"
+    )
+
+
+def test_rights_record_failure_writes_failed_attempt_evidence(
+    tmp_path: Path,
+) -> None:
+    """Slice 3: a rights-record loading failure records accurate FAILED
+    attempt evidence when the attempt store is writable."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    legal = root / "configs" / "legal" / "binance-usdm-provider-rights.v1.yaml"
+    legal.write_bytes(b"::: [broken: yaml\n")
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 3
+    payloads = _attempt_payloads(data_root)
+    assert len(payloads) == 1
+    assert payloads[0]["terminal_result"] == "FAILED"
+    assert payloads[0]["diagnostics"] == ["rights_record_unavailable"]
+    assert payloads[0]["artifact_dispositions"]["normalized_parquet"] == (
+        "not_written"
+    )
+
+
+def test_early_evidence_write_failure_does_not_mask_primary_result(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Slice 3: when recording the early FAILED evidence itself faults, the
+    primary terminal result still stands."""
+    root, data_root = _setup(tmp_path)
+    bad = root / "configs" / "datasets" / "broken.yaml"
+    bad.write_text("::: [not: yaml:\n  - x", encoding="utf-8")
+
+    import quantara.derive_pipeline as dp
+
+    def refuse(path, payload):
+        raise OSError("injected early-evidence failure")
+
+    monkeypatch.setattr(dp, "write_json", refuse)
+    code = run_derivation_pipeline(bad, data_root, repo_root=root)
+    assert code == 3
+    captured = capsys.readouterr()
+    assert "attempt manifest" in (captured.err + captured.out)
+
+
+def test_verified_no_op_milestones_are_truthful(tmp_path: Path) -> None:
+    """Slice 4: VERIFIED_NO_OP must describe this invocation — it staged,
+    wrote the deduplicated object, verified the retained graph, and cleaned
+    up; it did NOT rename any commit or replace any pointer."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    pointer_before = (_derived_dir(data_root) / "current.json").read_bytes()
+
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    assert (_derived_dir(data_root) / "current.json").read_bytes() == (
+        pointer_before
+    )
+
+    noop = [
+        p for p in _attempt_payloads(data_root)
+        if p["terminal_result"] == "VERIFIED_NO_OP"
+    ]
+    assert len(noop) == 1
+    dispositions = noop[0]["artifact_dispositions"]
+    assert dispositions["normalized_parquet"] == "already_published"
+    assert dispositions["attempt_staged"] is True
+    assert dispositions["object_written"] is True
+    assert dispositions["commit_renamed"] is False
+    assert dispositions["pointer_replaced"] is False
+    assert dispositions["discovery_verified"] is True
+    assert dispositions["attempt_staging"] == "discarded"
+
+
+def test_published_attempt_records_true_milestones(tmp_path: Path) -> None:
+    """Slice 4: PUBLISHED evidence records every action that actually
+    occurred during this invocation."""
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    payload = _attempt_payloads(data_root)[-1]
+    assert payload["terminal_result"] == "PUBLISHED"
+    dispositions = payload["artifact_dispositions"]
+    assert dispositions["normalized_parquet"] == "published"
+    for key in (
+        "attempt_staged",
+        "object_written",
+        "commit_renamed",
+        "pointer_replaced",
+        "discovery_verified",
+    ):
+        assert dispositions[key] is True, key
+    assert dispositions["attempt_staging"] == "discarded"
+    assert "post_pointer" not in dispositions
+
+
+def test_cleanup_failure_is_reported_accurately(tmp_path, monkeypatch) -> None:
+    """Slice 4: staging may only be reported as discarded when cleanup
+    succeeded; the primary BLOCKED result is unaffected by the cleanup
+    fault."""
+    import shutil as _shutil
+
+    import quantara.derive_pipeline as dp
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    _force_quality_failure(monkeypatch)
+
+    real_rmtree = _shutil.rmtree
+    data_prefix = str(data_root)
+
+    def refusing_rmtree(path, *args, **kwargs):
+        if str(path).startswith(data_prefix):
+            raise OSError("injected cleanup failure")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(dp.shutil, "rmtree", refusing_rmtree)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 2  # primary result unaffected
+    payload = _attempt_payloads(data_root)[-1]
+    assert payload["terminal_result"] == "BLOCKED"
+    assert payload["artifact_dispositions"]["attempt_staging"] == (
+        "cleanup_failed"
+    )

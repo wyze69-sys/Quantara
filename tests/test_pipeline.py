@@ -186,3 +186,85 @@ def test_dry_run_makes_no_mutation_or_network(env, tmp_path: Path) -> None:
         )
         == 0
     )
+
+
+# --- final correction phase: early failure evidence (slice 3) ------------------
+
+
+def test_invalid_descriptor_writes_failed_attempt_evidence(
+    env, tmp_path: Path
+) -> None:
+    descriptor_path, data_root = env
+    descriptor_path.write_text("::: [not: yaml:\n  - x", encoding="utf-8")
+
+    def no_network(request):  # pragma: no cover - must never be called
+        raise AssertionError("network access attempted despite bad descriptor")
+
+    exit_code = run_pipeline(
+        descriptor_path=descriptor_path,
+        data_root=data_root,
+        repo_root=tmp_path,
+        transport=httpx.MockTransport(no_network),
+    )
+    assert exit_code == 3
+    attempts = list((data_root / "attempts").glob("*.json"))
+    assert len(attempts) == 1
+    payload = json.loads(attempts[0].read_text())
+    assert payload["terminal_result"] == "FAILED"
+    assert payload["diagnostics"] == ["invalid_descriptor"]
+    assert payload["artifact_dispositions"]["zip"] == "not_downloaded"
+    assert payload["artifact_dispositions"]["checksum"] == "not_downloaded"
+
+
+def test_rights_record_failure_writes_failed_attempt_evidence(
+    env, tmp_path: Path
+) -> None:
+    descriptor_path, data_root = env
+    legal = tmp_path / "configs" / "legal" / "binance-usdm-provider-rights.v1.yaml"
+    legal.write_bytes(b"::: [broken: yaml\n")
+
+    def no_network(request):  # pragma: no cover - must never be called
+        raise AssertionError("network access attempted despite rights failure")
+
+    exit_code = run_pipeline(
+        descriptor_path=descriptor_path,
+        data_root=data_root,
+        repo_root=tmp_path,
+        transport=httpx.MockTransport(no_network),
+    )
+    assert exit_code == 3
+    attempts = list((data_root / "attempts").glob("*.json"))
+    assert len(attempts) == 1
+    payload = json.loads(attempts[0].read_text())
+    assert payload["terminal_result"] == "FAILED"
+    assert payload["diagnostics"] == ["rights_record_unavailable"]
+    assert payload["artifact_dispositions"]["zip"] == "not_downloaded"
+
+
+def test_early_attempt_write_failure_does_not_mask_result(
+    env, tmp_path, monkeypatch, capsys
+) -> None:
+    """When the attempt store is unwritable the primary terminal result still
+    stands."""
+    import quantara.pipeline as pl
+
+    descriptor_path, data_root = env
+    legal = tmp_path / "configs" / "legal" / "binance-usdm-provider-rights.v1.yaml"
+    legal.write_bytes(b"::: [broken: yaml\n")
+
+    real_write_json = pl.write_json
+
+    def flaky(path, payload):
+        if "attempts" in str(path):
+            raise OSError("injected early-evidence failure")
+        return real_write_json(path, payload)
+
+    monkeypatch.setattr(pl, "write_json", flaky)
+    exit_code = run_pipeline(
+        descriptor_path=descriptor_path,
+        data_root=data_root,
+        repo_root=tmp_path,
+    )
+    assert exit_code == 3
+    captured = capsys.readouterr()
+    assert "attempt manifest" in (captured.err + captured.out)

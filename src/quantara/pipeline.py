@@ -17,6 +17,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+import yaml
+
 from quantara.acquisition import Acquirer, ChecksumMismatch
 from quantara.archive import inspect_zip, read_member_bytes
 from quantara.canonical import (
@@ -85,16 +87,21 @@ def _write_attempt(
     referenced_commit: str | None,
     diagnostics: list[str],
 ) -> None:
-    attempt = new_attempt_manifest(
-        terminal_result=terminal_result,
-        artifact_dispositions=dispositions,
-        retry_evidence=retry_evidence,
-        http_statuses=http_statuses,
-        referenced_commit=referenced_commit,
-        diagnostics=diagnostics,
-        repo_root=repo_root,
-    )
-    write_json(Path(data_root) / "attempts" / f"{attempt['attempt_id']}.json", attempt)
+    """Record one attempt manifest; a fault here is reported to stderr and
+    never allowed to mask the pipeline's terminal result."""
+    try:
+        attempt = new_attempt_manifest(
+            terminal_result=terminal_result,
+            artifact_dispositions=dispositions,
+            retry_evidence=retry_evidence,
+            http_statuses=http_statuses,
+            referenced_commit=referenced_commit,
+            diagnostics=diagnostics,
+            repo_root=repo_root,
+        )
+        write_json(Path(data_root) / "attempts" / f"{attempt['attempt_id']}.json", attempt)
+    except (OSError, QuantaraError) as exc:
+        print(f"failed to record attempt manifest: {exc}", file=sys.stderr)
 
 
 def _quality_payload(report) -> dict:
@@ -129,8 +136,18 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     # Steps 1–2: load and validate descriptor and legal state.
     try:
         descriptor = load_descriptor(Path(descriptor_path))
-    except QuantaraError as exc:
+    except (QuantaraError, OSError, ValueError, yaml.YAMLError) as exc:
         print(f"invalid descriptor: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions={"zip": "not_downloaded", "checksum": "not_downloaded"},
+            retry_evidence=[],
+            http_statuses=[],
+            referenced_commit=None,
+            diagnostics=["invalid_descriptor"],
+        )
         return EXIT_FAILED
 
     # Resolve the legal record relative to the nearest ancestor that contains
@@ -140,7 +157,21 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     while not rights_path.exists() and legal_target != legal_target.parent:
         legal_target = legal_target.parent
         rights_path = legal_target / descriptor.legal_record
-    rights_record = load_rights_record(rights_path)
+    try:
+        rights_record = load_rights_record(rights_path)
+    except (QuantaraError, OSError, ValueError, yaml.YAMLError) as exc:
+        print(f"rights record unavailable: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions={"zip": "not_downloaded", "checksum": "not_downloaded"},
+            retry_evidence=[],
+            http_statuses=[],
+            referenced_commit=None,
+            diagnostics=["rights_record_unavailable"],
+        )
+        return EXIT_FAILED
     blocked_ops = [
         op_name
         for op_name in ("acquire_internal", "retain_raw_internal", "normalize_internal")
@@ -284,13 +315,18 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     }
 
     # Steps 12.3/§16: idempotent rerun — verify the existing commit instead of
-    # publishing an identical one.
+    # publishing an identical one. A malformed or non-object pointer behaves
+    # as a lost pointer: recovery proceeds through the normal publication path.
     if pointer.exists():
-        current_commit = (
-            json.loads(pointer.read_text(encoding="utf-8")).get("commit", "")
-        )
+        try:
+            parsed_pointer = json.loads(pointer.read_text(encoding="utf-8"))
+        except ValueError:
+            parsed_pointer = None
+        current_commit = ""
+        if isinstance(parsed_pointer, dict):
+            current_commit = str(parsed_pointer.get("commit", ""))
         commit_dir = dataset_directory / "commits" / current_commit
-        if existing_commit_matches(data, commit_dir, identity_evidence):
+        if current_commit and existing_commit_matches(data, commit_dir, identity_evidence):
             _write_attempt(
                 data,
                 root,

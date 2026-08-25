@@ -153,3 +153,37 @@ def test_stale_staging_is_discarded_on_rerun(published) -> None:
     (stale / "junk.bin").write_bytes(b"x")
     assert rerun(published) == 0
     assert not stale.exists()
+
+
+# --- final correction phase: JSON shape validation (slice 001 paths) -----------
+
+
+def test_non_object_current_json_rerun_is_controlled(published) -> None:
+    """current.json containing [] must never surface a raw AttributeError;
+    the rerun treats it as a lost pointer and recovers by equivalent
+    republication."""
+    pointer = published["dataset_dir"] / "current.json"
+    pointer.write_text("[]", encoding="utf-8")
+    assert rerun(published) == 0
+    verified = read_and_verify_current(
+        published["dataset_dir"], published["data_root"]
+    )
+    assert verified["canonical_content_hash"]
+    attempts = sorted((published["data_root"] / "attempts").glob("*.json"))
+    newest = json.loads(attempts[-1].read_text())
+    assert newest["terminal_result"] == "PUBLISHED"
+
+
+def test_dry_run_with_non_object_pointer_fails_controlled(published) -> None:
+    """Dry-run discovery over a non-object current.json exits FAILED instead
+    of crashing."""
+    (published["dataset_dir"] / "current.json").write_text("[]", encoding="utf-8")
+    assert (
+        run_pipeline(
+            published["descriptor_path"],
+            published["data_root"],
+            repo_root=published["tmp_path"],
+            dry_run=True,
+        )
+        == 3
+    )

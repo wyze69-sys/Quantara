@@ -300,6 +300,8 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
         manifest = json.loads(manifest_bytes.decode("utf-8"))
     except ValueError as exc:
         raise QuantaraError(f"parent manifest not valid JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise QuantaraError("parent manifest.json must be a JSON object")
 
     required_fields = (
         "dataset_id",
@@ -620,6 +622,8 @@ def verify_derived_current_graph(dataset_dir: Path, data_root: Path) -> dict:
         manifest = json.loads(manifest_bytes.decode("utf-8"))
     except ValueError as exc:
         raise QuantaraError(f"manifest not valid JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise QuantaraError("manifest.json must be a JSON object")
 
     lineage = content.get("derived_from")
     content_cch = content.get("canonical_content_hash")
@@ -658,7 +662,20 @@ def verify_derived_current_graph(dataset_dir: Path, data_root: Path) -> dict:
         raise QuantaraError(
             "manifest Parquet SHA-256 disagrees with the object ref"
         )
-    _authenticate_quality_document(commit_dir, manifest, content)
+    quality_doc = _authenticate_quality_document(commit_dir, manifest, content)
+    # PASS-only policy: an authenticated graph whose committed quality state
+    # (or manifest claim) is anything other than exactly PASS is never a
+    # candidate for VERIFIED_NO_OP.
+    if quality_doc["state"] != "PASS":
+        raise DerivedGraphVerificationFailed(
+            f"derived quality state {quality_doc['state']!r} is not PASS; a "
+            "less-than-verified derived graph is never honored"
+        )
+    if manifest.get("quality_state") != "PASS":
+        raise DerivedGraphVerificationFailed(
+            f"manifest quality state {manifest.get('quality_state')!r} is "
+            "not PASS; a less-than-verified derived graph is never honored"
+        )
     return {**content, "commit": address}
 
 
@@ -675,16 +692,32 @@ def run_derivation_pipeline(
     # Step 1: load + validate the derived descriptor; gate normalize_internal.
     try:
         descriptor = load_derived_descriptor(descriptor_file)
-    except (QuantaraError, OSError, yaml.YAMLError) as exc:
+    except (QuantaraError, OSError, ValueError, yaml.YAMLError) as exc:
         print(f"invalid descriptor: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions={"normalized_parquet": "not_written"},
+            referenced_commit=None,
+            diagnostics=["invalid_descriptor"],
+        )
         return EXIT_FAILED
 
     try:
         rights_record = load_rights_record(
             _resolve_rights(descriptor_file, descriptor.legal_record)
         )
-    except (QuantaraError, OSError, yaml.YAMLError) as exc:
+    except (QuantaraError, OSError, ValueError, yaml.YAMLError) as exc:
         print(f"rights record unavailable: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions={"normalized_parquet": "not_written"},
+            referenced_commit=None,
+            diagnostics=["rights_record_unavailable"],
+        )
         return EXIT_FAILED
     if not rights_record.permits("normalize_internal"):
         print("legal gate blocks normalize_internal", file=sys.stderr)
@@ -735,16 +768,23 @@ def run_derivation_pipeline(
         "discovery_verified": False,
     }
     parquet_state = "not_written"
+    cleanup_state = {"staging": "pending"}
 
     def _cleanup_attempt() -> None:
-        shutil.rmtree(staging, ignore_errors=True)
-        shutil.rmtree(derived_dot_staging, ignore_errors=True)
+        ok = True
+        for directory in (staging, derived_dot_staging):
+            try:
+                shutil.rmtree(directory)
+            except OSError:
+                if directory.exists():
+                    ok = False
+        cleanup_state["staging"] = "discarded" if ok else "cleanup_failed"
 
     def _dispositions(extra: dict | None = None) -> dict:
         dispositions = {
             "normalized_parquet": parquet_state,
             **milestones,
-            "attempt_staging": "discarded",
+            "attempt_staging": cleanup_state["staging"],
         }
         if extra:
             dispositions.update(extra)
@@ -853,13 +893,17 @@ def run_derivation_pipeline(
                 parsed_pointer = json.loads(
                     pointer.read_text(encoding="utf-8")
                 )
-                pointer_commit_name = str(
-                    parsed_pointer.get("commit", "")
-                ).lower()
             except (OSError, ValueError) as exc:
                 raise QuantaraError(
                     f"unreadable current.json: {exc}"
                 ) from exc
+            if not isinstance(parsed_pointer, dict):
+                raise QuantaraError(
+                    "current.json must be a JSON object"
+                )
+            pointer_commit_name = str(
+                parsed_pointer.get("commit", "")
+            ).lower()
             # A pointer whose target directory is missing or incomplete is a
             # LOST pointer: safe recovery proceeds below. Any graph that IS
             # present must pass full authentication or the run is rejected.
@@ -876,16 +920,18 @@ def run_derivation_pipeline(
                     data, existing_dir, identity_evidence,
                     keys=DERIVED_EVIDENCE_KEYS,
                 ):
+                    # Truthful milestones for THIS invocation: the retained
+                    # graph was fully verified, but nothing was renamed or
+                    # repointed by this run.
+                    milestones["discovery_verified"] = True
                     _cleanup_attempt()
                     _write_attempt(
                         data,
                         root,
                         terminal_result="VERIFIED_NO_OP",
-                        dispositions={
+                        dispositions=_dispositions({
                             "normalized_parquet": "already_published",
-                            **{k: True for k in milestones},
-                            "attempt_staging": "discarded",
-                        },
+                        }),
                         referenced_commit=current_commit,
                         diagnostics=[],
                     )
@@ -971,7 +1017,7 @@ def run_derivation_pipeline(
         data,
         root,
         terminal_result="PUBLISHED",
-        dispositions={"normalized_parquet": "published"},
+        dispositions=_dispositions({"normalized_parquet": "published"}),
         referenced_commit=commit_address,
         diagnostics=[],
     )
