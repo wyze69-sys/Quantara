@@ -161,19 +161,25 @@ def read_and_verify_current(dataset_dir: Path, data_root: Path) -> dict:
 
 
 def existing_commit_matches(
-    data_root: Path, commit_dir: Path, evidence: dict
+    data_root: Path, commit_dir: Path, evidence: dict, keys: tuple[str, ...] | None = None
 ) -> bool:
     """Idempotency check: every identity field must verify against the
-    retained commit; any drift means this is NOT a no-op."""
-    keys = (
-        "source_sha256",
-        "descriptor_sha256",
-        "schema_fingerprint",
-        "parser_version",
-        "canonical_content_hash",
-        "quality_identity",
-        "object_refs",
-    )
+    retained commit; any drift means this is NOT a no-op.
+
+    ``keys`` optionally overrides the compared key set; the default preserves
+    slice 001 behavior byte-for-byte. Derivation extends the keys with
+    ``derived_from`` so a rerun also verifies the parent lineage binding.
+    """
+    if keys is None:
+        keys = (
+            "source_sha256",
+            "descriptor_sha256",
+            "schema_fingerprint",
+            "parser_version",
+            "canonical_content_hash",
+            "quality_identity",
+            "object_refs",
+        )
     try:
         content = verify_commit_graph(Path(data_root), commit_dir)
     except QuantaraError:
