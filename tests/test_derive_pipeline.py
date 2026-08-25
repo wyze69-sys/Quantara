@@ -304,3 +304,60 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
     assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
     assert (dataset_dir / "current.json").read_bytes() == pointer
 
+
+
+# --- Task 7: descriptor-schema dispatch in the CLI ----------------------------
+
+
+def test_cli_dispatches_base_descriptor_to_slice_001_pipeline(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from quantara import cli
+
+    root = derived_cfg_tree(tmp_path)
+    base_descriptor = (
+        root / "configs" / "datasets" / "binance-usdm-btcusdt-1m-2024-01.yaml"
+    )
+    seen = {}
+    monkeypatch.setattr(
+        "quantara.pipeline.run_pipeline",
+        lambda **kwargs: (seen.setdefault("called", kwargs["descriptor_path"]), 0)[1],
+    )
+    assert cli.main(
+        ["--descriptor", str(base_descriptor), "--data-root", str(tmp_path / "data")]
+    ) == 0
+    assert seen["called"] == str(base_descriptor)
+
+
+def test_cli_dispatches_derived_descriptor_to_derivation_pipeline(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from quantara import cli
+
+    root = derived_cfg_tree(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    seen = {}
+    monkeypatch.setattr(
+        "quantara.derive_pipeline.run_derivation_pipeline",
+        lambda **kwargs: (seen.setdefault("called", kwargs), 0)[1],
+    )
+    assert cli.main(
+        [
+            "--descriptor", str(descriptor),
+            "--data-root", str(tmp_path / "data"),
+            "--dry-run",
+        ]
+    ) == 0
+    assert seen["called"]["dry_run"] is True
+
+
+def test_cli_rejects_unknown_schema_with_exit_3(tmp_path: Path, capsys) -> None:
+    from quantara import cli
+
+    bogus = tmp_path / "bogus.yaml"
+    bogus.write_text("schema: quantara.unknown/v9\n", encoding="utf-8")
+    assert cli.main(
+        ["--descriptor", str(bogus), "--data-root", str(tmp_path / "data")]
+    ) == 3
+    assert "invalid_descriptor" in capsys.readouterr().err
+
