@@ -1892,3 +1892,95 @@ GOLDEN = {
  "expected_day_content_hash": "a1c1f929310dd2212f1994253103e890d9053d241a2c235a0e4fa81c68c9af6e",
  "expected_day_quality_identity": "{\"checks\":[{\"check_id\":\"derived_row_count_matches_expected\",\"count\":1,\"evidence\":{\"actual_rows\":1,\"approved_rows\":1},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_first_boundary_exact\",\"count\":0,\"evidence\":{\"approved_first_open\":1704067200000,\"observed_first_open\":1704067200000},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_last_boundary_exact\",\"count\":0,\"evidence\":{\"approved_last_close\":1704153599999,\"observed_last_close\":1704153599999},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_unique_open_times\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_strictly_ascending_open_times\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_adjacency_exactly_timeframe_ms\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_ohlc_bounds_hold\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_prices_strictly_positive\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_volumes_and_counts_nonnegative\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_taker_buy_within_counterpart_volumes\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_close_time_relation\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"},{\"check_id\":\"derived_zero_volume_bucket\",\"count\":0,\"evidence\":{\"occurrences\":0},\"outcome\":\"pass\",\"severity\":\"warning\"},{\"check_id\":\"derived_reconciliation_matches\",\"count\":0,\"evidence\":{\"violations\":0},\"outcome\":\"pass\",\"severity\":\"hard\"}]}"  # noqa: E501
 }
+
+
+# --- Correction 1: context-independent exact volume-family aggregation -------
+
+
+def _context_free_scaled_int(dec: Decimal) -> int:
+    """Independent reference mechanism: exact integer of dec × 10**18 built
+    from the Decimal coefficient tuple — no arithmetic context involved."""
+    sign, digits, exponent = dec.as_tuple()
+    assert exponent == -18, f"reference expects scale 18, got {exponent}"
+    value = 0
+    for digit in digits:
+        value = value * 10 + digit
+    return -value if sign else value
+
+
+def _reference_sum(decimals) -> Decimal:
+    total = sum(_context_free_scaled_int(d) for d in decimals)
+    negative = total < 0
+    digit_tuple = tuple(int(ch) for ch in str(abs(total)))
+    return Decimal((1 if negative else 0, digit_tuple, -18))
+
+
+CONSTITUENT = Decimal("9999999999.123456789012345678")
+EXACT_60_SUM = Decimal("599999999947.407407340740740680")
+
+
+def test_hour_volume_sums_exact_beyond_ambient_decimal_context() -> None:
+    from quantara.aggregation import aggregate_timeframe
+
+    rows = []
+    for i in range(60):
+        t = MONTH_OPEN_START + i * 60_000
+        rows.append(
+            minute_row(t, o="100", h="110", lo="90", c="105",
+                       bv=CONSTITUENT, qv=CONSTITUENT,
+                       n=1, tbv=CONSTITUENT / 2, tqv=CONSTITUENT / 2)
+        )
+    bars = aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
+    assert len(bars) == 1
+    bar = bars[0]
+    # Exact sums, proven against a context-free integer reference.
+    assert bar.base_asset_volume == EXACT_60_SUM == _reference_sum(
+        [CONSTITUENT] * 60
+    )
+    assert bar.quote_asset_volume == EXACT_60_SUM
+    assert bar.taker_buy_base_volume == _reference_sum([CONSTITUENT / 2] * 60)
+    assert bar.taker_buy_quote_volume == _reference_sum([CONSTITUENT / 2] * 60)
+    # The naive ambient-context sum would have rounded at 28 significant
+    # digits; the persisted rendering must carry every exact digit.
+    from quantara.hashing import render_decimal_18
+    assert render_decimal_18(bar.base_asset_volume) == (
+        "599999999947.407407340740740680"
+    )
+
+
+def test_daily_volume_sums_exact_for_1440_members() -> None:
+    from quantara.aggregation import aggregate_timeframe
+
+    day_ms = 86_400_000
+    rows = []
+    for i in range(1440):
+        t = MONTH_OPEN_START + i * 60_000
+        rows.append(
+            minute_row(t, o="100", h="110", lo="90", c="105",
+                       bv=CONSTITUENT, qv=CONSTITUENT,
+                       n=1, tbv=CONSTITUENT / 2, tqv=CONSTITUENT / 2)
+        )
+    bars = aggregate_timeframe(rows, IDENTITY_1H[:8] + ("1d",
+                                                        "binance_usdm_kline_1d_v1"),
+                               day_ms)
+    expected = _reference_sum([CONSTITUENT] * 1440)
+    assert bars[0].base_asset_volume == expected
+    assert bars[0].quote_asset_volume == expected
+
+
+def test_unrepresentable_exact_aggregate_fails_deterministically() -> None:
+    from quantara.aggregation import aggregate_timeframe
+    from quantara.errors import DECIMAL_PRECISION_OR_SCALE_OVERFLOW
+
+    # Each constituent fits decimal128(38,18) (19 integer digits), but the
+    # exact 60-member sum needs 21 integer digits and can never be persisted.
+    huge = Decimal("99999999999999999999.123456789012345678"[:20] + ".123456789012345678")
+    assert len(huge.as_tuple().digits) <= 38
+    rows = []
+    for i in range(60):
+        t = MONTH_OPEN_START + i * 60_000
+        rows.append(minute_row(t, o="1", h="2", lo="0.5", c="1.5", bv=huge))
+    with pytest.raises(QuantaraError) as excinfo:
+        aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
+    assert excinfo.value.error_id == DECIMAL_PRECISION_OR_SCALE_OVERFLOW
+

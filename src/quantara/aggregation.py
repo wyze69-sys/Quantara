@@ -13,16 +13,20 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from quantara.canonical import CanonicalRow, DuplicateOpenTime
-from quantara.errors import QuantaraError
+from quantara.errors import (
+    DECIMAL_PRECISION_OR_SCALE_OVERFLOW,
+    QuantaraError,
+)
 
 __all__ = [
     "IncompleteGroup",
     "NonzeroSourceIgnoreInGroup",
     "UnorderedMinuteInput",
     "aggregate_timeframe",
+    "exact_volume_sum",
     "rows_from_persisted",
 ]
 
@@ -37,6 +41,48 @@ class IncompleteGroup(QuantaraError):
 
 class NonzeroSourceIgnoreInGroup(QuantaraError):
     error_id = "nonzero_source_ignore_in_group"
+
+
+class DecimalPrecisionOrScaleOverflow(QuantaraError):
+    error_id = DECIMAL_PRECISION_OR_SCALE_OVERFLOW
+
+
+# decimal128(38,18) bounds: at most 38 coefficient digits with scale 18,
+# i.e. |value| < 10**20. Sums are computed in a high-precision LOCAL context
+# (the process-global context is never read or mutated), then re-checked for
+# exact representability in the canonical persisted type per design §7.
+_SUM_CONTEXT_PRECISION = 80
+_CANONICAL_MAX_COEFFICIENT = 10**38
+_CANONICAL_SCALE = -18
+
+
+def exact_volume_sum(values: Iterable[Decimal], field_name: str) -> Decimal:
+    """Exact Decimal sum of canonical constituents, independent of the
+    ambient decimal context.
+
+    Addition runs inside a local high-precision context so no rounding can
+    occur; the exact total is then verified to fit decimal128(38,18). Any
+    unrepresentable aggregate is a deterministic hard failure — rounding
+    never happens.
+    """
+    total = Decimal(0)
+    with localcontext() as ctx:
+        ctx.prec = _SUM_CONTEXT_PRECISION
+        for value in values:
+            total += value
+        scaled = total.scaleb(-_CANONICAL_SCALE)
+    if scaled != scaled.to_integral_value():
+        raise DecimalPrecisionOrScaleOverflow(
+            f"exact {field_name} aggregate needs more than 18 fractional "
+            f"digits ({total}); rounding is forbidden"
+        )
+    coefficient = abs(int(scaled))
+    if coefficient >= _CANONICAL_MAX_COEFFICIENT:
+        raise DecimalPrecisionOrScaleOverflow(
+            f"exact {field_name} aggregate {total} does not fit "
+            f"decimal128(38,18); refusing to round or overflow"
+        )
+    return total
 
 
 def rows_from_persisted(rows: Iterable[tuple]) -> list[CanonicalRow]:
@@ -104,7 +150,6 @@ def aggregate_timeframe(
         grouped[bucket].append(row)
 
     expected_members = timeframe_ms // 60_000
-    zero = Decimal(0)
     bars: list[CanonicalRow] = []
     for bucket in sorted(grouped):
         members = grouped[bucket]
@@ -145,15 +190,19 @@ def aggregate_timeframe(
                 high=max(m.high for m in members),
                 low=min(m.low for m in members),
                 close=members[-1].close,
-                base_asset_volume=sum(
-                    (m.base_asset_volume for m in members), zero),
-                quote_asset_volume=sum(
-                    (m.quote_asset_volume for m in members), zero),
+                base_asset_volume=exact_volume_sum(
+                    (m.base_asset_volume for m in members),
+                    "base_asset_volume"),
+                quote_asset_volume=exact_volume_sum(
+                    (m.quote_asset_volume for m in members),
+                    "quote_asset_volume"),
                 trade_count=sum(m.trade_count for m in members),
-                taker_buy_base_volume=sum(
-                    (m.taker_buy_base_volume for m in members), zero),
-                taker_buy_quote_volume=sum(
-                    (m.taker_buy_quote_volume for m in members), zero),
+                taker_buy_base_volume=exact_volume_sum(
+                    (m.taker_buy_base_volume for m in members),
+                    "taker_buy_base_volume"),
+                taker_buy_quote_volume=exact_volume_sum(
+                    (m.taker_buy_quote_volume for m in members),
+                    "taker_buy_quote_volume"),
                 source_ignore="0",
             )
         )

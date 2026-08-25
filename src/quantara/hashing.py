@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable, Sequence
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from quantara.errors import QuantaraError
 from quantara.jcs import canonicalize
@@ -36,6 +36,9 @@ CONTENT_HASH_DOMAIN = "quantara-canonical-content-v1"
 SCHEMA_VERSION = "binance_usdm_kline_1m_v1"
 
 DECIMAL_TYPE = "decimal128_38_18"
+
+# Minimum working precision for exact rendering inside the local context.
+_RENDER_MIN_PRECISION = 60
 
 # The fixed 23-column canonical schema, in order (spec §6.6).
 CANONICAL_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -110,15 +113,20 @@ def render_decimal_18(value: Decimal | str) -> str:
 
     Trailing fractional zeros are insignificant for representability; any
     value needing more than 18 fractional digits is rejected — never rounded.
+    All Decimal operations run in a local high-precision context so the
+    ambient process-global context can never round a wide coefficient.
     """
     number = value if isinstance(value, Decimal) else Decimal(str(value))
-    trimmed = number.normalize()
-    scaled = trimmed.scaleb(18)
-    integral = scaled.to_integral_value()
-    if scaled != integral:
-        raise HashPayloadError(
-            f"decimal {number} exceeds 18 fractional digits; rounding is forbidden"
-        )
+    with localcontext() as ctx:
+        ctx.prec = max(len(number.as_tuple().digits), _RENDER_MIN_PRECISION) + 4
+        trimmed = number.normalize()
+        scaled = trimmed.scaleb(18)
+        integral = scaled.to_integral_value()
+        if scaled != integral:
+            raise HashPayloadError(
+                f"decimal {number} exceeds 18 fractional digits; rounding is "
+                "forbidden"
+            )
     magnitude = int(integral)
     sign = "-" if magnitude < 0 else ""
     digits = str(abs(magnitude)).rjust(19, "0")
