@@ -78,10 +78,15 @@ def descriptor_hash(canonical_semantics: str) -> str:
     return sha256_hex(canonical_semantics.encode("utf-8"))
 
 
-def schema_fingerprint() -> str:
-    """SHA-256 over JCS of the complete ordered logical schema + nullability."""
+def schema_fingerprint(schema_version: str = SCHEMA_VERSION) -> str:
+    """SHA-256 over JCS of the complete ordered logical schema + nullability.
+
+    The payload's schema_version field is the parameter; the column list is
+    unchanged. The no-argument call remains byte-identical to the frozen
+    slice 001 fingerprint (design §9).
+    """
     payload = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "columns": [
             {"index": index, "name": name, "type": ctype, "nullable": False}
             for index, (name, ctype) in enumerate(CANONICAL_COLUMNS)
