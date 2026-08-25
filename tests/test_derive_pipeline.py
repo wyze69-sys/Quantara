@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -360,4 +361,38 @@ def test_cli_rejects_unknown_schema_with_exit_3(tmp_path: Path, capsys) -> None:
         ["--descriptor", str(bogus), "--data-root", str(tmp_path / "data")]
     ) == 3
     assert "invalid_descriptor" in capsys.readouterr().err
+
+
+
+# --- Correction 5: no binary-float timestamp arithmetic -----------------------
+
+
+def test_derivation_modules_use_no_float_timestamp_arithmetic() -> None:
+    """Epoch milliseconds and durations must come from exact datetime /
+    timedelta integer arithmetic; float intermediates are forbidden."""
+    pattern = re.compile(r"\.timestamp\(\)|total_seconds\(\)")
+    modules = [
+        "aggregation.py",
+        "derive_descriptor.py",
+        "derive_pipeline.py",
+        "derive_quality.py",
+        "descriptor.py",
+    ]
+    offenders = []
+    for name in modules:
+        source = Path("src/quantara", name).read_text(encoding="utf-8")
+        for number, line in enumerate(source.splitlines(), start=1):
+            if pattern.search(line):
+                offenders.append(f"{name}:{number}: {line.strip()}")
+    assert not offenders, (
+        "float-based timestamp arithmetic found:\n" + "\n".join(offenders)
+    )
+
+
+def test_epoch_ms_helper_is_exact_integer_math() -> None:
+    from datetime import UTC, datetime
+
+    from quantara.derive_pipeline import epoch_ms
+
+    assert epoch_ms(datetime(2024, 1, 1, tzinfo=UTC)) == 1_704_067_200_000
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -131,8 +131,7 @@ class DatasetDescriptor:
     @property
     def expected_row_count(self) -> int:
         """Derived by calendar math over [start, end) at one-minute cadence."""
-        seconds = (self.end_utc - self.start_utc).total_seconds()
-        return int(seconds // 60)
+        return (self.end_utc - self.start_utc) // timedelta(minutes=1)
 
     def canonical_semantics(self) -> str:
         """JCS serialization of validated semantics (formatting-independent)."""

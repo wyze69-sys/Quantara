@@ -16,6 +16,7 @@ import json
 import shutil
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from quantara.aggregation import aggregate_timeframe, rows_from_persisted
@@ -75,6 +76,15 @@ class _QualityView:
 
     timeframe_ms: int
     start_utc_open_ms: int
+
+
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def epoch_ms(moment: datetime) -> int:
+    """Exact UTC epoch milliseconds via integer timedelta division — never
+    a binary float."""
+    return (moment - EPOCH) // timedelta(milliseconds=1)
 
 
 def _dataset_dir(data_root: Path, symbol: str, interval: str, start) -> Path:
@@ -155,9 +165,7 @@ def _derive_rows(parent_parquet_path: Path, descriptor, staging: Path):
         reconcile_rows(bars, persisted)
     except QuantaraError:
         reconciliation_ok = False
-    view = _QualityView(
-        descriptor.timeframe_ms, int(descriptor.start_utc.timestamp() * 1000)
-    )
+    view = _QualityView(descriptor.timeframe_ms, epoch_ms(descriptor.start_utc))
     report = evaluate_derived_quality(
         bars,
         view,

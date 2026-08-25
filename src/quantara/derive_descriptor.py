@@ -12,7 +12,7 @@ are derived purely by calendar math, never embedded (design §5).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -126,8 +126,9 @@ class DerivedDatasetDescriptor:
 
     @property
     def expected_row_count(self) -> int:
-        """Calendar math only: (end − start) // timeframe_ms."""
-        length_ms = int((self.end_utc - self.start_utc).total_seconds() * 1000)
+        """Calendar math only: (end − start) // timeframe_ms, via exact
+        timedelta integer division (no binary-float intermediates)."""
+        length_ms = (self.end_utc - self.start_utc) // timedelta(milliseconds=1)
         return length_ms // self.timeframe_ms
 
     def identity_tuple(self) -> tuple[str, ...]:
@@ -233,7 +234,7 @@ def load_derived_descriptor(path: Path | str) -> DerivedDatasetDescriptor:
 
     # Misaligned configurations are rejected before any comparison against
     # compute-affecting state, per design §5 validation order.
-    length_ms = int((end - start).total_seconds() * 1000)
+    length_ms = (end - start) // timedelta(milliseconds=1)
     if length_ms <= 0 or length_ms % timeframe_ms != 0:
         _reject(
             f"period length {length_ms} ms must divide evenly by the "
