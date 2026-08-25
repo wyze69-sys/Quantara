@@ -75,11 +75,17 @@ The [Binance BTCUSDT perpetual January 2024 data-slice design](docs/superpowers/
 ```text
 .
 ├── .github/                 Issue forms and pull-request controls
+├── configs/
+│   ├── datasets/            Version-controlled dataset descriptors
+│   └── legal/               Versioned provider-rights records
 ├── docs/
 │   ├── assets/              Deterministic repository visual sources
 │   └── superpowers/
 │       ├── plans/           Approved bounded implementation plans
 │       └── specs/           Reviewed technical contracts
+├── src/quantara/            Implementation package (layout below)
+├── tests/                   Test suite mirroring the module layout
+├── data/                    Runtime artifacts; Git-ignored, never committed
 ├── CITATION.cff             Preferred citation metadata
 ├── CODE_OF_CONDUCT.md       Community standards and private reporting
 ├── CONTRIBUTING.md          Correctness-first contribution workflow
@@ -87,6 +93,21 @@ The [Binance BTCUSDT perpetual January 2024 data-slice design](docs/superpowers/
 ├── SECURITY.md              Private vulnerability reporting policy
 └── README.md                Repository front door
 ```
+
+### Package layout
+
+`src/quantara` is intentionally a flat module package at its current size;
+the architecture is expressed through module docstrings, module naming, and
+the mirrored test layout rather than nested folders:
+
+- **Contracts and validation:** `descriptor.py`, `derive_descriptor.py`, `errors.py`, `jcs.py`
+- **Ingest:** `acquisition.py`, `archive.py`, `parsing.py`
+- **Canonical transform:** `canonical.py`, `hashing.py`, `aggregation.py`, `quality.py`, `derive_quality.py`
+- **Publication:** `publication.py`, `manifests.py`
+- **Orchestration:** `pipeline.py`, `derive_pipeline.py`, `cli.py`
+
+Nested subpackages will be introduced deliberately, through a reviewed plan,
+when a second domain lane (features and labels) lands — not before.
 
 No empty API, tutorial, package, source, or speculative architecture directories are maintained before real artifacts exist.
 
