@@ -513,7 +513,6 @@ def test_changed_parent_lineage_identical_aggregates_create_distinct_commit(
 
 
 def _noop_attempt_ids(data_root: Path):
-    import re
 
     results = {}
     for p in (data_root / "attempts").glob("*.json"):
@@ -532,7 +531,7 @@ def _force_quality_failure(monkeypatch):
 
     def failing(*args, **kwargs):
         report = real(*args, **kwargs)
-        from quantara.derive_quality import Finding, DerivedQualityReport
+        from quantara.derive_quality import DerivedQualityReport, Finding
 
         findings = list(report.findings) + [
             Finding(
