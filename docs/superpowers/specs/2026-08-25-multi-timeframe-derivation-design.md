@@ -133,3 +133,25 @@ Silent divergence between derived and parent data; aggregation from incomplete o
 ## 15. Completion statement
 
 This document is the proposed design boundary for Quantara's multi-timeframe derivation slice. It authorizes implementation planning, not immediate implementation. Implementation may begin only after the detailed plan is written, reviewed, and approved by the owner, preserving this scope without introducing additional providers, periods, timeframes, features, models, or product behavior.
+
+## 16. Closure addendum: authenticated identity and recovery contract
+
+Final-integrity corrections refine this design without changing its policy:
+
+1. A derived dataset's commit directory address is
+   ``derived_commit_identity(canonical_content_hash, derived_from)`` — a
+   domain-separated SHA-256 over JCS of the canonical content hash and the
+   authenticated parent lineage. Changed lineage therefore yields a distinct
+   immutable commit even when every aggregated row is unchanged.
+2. Parent verification recomputes the canonical-content identity from the
+   actual retained Parquet rows and independently re-evaluates committed
+   quality evidence (quality.json findings → deterministic identity) with a
+   fresh Slice 001 evaluation; any disagreement is BLOCKED.
+3. Derived current graphs are authenticated in full (pointer structure,
+   manifest digest pinning, lineage-bound address equation across pointer/
+   directory/content.json/manifest, mutual manifest↔content consistency,
+   object hashes, quality authentication) before VERIFIED_NO_OP may be
+   reported; renamed or misaddressed graphs are rejected.
+4. Aggregate trade counts and all Decimal operations enforce int64 /
+   decimal128(38,18) representability under explicit private contexts,
+   independent of ambient decimal state.
