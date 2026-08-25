@@ -1,0 +1,41 @@
+[project]
+name = "quantara"
+version = "0.1.0"
+description = "Quantara data foundation: verified historical market-data slices."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "pyarrow==25.0.1",
+    "pyyaml==6.0.2",
+    "httpx==0.28.1",
+]
+
+[project.scripts]
+quantara = "quantara.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quantara"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m \"not integration\""
+markers = [
+    "integration: networked real-archive acceptance tests; invoked explicitly with -m integration",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
