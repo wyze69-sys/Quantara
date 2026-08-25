@@ -35,6 +35,7 @@ from quantara.hashing import (
     schema_fingerprint,
     sha256_hex,
 )
+from quantara.jcs import canonicalize
 from quantara.manifests import (
     PARSER_VERSION,
     attempt_id_now,
@@ -58,7 +59,8 @@ EXIT_OK = 0
 EXIT_BLOCKED = 2
 EXIT_FAILED = 3
 
-# Idempotency evidence = slice 001 key set extended with the lineage block.
+# Idempotency evidence = slice 001 key set extended with the lineage block
+# and the derived commit identity that binds them together.
 DERIVED_EVIDENCE_KEYS = (
     "source_sha256",
     "descriptor_sha256",
@@ -68,7 +70,26 @@ DERIVED_EVIDENCE_KEYS = (
     "quality_identity",
     "object_refs",
     "derived_from",
+    "derived_commit_identity",
 )
+
+
+def derived_commit_identity(canonical_content_hash: str, lineage: dict) -> str:
+    """Deterministic derived commit address (correction 3).
+
+    Binds the logical canonical row content to the authenticated parent
+    lineage evidence: sha256 over a domain-separated JCS payload. A changed
+    authenticated lineage therefore yields a distinct immutable commit even
+    when every aggregated row — and the canonical_content_hash — is
+    unchanged; identical content plus identical lineage reproduces it exactly,
+    preserving idempotent VERIFIED_NO_OP behavior.
+    """
+    payload = {
+        "domain": "quantara-derived-commit-identity-v1",
+        "canonical_content_hash": canonical_content_hash.lower(),
+        "derived_from": lineage,
+    }
+    return sha256_hex(canonicalize(payload).encode("utf-8"))
 
 
 @dataclass(frozen=True)
@@ -476,6 +497,12 @@ def run_derivation_pipeline(
         "derived_from": lineage,
     }
 
+    # Correction 3: the commit address binds canonical content to the
+    # authenticated lineage, so changed lineage yields a distinct commit
+    # even when every aggregated row is unchanged.
+    commit_address = derived_commit_identity(content_hash, lineage)
+    identity_evidence["derived_commit_identity"] = commit_address
+
     # Idempotent rerun: verify the existing commit incl. its parent binding.
     pointer = derived_dir / "current.json"
     if pointer.exists():
@@ -512,6 +539,7 @@ def run_derivation_pipeline(
         source_row_count=len(minutes),
         canonical_row_count=len(bars),
         canonical_content_hash=content_hash,
+        commit_identity=commit_address,
         parquet_sha256=parquet_sha,
         parquet_size=len(parquet_bytes),
         object_refs=object_refs,
@@ -535,11 +563,11 @@ def run_derivation_pipeline(
     staged_commit = stage_commit(derived_dir, attempt_id, files)
     try:
         commit_dir = publish_commit(
-            staged_commit, derived_dir / "commits", content_hash
+            staged_commit, derived_dir / "commits", commit_address
         )
     except QuantaraError:
         # Recovery: an equivalent commit already exists (e.g., pointer loss).
-        candidate = derived_dir / "commits" / content_hash
+        candidate = derived_dir / "commits" / commit_address
         if not (
             candidate.is_dir()
             and existing_commit_matches(
@@ -554,7 +582,7 @@ def run_derivation_pipeline(
         commit_dir = candidate
 
     verify_commit_graph(data, commit_dir)
-    write_current(derived_dir, content_hash, sha256_hex(manifest_bytes))
+    write_current(derived_dir, commit_address, sha256_hex(manifest_bytes))
     read_and_verify_current(derived_dir, data)
 
     shutil.rmtree(staging, ignore_errors=True)
@@ -563,7 +591,7 @@ def run_derivation_pipeline(
         root,
         terminal_result="PUBLISHED",
         dispositions={"normalized_parquet": "published"},
-        referenced_commit=content_hash,
+        referenced_commit=commit_address,
         diagnostics=[],
     )
     return EXIT_OK

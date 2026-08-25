@@ -14,6 +14,7 @@ from pathlib import Path
 
 from conftest import (
     BASE_DESCRIPTOR_NAME,
+    HOUR_MS,
     build_month_minute_rows,
     derived_cfg_tree,
     make_minute_row,
@@ -55,12 +56,27 @@ def _derived_dir(data_root: Path, interval: str = "1h") -> Path:
     )
 
 
-def _write_parent_commit(root: Path, data_root: Path, rows, tag: str) -> tuple:
-    """Publish one genuine parent commit; returns (parquet_sha, content_hash)."""
+def _write_parent_commit(
+    root: Path,
+    data_root: Path,
+    rows,
+    tag: str,
+    parquet_bytes_override: bytes | None = None,
+) -> tuple:
+    """Publish one genuine parent commit; returns (parquet_sha, content_hash).
+
+    ``parquet_bytes_override`` allows publishing logically identical rows
+    under different physical Parquet bytes (e.g., multi-row-group encoding),
+    which changes the authenticated byte-level lineage while leaving every
+    aggregate — and therefore the canonical content hash — untouched.
+    """
     staging = data_root / "staging" / f"parent-build-{tag}"
     staging.mkdir(parents=True, exist_ok=True)
     parquet_path = staging / "canonical.parquet"
-    write_canonical_parquet(rows, parquet_path)
+    if parquet_bytes_override is None:
+        write_canonical_parquet(rows, parquet_path)
+    else:
+        parquet_path.write_bytes(parquet_bytes_override)
     persisted = read_canonical_rows(parquet_path)
     reconcile_rows(rows, persisted)
     parquet_bytes = parquet_path.read_bytes()
@@ -386,3 +402,108 @@ def test_parent_republished_derived_rerun_publishes_new_lineage_commit(
     ]
     assert sorted(commits) == sorted({old_commit, new_commit})
 
+
+
+
+
+
+
+def test_changed_parent_lineage_identical_aggregates_create_distinct_commit(
+    tmp_path: Path,
+) -> None:
+    """A parent row change that provably leaves every hourly aggregate
+    untouched (an interior minute's close moves within [low, high], away from
+    the hour's first/last constituents and extremes) changes the authenticated
+    parent lineage while canonical_content_hash stays identical. The derived
+    commit identity must still yield a distinct immutable commit, current.json
+    must advance atomically, and the old commit must remain byte-identical."""
+    rows = build_month_minute_rows()
+    root, data_root = _setup(tmp_path)
+    _, parent_cch_1 = _write_parent_commit(root, data_root, rows, "gen1")
+    descriptor = write_derived_descriptor(root, "1h")
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    derived = _derived_dir(data_root)
+    old_pointer = (derived / "current.json").read_bytes()
+    old_commit = json.loads(old_pointer)["commit"]
+    old_content = json.loads(
+        (derived / "commits" / old_commit / "content.json").read_text()
+    )
+    old_cch = old_content["canonical_content_hash"]
+    commit_dir_old = derived / "commits" / old_commit
+    old_tree = {
+        p.relative_to(commit_dir_old).as_posix(): sha256_hex(p.read_bytes())
+        for p in commit_dir_old.rglob("*") if p.is_file()
+    }
+
+    # Interior-minute close change: not an hour boundary constituent (index 10
+    # of 0..59), strictly inside [low, high] of its hour.
+    changed = list(rows)
+    victim = changed[10]
+    assert victim.open_time_ms % HOUR_MS not in (0, HOUR_MS - 60_000)
+    new_close = (victim.low + victim.high) / 2
+    assert victim.low < new_close < victim.high
+    changed[10] = make_minute_row(
+        victim.open_time_ms,
+        o=victim.open, h=victim.high, lo=victim.low, c=new_close,
+        bv=victim.base_asset_volume, qv=victim.quote_asset_volume,
+        n=victim.trade_count, tbv=victim.taker_buy_base_volume,
+        tqv=victim.taker_buy_quote_volume,
+    )
+    new_sha, parent_cch_2 = _write_parent_commit(
+        root, data_root, changed, "same-aggregates"
+    )
+    assert parent_cch_2 != parent_cch_1  # parent content authentically moved
+
+    # Rerun publishes a NEW lineage-bound derived commit even though every
+    # 1h bar — and therefore canonical_content_hash — is identical.
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    advanced_pointer = (derived / "current.json").read_bytes()
+    assert advanced_pointer != old_pointer
+    new_commit = json.loads(advanced_pointer)["commit"]
+    assert new_commit != old_commit
+    new_content = json.loads(
+        (derived / "commits" / new_commit / "content.json").read_text()
+    )
+    assert new_content["canonical_content_hash"] == old_cch
+    assert new_content["derived_from"]["parent_parquet_sha256"] == new_sha
+    assert (
+        new_content["derived_from"]["parent_canonical_content_hash"]
+        == parent_cch_2
+    )
+
+    # Old derived commit byte-identical and still discoverable; pointer moved.
+    new_tree = {
+        p.relative_to(commit_dir_old).as_posix(): sha256_hex(p.read_bytes())
+        for p in commit_dir_old.rglob("*") if p.is_file()
+    }
+    assert new_tree == old_tree
+    commits = {
+        p.name for p in (derived / "commits").iterdir()
+        if not p.name.startswith(".")
+    }
+    assert commits == {old_commit, new_commit}
+
+    # Idempotency under identical lineage: VERIFIED_NO_OP, byte-identical
+    # pointer and complete commit tree, exactly two new attempt manifests.
+    attempts_before = {p.name for p in (data_root / "attempts").glob("*.json")}
+    noop_pointer_before = (derived / "current.json").read_bytes()
+    noop_tree_before = {
+        p.relative_to(derived).as_posix(): sha256_hex(p.read_bytes())
+        for p in derived.rglob("*") if p.is_file()
+    }
+    assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
+    assert (derived / "current.json").read_bytes() == noop_pointer_before
+    noop_tree_after = {
+        p.relative_to(derived).as_posix(): sha256_hex(p.read_bytes())
+        for p in derived.rglob("*") if p.is_file()
+    }
+    assert noop_tree_after == noop_tree_before
+    added = {
+        p.name for p in (data_root / "attempts").glob("*.json")
+    } - attempts_before
+    assert len(added) == 1  # one per derived interval
+    results = [
+        json.loads((data_root / "attempts" / name).read_text())["terminal_result"]
+        for name in added
+    ]
+    assert results == ["VERIFIED_NO_OP"]
