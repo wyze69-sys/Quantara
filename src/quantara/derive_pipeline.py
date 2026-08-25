@@ -132,6 +132,30 @@ def _write_attempt(
     referenced_commit: str | None,
     diagnostics: list[str],
 ) -> None:
+    """Record one attempt manifest; a fault here is reported to stderr and
+    never allowed to mask the pipeline's primary terminal result."""
+    try:
+        _record_attempt(
+            data_root,
+            repo_root,
+            terminal_result=terminal_result,
+            dispositions=dispositions,
+            referenced_commit=referenced_commit,
+            diagnostics=diagnostics,
+        )
+    except (OSError, QuantaraError) as exc:
+        print(f"failed to record attempt manifest: {exc}", file=sys.stderr)
+
+
+def _record_attempt(
+    data_root: Path,
+    repo_root: Path,
+    *,
+    terminal_result: str,
+    dispositions: dict[str, str],
+    referenced_commit: str | None,
+    diagnostics: list[str],
+) -> None:
     attempt = new_attempt_manifest(
         terminal_result=terminal_result,
         artifact_dispositions=dispositions,
@@ -432,25 +456,31 @@ def run_derivation_pipeline(
     attempt_id = attempt_id_now()
     staging = data / "staging" / attempt_id
     staging.mkdir(parents=True, exist_ok=True)
+    parquet_state = "not_written"
     try:
         minutes, bars, parquet_path, report = _derive_rows(
             parent["parquet_path"], descriptor, staging
         )
+        parquet_state = "staged_not_published"
 
         # PASS-only policy: exactly PASS publishes.
         if report.state != "PASS":
             print(f"quality state {report.state} blocks publication",
                   file=sys.stderr)
+            failing_checks = [
+                f.check_id for f in report.findings if f.outcome != "pass"
+            ] or [f"quality_state_{report.state}"]
+            shutil.rmtree(staging, ignore_errors=True)
             _write_attempt(
                 data,
                 root,
                 terminal_result="BLOCKED",
-                dispositions={"normalized_parquet": "not_written"},
+                dispositions={
+                    "normalized_parquet": parquet_state,
+                    "attempt_staging": "discarded",
+                },
                 referenced_commit=None,
-                diagnostics=[
-                    f.check_id for f in report.findings if f.outcome != "pass"
-                ]
-                or [f"quality_state_{report.state}"],
+                diagnostics=failing_checks,
             )
             return EXIT_BLOCKED
 
@@ -463,11 +493,19 @@ def run_derivation_pipeline(
         parquet_bytes = parquet_path.read_bytes()
         parquet_sha = sha256_hex(parquet_bytes)
         normalized_ref = put_object(data, "normalized", parquet_bytes)
+        parquet_state = "object_written"
     except QuantaraError as exc:
+        shutil.rmtree(staging, ignore_errors=True)
         print(f"derivation failed: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions={"normalized_parquet": parquet_state},
+            referenced_commit=None,
+            diagnostics=[getattr(exc, "error_id", "quantara_error")],
+        )
         return EXIT_FAILED
-
-
 
     object_refs = [{"kind": "normalized", "sha256": normalized_ref}]
     lineage = {
@@ -503,87 +541,104 @@ def run_derivation_pipeline(
     commit_address = derived_commit_identity(content_hash, lineage)
     identity_evidence["derived_commit_identity"] = commit_address
 
-    # Idempotent rerun: verify the existing commit incl. its parent binding.
-    pointer = derived_dir / "current.json"
-    if pointer.exists():
-        current_commit = json.loads(pointer.read_text(encoding="utf-8")).get(
-            "commit", ""
-        )
-        commit_dir = derived_dir / "commits" / current_commit
-        if existing_commit_matches(
-            data, commit_dir, identity_evidence, keys=DERIVED_EVIDENCE_KEYS
-        ):
-            shutil.rmtree(staging, ignore_errors=True)
-            _write_attempt(
-                data,
-                root,
-                terminal_result="VERIFIED_NO_OP",
-                dispositions={"normalized_parquet": "already_published"},
-                referenced_commit=current_commit,
-                diagnostics=[],
-            )
-            return EXIT_OK
-
-
-
-    # Steps 7–8: staged evidence, atomic publication, verified pointer.
-    manifest = build_dataset_manifest(
-        dataset_id=descriptor.dataset_id,
-        instrument_id=descriptor.instrument_id,
-        schema_version=descriptor.schema_version,
-        schema_fingerprint=fingerprint,
-        timestamp_semantics=descriptor.timestamp_semantics,
-        quality_policy_version="1",
-        quality_identity=report.identity(),
-        quality_state=report.state,
-        source_row_count=len(minutes),
-        canonical_row_count=len(bars),
-        canonical_content_hash=content_hash,
-        commit_identity=commit_address,
-        parquet_sha256=parquet_sha,
-        parquet_size=len(parquet_bytes),
-        object_refs=object_refs,
-        legal_record_id=rights_record.record_id,
-        legal_states={
-            name: entry.state for name, entry in rights_record.operations.items()
-        },
-        environment=environment_evidence(root),
-        derived_from=lineage,
-    )
-    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
-    files = {
-        "manifest.json": manifest_bytes,
-        "quality.json": (
-            json.dumps(_quality_payload(report), indent=2, sort_keys=True) + "\n"
-        ).encode(),
-        "content.json": (
-            json.dumps(identity_evidence, indent=2, sort_keys=True) + "\n"
-        ).encode(),
-    }
-    staged_commit = stage_commit(derived_dir, attempt_id, files)
     try:
-        commit_dir = publish_commit(
-            staged_commit, derived_dir / "commits", commit_address
-        )
-    except QuantaraError:
-        # Recovery: an equivalent commit already exists (e.g., pointer loss).
-        candidate = derived_dir / "commits" / commit_address
-        if not (
-            candidate.is_dir()
-            and existing_commit_matches(
-                data, candidate, identity_evidence, keys=DERIVED_EVIDENCE_KEYS
-            )
-        ):
-            print(
-                "publication failed: existing commit differs from current evidence",
-                file=sys.stderr,
-            )
-            return EXIT_FAILED
-        commit_dir = candidate
+        # Idempotent rerun: verify the existing commit incl. parent binding.
+        pointer = derived_dir / "current.json"
+        if pointer.exists():
+            current_commit = json.loads(
+                pointer.read_text(encoding="utf-8")
+            ).get("commit", "")
+            existing_dir = derived_dir / "commits" / current_commit
+            if existing_dir.is_dir() and existing_commit_matches(
+                data, existing_dir, identity_evidence,
+                keys=DERIVED_EVIDENCE_KEYS,
+            ):
+                shutil.rmtree(staging, ignore_errors=True)
+                _write_attempt(
+                    data,
+                    root,
+                    terminal_result="VERIFIED_NO_OP",
+                    dispositions={"normalized_parquet": "already_published"},
+                    referenced_commit=current_commit,
+                    diagnostics=[],
+                )
+                return EXIT_OK
 
-    verify_commit_graph(data, commit_dir)
-    write_current(derived_dir, commit_address, sha256_hex(manifest_bytes))
-    read_and_verify_current(derived_dir, data)
+        # Steps 7–8: staged evidence, atomic publication, verified pointer.
+        manifest = build_dataset_manifest(
+            dataset_id=descriptor.dataset_id,
+            instrument_id=descriptor.instrument_id,
+            schema_version=descriptor.schema_version,
+            schema_fingerprint=fingerprint,
+            timestamp_semantics=descriptor.timestamp_semantics,
+            quality_policy_version="1",
+            quality_identity=report.identity(),
+            quality_state=report.state,
+            source_row_count=len(minutes),
+            canonical_row_count=len(bars),
+            canonical_content_hash=content_hash,
+            commit_identity=commit_address,
+            parquet_sha256=parquet_sha,
+            parquet_size=len(parquet_bytes),
+            object_refs=object_refs,
+            legal_record_id=rights_record.record_id,
+            legal_states={
+                name: entry.state
+                for name, entry in rights_record.operations.items()
+            },
+            environment=environment_evidence(root),
+            derived_from=lineage,
+        )
+        manifest_bytes = (
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        ).encode()
+        files = {
+            "manifest.json": manifest_bytes,
+            "quality.json": (
+                json.dumps(_quality_payload(report), indent=2, sort_keys=True)
+                + "\n"
+            ).encode(),
+            "content.json": (
+                json.dumps(identity_evidence, indent=2, sort_keys=True) + "\n"
+            ).encode(),
+        }
+        staged_commit = stage_commit(derived_dir, attempt_id, files)
+        try:
+            commit_dir = publish_commit(
+                staged_commit, derived_dir / "commits", commit_address
+            )
+        except QuantaraError:
+            # Recovery: an equivalent commit already exists (pointer loss).
+            candidate = derived_dir / "commits" / commit_address
+            if not (
+                candidate.is_dir()
+                and existing_commit_matches(
+                    data, candidate, identity_evidence,
+                    keys=DERIVED_EVIDENCE_KEYS,
+                )
+            ):
+                raise QuantaraError(
+                    "commit rename failed and no equivalent commit exists"
+                ) from None
+            commit_dir = candidate
+
+        verify_commit_graph(data, commit_dir)
+        write_current(derived_dir, commit_address, sha256_hex(manifest_bytes))
+        read_and_verify_current(derived_dir, data)
+    except QuantaraError as exc:
+        # A renamed commit is a safe orphan; nothing is discoverable because
+        # current.json was never replaced.
+        shutil.rmtree(staging, ignore_errors=True)
+        print(f"publication failed: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions={"normalized_parquet": parquet_state},
+            referenced_commit=None,
+            diagnostics=[getattr(exc, "error_id", "quantara_error")],
+        )
+        return EXIT_FAILED
 
     shutil.rmtree(staging, ignore_errors=True)
     _write_attempt(

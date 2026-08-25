@@ -507,3 +507,198 @@ def test_changed_parent_lineage_identical_aggregates_create_distinct_commit(
         for name in added
     ]
     assert results == ["VERIFIED_NO_OP"]
+
+
+# --- correction 4: attempt evidence accuracy, staging hygiene, fault injection ---
+
+
+def _noop_attempt_ids(data_root: Path):
+    import re
+
+    results = {}
+    for p in (data_root / "attempts").glob("*.json"):
+        payload = json.loads(p.read_text())
+        if payload["terminal_result"] == "VERIFIED_NO_OP":
+            results[p.name] = payload
+    return results
+
+
+def _force_quality_failure(monkeypatch):
+    """Force the derived quality gate to FAIL after the staged Parquet was
+    already written, exposing disposition inaccuracies."""
+    import quantara.derive_pipeline as dp
+
+    real = dp.evaluate_derived_quality
+
+    def failing(*args, **kwargs):
+        report = real(*args, **kwargs)
+        from quantara.derive_quality import Finding, DerivedQualityReport
+
+        findings = list(report.findings) + [
+            Finding(
+                check_id="derived_forced_failure",
+                outcome="fail",
+                severity="hard",
+                count=1,
+                evidence={"injected": True},
+            )
+        ]
+        return DerivedQualityReport(findings=findings)
+
+    monkeypatch.setattr(dp, "evaluate_derived_quality", failing)
+
+
+def test_quality_blocked_after_staging_reports_staged_not_published(
+    tmp_path, monkeypatch
+) -> None:
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+    _force_quality_failure(monkeypatch)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 2
+    attempts = list((data_root / "attempts").glob("*.json"))
+    assert len(attempts) == 1
+    attempt = json.loads(attempts[0].read_text())
+    assert attempt["terminal_result"] == "BLOCKED"
+    # The staged Parquet existed at blocking time; reporting it as
+    # not_written is exactly the defect this correction removes.
+    assert (
+        attempt["artifact_dispositions"]["normalized_parquet"]
+        != "not_written"
+    )
+    # Staging evidence is cleaned up either way.
+    residue = [
+        p for p in (data_root / "staging").glob("*")
+        if not p.name.startswith("parent-build")  # fixture-owned inputs
+    ]
+    assert residue == []
+
+
+def test_fault_injection_object_write_failure(tmp_path, monkeypatch) -> None:
+    import quantara.derive_pipeline as dp
+    from quantara.errors import QuantaraError
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+
+    def boom(*a, **k):
+        raise QuantaraError("injected object write failure")
+
+    monkeypatch.setattr(dp, "put_object", boom)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    attempts = list((data_root / "attempts").glob("*.json"))
+    attempt = json.loads(attempts[-1].read_text())
+    assert attempt["terminal_result"] == "FAILED"
+    assert attempt["diagnostics"] == ["quantara_error"] or any(
+        "injected" in d for d in attempt["diagnostics"]
+    )
+    assert not (_derived_dir(data_root) / "current.json").exists()
+    residue = [
+        p for p in (data_root / "staging").glob("*")
+        if not p.name.startswith("parent-build")  # fixture-owned inputs
+    ]
+    assert residue == []
+
+
+def test_fault_injection_commit_rename_failure(tmp_path, monkeypatch) -> None:
+    import quantara.derive_pipeline as dp
+    from quantara.publication import PublicationError
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+
+    def boom(*a, **k):
+        raise PublicationError("injected rename failure")
+
+    monkeypatch.setattr(dp, "publish_commit", boom)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    derived = _derived_dir(data_root)
+    assert not (derived / "current.json").exists()
+    visible = [
+        p for p in (derived / "commits").iterdir() if not p.name.startswith(".")
+    ] if (derived / "commits").exists() else []
+    assert visible == []  # rename failed: nothing discoverable
+    attempts = list((data_root / "attempts").glob("*.json"))
+    assert json.loads(attempts[-1].read_text())["terminal_result"] == "FAILED"
+    residue = [
+        p for p in (data_root / "staging").glob("*")
+        if not p.name.startswith("parent-build")  # fixture-owned inputs
+    ]
+    assert residue == []
+
+
+def test_fault_injection_pointer_replacement_failure(tmp_path, monkeypatch) -> None:
+    import quantara.derive_pipeline as dp
+    from quantara.errors import QuantaraError
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+
+    def boom(*a, **k):
+        raise QuantaraError("injected pointer failure")
+
+    monkeypatch.setattr(dp, "write_current", boom)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    derived = _derived_dir(data_root)
+    # The renamed commit is a safe orphan; nothing is discoverable.
+    assert not (derived / "current.json").exists()
+    attempts = list((data_root / "attempts").glob("*.json"))
+    assert json.loads(attempts[-1].read_text())["terminal_result"] == "FAILED"
+
+
+def test_fault_injection_discovery_readback_failure(tmp_path, monkeypatch) -> None:
+    import quantara.derive_pipeline as dp
+    from quantara.errors import QuantaraError
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+
+    real = dp.read_and_verify_current
+    calls = {"n": 0}
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 2:  # 1st = parent verification, 2nd = final discovery
+            raise QuantaraError("injected discovery failure")
+        return real(*a, **k)
+
+    monkeypatch.setattr(dp, "read_and_verify_current", flaky)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 3
+    # Pointer replacement already happened, so the canonical state is complete
+    # and must independently verify; the fault only broke the final re-check.
+    derived = _derived_dir(data_root)
+    real_read = dp.read_and_verify_current.__wrapped__ if hasattr(
+        dp.read_and_verify_current, "__wrapped__"
+    ) else real
+    assert real_read(derived, data_root)
+    attempts = list((data_root / "attempts").glob("*.json"))
+    assert json.loads(attempts[-1].read_text())["terminal_result"] == "FAILED"
+
+
+def test_attempt_manifest_write_failure_does_not_mask_result(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    import quantara.derive_pipeline as dp
+
+    root, data_root, *_ = _valid_parent(tmp_path)
+    descriptor = write_derived_descriptor(root, "1h")
+
+    real_write_json = dp.write_json
+    attempted = {"n": 0}
+
+    def flaky(path, payload):
+        attempted["n"] += 1
+        if attempted["n"] == 1:
+            raise OSError("injected attempt-manifest failure")
+        return real_write_json(path, payload)
+
+    monkeypatch.setattr(dp, "write_json", flaky)
+    code = run_derivation_pipeline(descriptor, data_root, repo_root=root)
+    assert code == 0  # publication succeeded despite evidence-recording fault
+    assert (_derived_dir(data_root) / "current.json").exists()
+    captured = capsys.readouterr()
+    assert "attempt manifest" in (captured.err + captured.out)
