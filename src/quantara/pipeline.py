@@ -173,6 +173,10 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
                 return EXIT_FAILED
         return EXIT_OK
 
+    # Recovery: stale staging directories are safe orphans; discard them.
+    for stale in (dataset_directory / "commits").glob(".staging-*"):
+        shutil.rmtree(stale, ignore_errors=True)
+
     # Steps 3–8 (+12.3 reuse): verified acquisition into staging and objects.
     attempt_id = attempt_id_now()
     acquirer = Acquirer(
@@ -353,9 +357,19 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         commit_dir = publish_commit(
             staged_commit, dataset_directory / "commits", content_hash
         )
-    except QuantaraError as exc:
-        print(f"publication failed: {exc}", file=sys.stderr)
-        return EXIT_FAILED
+    except QuantaraError:
+        # Recovery: an equivalent commit already exists (e.g., pointer loss).
+        candidate = dataset_directory / "commits" / content_hash
+        if not (
+            candidate.is_dir()
+            and existing_commit_matches(data, candidate, identity_evidence)
+        ):
+            print(
+                "publication failed: existing commit differs from current evidence",
+                file=sys.stderr,
+            )
+            return EXIT_FAILED
+        commit_dir = candidate
 
     # Step 21: verify the committed directory independently before pointing.
     verify_commit_graph(data, commit_dir)

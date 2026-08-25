@@ -63,6 +63,48 @@ def rights_yaml(operations: dict) -> dict:
     }
 
 
+def rights_yaml_dict():
+    return rights_yaml(
+        {
+            "acquire_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "retain_raw_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "normalize_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "analyze_internal": op("UNKNOWN"),
+            "model_train_internal": op("UNKNOWN"),
+            "commercial_production_eligible": op("UNKNOWN"),
+            "customer_display": op("UNKNOWN"),
+            "raw_redistribution": op("UNKNOWN"),
+        }
+    )
+
+
+MONTH_ROW_COUNT = 44_640
+MONTH_OPEN_START = 1704067200000
+
+
+def build_month_csv() -> bytes:
+    header = (
+        "open_time,open,high,low,close,volume,close_time,"
+        "quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore\n"
+    )
+    lines = [header]
+    for i in range(MONTH_ROW_COUNT):
+        t = MONTH_OPEN_START + i * 60_000
+        lines.append(
+            f"{t},42571.90,42600.00,42500.10,42590.50,12.5,"
+            f"{t + 59_999},500000.25,3210,6.25,250000.125,0\n"
+        )
+    return "".join(lines).encode("utf-8")
+
+
+def dataset_dir_for(data_root):
+    return (
+        Path(data_root)
+        / "datasets" / "binance" / "usdm" / "klines"
+        / "BTCUSDT" / "1m" / "year=2024" / "month=01"
+    )
+
+
 @pytest.fixture()
 def valid_path(tmp_path: Path) -> Path:
     return write_text(tmp_path, VALID_DESCRIPTOR_YAML)
