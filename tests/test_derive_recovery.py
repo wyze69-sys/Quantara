@@ -1025,9 +1025,8 @@ def test_trade_count_overflow_pipeline_exit_failed_with_cleanup(
 ) -> None:
     """An int64-unrepresentable hourly count must produce a controlled
     EXIT_FAILED with accurate FAILED attempt evidence and no residue."""
+
     from quantara.aggregation import aggregate_timeframe
-    import pytest as _pytest
-    from quantara.aggregation import IntegerPrecisionOverflow
 
     rows = build_month_minute_rows()
     for i in range(60):
