@@ -1,0 +1,25 @@
+schema: quantara.dataset-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_1m_2024_01
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1m
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2024-02-01T00:00:00Z"   # [start, end)
+source:
+  archive_url: https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2024-01.zip
+  checksum_url: https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2024-01.zip.CHECKSUM
+  allowed_hosts:
+    - data.binance.vision
+  member_pattern: "^BTCUSDT-1m-2024-01\\.csv$"
+schema_version: binance_usdm_kline_1m_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v1.yaml
