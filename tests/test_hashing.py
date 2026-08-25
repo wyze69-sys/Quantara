@@ -7,7 +7,14 @@ production hashing path under test.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import (
+    ROUND_FLOOR,
+    Decimal,
+    Inexact,
+    Rounded,
+    getcontext,
+    setcontext,
+)
 
 import pytest
 
@@ -170,3 +177,56 @@ def test_quality_identity_excludes_operational_timestamps() -> None:
         for i, c in enumerate(base_checks)
     ]
     assert quality_identity(base_checks) == quality_identity(with_ts)
+
+
+# --- phase closure 2.4: full ambient-Decimal-context independence -------------
+
+
+def _hostile_context():
+    """Mutate the ambient context into maximally hostile state."""
+    ctx = getcontext()
+    ctx.prec = 2
+    ctx.rounding = ROUND_FLOOR
+    ctx.Emax = 1
+    ctx.Emin = -1
+    ctx.traps[Inexact] = True
+    ctx.traps[Rounded] = True
+
+
+def _context_fingerprint():
+    ctx = getcontext()
+    return (
+        ctx.prec,
+        str(ctx.rounding),
+        ctx.Emax,
+        ctx.Emin,
+        tuple(sorted((k.__name__, v) for k, v in ctx.traps.items())),
+        tuple(sorted((k.__name__, v) for k, v in ctx.flags.items())),
+    )
+
+
+def test_render_decimal_18_ignores_hostile_ambient_context() -> None:
+    from decimal import Decimal
+
+    from quantara.hashing import render_decimal_18
+
+    saved = getcontext().copy()
+    try:
+        _hostile_context()
+        before = _context_fingerprint()
+        # A wide canonical value whose rendering needs every digit.
+        value = Decimal("9999999999.123456789012345678")
+        result = render_decimal_18(value)
+        assert result == "9999999999.123456789012345678"
+        # Hostile traps must never have fired inside the function.
+        assert _context_fingerprint() == before
+    finally:
+        setcontext(saved)
+
+
+def test_hashing_module_never_touches_the_ambient_context() -> None:
+    import pathlib
+
+    source = pathlib.Path("src/quantara/hashing.py").read_text(encoding="utf-8")
+    assert "getcontext(" not in source
+    assert "localcontext(" not in source

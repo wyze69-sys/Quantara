@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from decimal import Decimal, localcontext
+from decimal import MAX_EMAX, MIN_EMIN, ROUND_HALF_EVEN, Context, Decimal
 
 from quantara.canonical import CanonicalRow, DuplicateOpenTime
 from quantara.errors import (
@@ -73,8 +73,22 @@ def exact_trade_count(members: Sequence[CanonicalRow]) -> int:
 # (the process-global context is never read or mutated), then re-checked for
 # exact representability in the canonical persisted type per design §7.
 _SUM_CONTEXT_PRECISION = 80
+_CANONICAL_EXPONENT_LIMIT = 10**18
 _CANONICAL_MAX_COEFFICIENT = 10**38
 _CANONICAL_SCALE = -18
+
+
+def _fresh_exact_context() -> Context:
+    """A private, fully specified Decimal context. The ambient context's
+    precision, rounding, exponent limits, traps, and flags are never read or
+    mutated, so every result is independent of global state."""
+    return Context(
+        prec=_SUM_CONTEXT_PRECISION,
+        rounding=ROUND_HALF_EVEN,
+        Emax=MAX_EMAX,
+        Emin=MIN_EMIN,
+        traps=[],
+    )
 
 
 def exact_volume_sum(values: Iterable[Decimal], field_name: str) -> Decimal:
@@ -86,12 +100,11 @@ def exact_volume_sum(values: Iterable[Decimal], field_name: str) -> Decimal:
     unrepresentable aggregate is a deterministic hard failure — rounding
     never happens.
     """
+    ctx = _fresh_exact_context()
     total = Decimal(0)
-    with localcontext() as ctx:
-        ctx.prec = _SUM_CONTEXT_PRECISION
-        for value in values:
-            total += value
-        scaled = total.scaleb(-_CANONICAL_SCALE)
+    for value in values:
+        total = ctx.add(total, value)
+    scaled = ctx.scaleb(total, Decimal(-_CANONICAL_SCALE))
     if scaled != scaled.to_integral_value():
         raise DecimalPrecisionOrScaleOverflow(
             f"exact {field_name} aggregate needs more than 18 fractional "

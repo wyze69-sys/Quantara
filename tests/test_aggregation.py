@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal, getcontext, setcontext
 
 import pytest
 from hypothesis import given, settings
@@ -1988,6 +1988,32 @@ def test_unrepresentable_exact_aggregate_fails_deterministically() -> None:
 # --- phase closure 2.3: exact int64 representability for aggregate counts -----
 
 
+
+
+def _hostile_context():
+    ctx = getcontext()
+    ctx.prec = 2
+    ctx.rounding = ROUND_FLOOR
+    ctx.Emax = 1
+    ctx.Emin = -1
+    from decimal import Inexact, Rounded
+
+    ctx.traps[Inexact] = True
+    ctx.traps[Rounded] = True
+
+
+def _context_fingerprint():
+    ctx = getcontext()
+    return (
+        ctx.prec,
+        str(ctx.rounding),
+        ctx.Emax,
+        ctx.Emin,
+        tuple(sorted((k.__name__, v) for k, v in ctx.traps.items())),
+        tuple(sorted((k.__name__, v) for k, v in ctx.flags.items())),
+    )
+
+
 INT64_MAX = 2**63 - 1
 
 
@@ -2035,3 +2061,59 @@ def test_daily_count_overflow_raises_for_1440_members() -> None:
     ]
     with pytest.raises(IntegerPrecisionOverflow):
         aggregate_timeframe(rows, identity_1d, day_ms)
+
+
+# --- phase closure 2.4: aggregation ignores the ambient Decimal context -------
+
+
+def test_exact_volume_sum_ignores_hostile_ambient_context() -> None:
+    from quantara.aggregation import aggregate_timeframe
+
+    saved = getcontext().copy()
+    try:
+        _hostile_context()
+        before = _context_fingerprint()
+        rows = [
+            minute_row(
+                MONTH_OPEN_START + i * 60_000,
+                bv="9999999999.123456789012345678",
+                qv="9999999999.123456789012345678",
+            )
+            for i in range(60)
+        ]
+        bars = aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
+        assert bars[0].base_asset_volume == EXACT_60_SUM
+        assert bars[0].quote_asset_volume == EXACT_60_SUM
+        assert _context_fingerprint() == before
+    finally:
+        setcontext(saved)
+
+
+def test_overflow_rejection_survives_hostile_context() -> None:
+    from decimal import Decimal
+
+    from quantara.aggregation import (
+        DecimalPrecisionOrScaleOverflow,
+        aggregate_timeframe,
+    )
+
+    saved = getcontext().copy()
+    try:
+        _hostile_context()
+        rows = []
+        for i in range(60):
+            t = MONTH_OPEN_START + i * 60_000
+            huge = Decimal("99999999999999999999.123456789012345678")
+            rows.append(minute_row(t, bv=huge))
+        with pytest.raises(DecimalPrecisionOrScaleOverflow):
+            aggregate_timeframe(rows, IDENTITY_1H, HOUR_MS)
+    finally:
+        setcontext(saved)
+
+
+def test_aggregation_module_never_touches_the_ambient_context() -> None:
+    import pathlib
+
+    source = pathlib.Path("src/quantara/aggregation.py").read_text(encoding="utf-8")
+    assert "getcontext(" not in source
+    assert "localcontext(" not in source

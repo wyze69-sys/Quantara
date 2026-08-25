@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable, Sequence
-from decimal import Decimal, localcontext
+from decimal import MAX_EMAX, MIN_EMIN, ROUND_HALF_EVEN, Context, Decimal
 
 from quantara.errors import QuantaraError
 from quantara.jcs import canonicalize
@@ -117,16 +117,23 @@ def render_decimal_18(value: Decimal | str) -> str:
     ambient process-global context can never round a wide coefficient.
     """
     number = value if isinstance(value, Decimal) else Decimal(str(value))
-    with localcontext() as ctx:
-        ctx.prec = max(len(number.as_tuple().digits), _RENDER_MIN_PRECISION) + 4
-        trimmed = number.normalize()
-        scaled = trimmed.scaleb(18)
-        integral = scaled.to_integral_value()
-        if scaled != integral:
-            raise HashPayloadError(
-                f"decimal {number} exceeds 18 fractional digits; rounding is "
-                "forbidden"
-            )
+    # A private, fully specified context: ambient precision/rounding/exponent
+    # limits/traps/flags are never read or mutated.
+    ctx = Context(
+        prec=max(len(number.as_tuple().digits), _RENDER_MIN_PRECISION) + 4,
+        rounding=ROUND_HALF_EVEN,
+        Emax=MAX_EMAX,
+        Emin=MIN_EMIN,
+        traps=[],
+    )
+    trimmed = ctx.normalize(number)
+    scaled = ctx.scaleb(trimmed, Decimal(18))
+    integral = ctx.to_integral_value(scaled)
+    if scaled != integral:
+        raise HashPayloadError(
+            f"decimal {number} exceeds 18 fractional digits; rounding is "
+            "forbidden"
+        )
     magnitude = int(integral)
     sign = "-" if magnitude < 0 else ""
     digits = str(abs(magnitude)).rjust(19, "0")
