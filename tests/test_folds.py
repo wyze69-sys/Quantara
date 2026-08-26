@@ -57,17 +57,15 @@ def test_acceptance_numbers_n_744() -> None:
         assert f.embargo_range[0] == f.train_range[1]
         assert f.embargo_range[1] == f.test_range[0]
 
-    # Coverage accounting
-    assert partition.coverage["total_rows"] == 744
-    assert partition.coverage["role_counts"]["EXCLUDED"] == 360
-    assert partition.coverage["role_counts"]["TEST"] == 384
-    assert partition.coverage["role_counts"]["TRAIN"] == 0
-    assert partition.coverage["role_counts"]["EMBARGO"] == 0
-    assert (
-        partition.coverage["role_counts"]["EXCLUDED"]
-        + partition.coverage["role_counts"]["TEST"]
-        == 744
-    )
+    # Coverage accounting (truthful aggregates; per-row TRAIN/EMBARGO counts are
+    # undefined under anchored expanding trains and are deliberately not published)
+    assert partition.coverage == {
+        "total_rows": 744,
+        "fold_count": 5,
+        "test_rows": 384,
+    }
+    assert partition.excluded_head_rows == 360
+    assert partition.excluded_head_rows + partition.coverage["test_rows"] == 744
 
 
 def test_minimum_viable_n_432() -> None:
@@ -78,8 +76,8 @@ def test_minimum_viable_n_432() -> None:
     assert partition.folds[0].embargo_range == (336, 360)
     assert partition.folds[0].test_range == (360, 432)
     assert partition.excluded_head_rows == 360
-    assert partition.coverage["role_counts"]["TEST"] == 72
-    assert partition.coverage["role_counts"]["EXCLUDED"] == 360
+    assert partition.coverage["test_rows"] == 72
+    assert partition.coverage["fold_count"] == 1
 
 
 def test_undersized_parent_rejected_pre_compute() -> None:
@@ -113,11 +111,9 @@ def test_property_5_1_partition_completeness_and_disjointness(n: int) -> None:
     # Union is [0, N)
     assert not (excluded_indices & test_indices), "EXCLUDED overlaps TEST!"
     assert (excluded_indices | test_indices) == set(range(n))
-    assert (
-        partition.coverage["role_counts"]["EXCLUDED"]
-        + partition.coverage["role_counts"]["TEST"]
-        == n
-    )
+    assert partition.coverage["test_rows"] == len(test_indices)
+    assert partition.excluded_head_rows + partition.coverage["test_rows"] == n
+    assert partition.coverage["fold_count"] == len(partition.folds)
 
     # In each fold, train, embargo, test are contiguous and disjoint
     for fold in partition.folds:

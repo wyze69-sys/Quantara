@@ -135,14 +135,15 @@ def build_walkforward_folds(
         )
 
     total_test_rows = sum(f.test_range[1] - f.test_range[0] for f in folds)
+    # Truthful dataset-level aggregates only. Under anchored expanding trains,
+    # per-row TRAIN/EMBARGO counts are undefined (rows belong to several folds'
+    # trains), so no per-row role partition is published; train/embargo extents
+    # live in each fold, and rows outside every test segment are captured by
+    # excluded_head_rows (= parent_rows - test_rows).
     coverage = {
         "total_rows": n_rows,
-        "role_counts": {
-            "TRAIN": 0,
-            "EMBARGO": 0,
-            "TEST": total_test_rows,
-            "EXCLUDED": first_test_start,
-        },
+        "fold_count": len(folds),
+        "test_rows": total_test_rows,
     }
 
     return FoldPartition(

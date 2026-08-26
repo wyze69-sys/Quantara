@@ -78,12 +78,8 @@ def test_failing_fixture_coverage_partition() -> None:
     partition, stats_list = _build_clean_partition_and_stats(744)
     bad_coverage = {
         "total_rows": 744,
-        "role_counts": {
-            "TRAIN": 10,  # Must be 0
-            "EMBARGO": 0,
-            "TEST": 374,
-            "EXCLUDED": 360,
-        },
+        "fold_count": 5,
+        "test_rows": 374,  # must be 384: understates the test coverage
     }
     tampered_partition = FoldPartition(
         parent_rows=744,

@@ -144,8 +144,9 @@ def test_offline_end_to_end_publication_with_lineage_binding(chain) -> None:
     assert artifact["parent_rows"] == 744
     assert artifact["excluded_head_rows"] == 360
     assert len(artifact["folds"]) == 5
-    assert artifact["coverage"]["role_counts"]["TEST"] == 384
-    assert artifact["coverage"]["role_counts"]["EXCLUDED"] == 360
+    assert artifact["coverage"]["test_rows"] == 384
+    assert artifact["excluded_head_rows"] == 360
+    assert artifact["coverage"]["fold_count"] == 5
 
     # Idempotent rerun: VERIFIED_NO_OP, pointer identical, 1 commit retained
     before = _attempts(data_root)

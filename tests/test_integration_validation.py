@@ -139,12 +139,13 @@ def test_real_parent_validation_acceptance() -> None:
     test_lengths = [f["test_range"][1] - f["test_range"][0] for f in artifact["folds"]]
     assert test_lengths == [72, 72, 72, 72, 96]  # last test length 96!
 
-    # Coverage accounting
-    assert artifact["coverage"]["total_rows"] == 744
-    assert artifact["coverage"]["role_counts"]["EXCLUDED"] == 360
-    assert artifact["coverage"]["role_counts"]["TEST"] == 384
-    assert artifact["coverage"]["role_counts"]["TRAIN"] == 0
-    assert artifact["coverage"]["role_counts"]["EMBARGO"] == 0
+    # Coverage accounting (truthful aggregates; design amendment 2026-08-26)
+    assert artifact["coverage"] == {
+        "total_rows": 744,
+        "fold_count": 5,
+        "test_rows": 384,
+    }
+    assert artifact["excluded_head_rows"] == 360
 
     # Fold 4 structural nulls check
     fold_4_stats = artifact["folds"][4]["stats"]
@@ -155,12 +156,15 @@ def test_real_parent_validation_acceptance() -> None:
         assert f_stats["null_counts"]["l_fwdret_24"] == 0
         assert f_stats["null_counts"]["l_fwddir_24"] == 0
 
-    # 2. Idempotent rerun: byte-identical pointer, single retained commit
+    # 2. Idempotent rerun: byte-identical pointer, no additional retained commit
+    # (commit-count equality, not == 1: the immutable store legitimately retains
+    # older validation commits across content-schema evolutions)
+    commits_dir = dataset_dir / "commits"
+    commits_after_first = sorted(p.name for p in commits_dir.iterdir())
     second = main(["--descriptor", str(VALIDATION_DESCRIPTOR), "--data-root", str(DATA_ROOT)])
     assert second == 0
     assert pointer_path.read_bytes() == first_pointer
-    commits = list((dataset_dir / "commits").iterdir())
-    assert len(commits) == 1
+    assert sorted(p.name for p in commits_dir.iterdir()) == commits_after_first
 
     # 3. Parent immutability across both invocations
     assert _tree_digest(parent) == baseline

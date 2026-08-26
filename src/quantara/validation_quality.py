@@ -88,23 +88,20 @@ def evaluate_validation_quality(
             )
         )
 
-    # 1. Coverage partition
-    role_counts = partition.coverage.get("role_counts", {})
+    # 1. Coverage partition (truthful aggregates; design amendment 2026-08-26)
     cov_total = partition.coverage.get("total_rows")
-    excl = role_counts.get("EXCLUDED", 0)
-    test_cov = role_counts.get("TEST", 0)
-    train_cov = role_counts.get("TRAIN", 0)
-    emb_cov = role_counts.get("EMBARGO", 0)
+    test_cov = partition.coverage.get("test_rows")
+    fold_count_cov = partition.coverage.get("fold_count")
+    excl = partition.excluded_head_rows
 
     total_matches = (
         partition.parent_rows == expected_parent_rows
         and cov_total == expected_parent_rows
     )
-    role_sum_matches = (excl + test_cov == expected_parent_rows)
-    roles_valid = (
-        train_cov == 0
-        and emb_cov == 0
-        and excl == partition.excluded_head_rows
+    role_sum_matches = excl + (test_cov or 0) == expected_parent_rows
+    coverage_keys_valid = (
+        fold_count_cov == len(partition.folds)
+        and "role_counts" not in partition.coverage
     )
 
     # Disjointness of test segments
@@ -121,7 +118,7 @@ def evaluate_validation_quality(
     cov_ok = (
         total_matches
         and role_sum_matches
-        and roles_valid
+        and coverage_keys_valid
         and segments_disjoint
         and (len(test_indices) == test_cov)
     )
@@ -131,7 +128,8 @@ def evaluate_validation_quality(
         count=0 if cov_ok else 1,
         expected_parent_rows=expected_parent_rows,
         partition_rows=partition.parent_rows,
-        role_counts=role_counts,
+        coverage=partition.coverage,
+        excluded_head_rows=excl,
         segments_disjoint=segments_disjoint,
     )
 

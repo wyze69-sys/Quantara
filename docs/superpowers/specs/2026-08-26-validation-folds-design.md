@@ -214,3 +214,14 @@ never change exit-code semantics.
 - Integration (marked, serial): real-parent acceptance against the real store — publish folds
   from the real 1h research table, assert exactly 5 folds, coverage/exclusion numbers of §4,
   rerun `VERIFIED_NO_OP` byte-identical, parent tree digest unchanged.
+
+## Amendment 2026-08-26 (post-implementation audit)
+
+Section §4 contained an internal contradiction: anchored expanding trains overlap across folds,
+so a per-row disjoint four-role partition (`TRAIN`/`EMBARGO`/`TEST`/`EXCLUDED`) is impossible as
+originally worded, and any published per-row role counts would be false evidence. Resolved by
+amending §7's coverage schema: the artifact publishes only truthful dataset-level aggregates —
+`coverage = {"total_rows", "fold_count", "test_rows"}` plus top-level `excluded_head_rows`
+(= `parent_rows − test_rows`) — and never a `role_counts` object. Per-fold train/embargo extents
+remain authoritative inside each fold record. The `validation_coverage_partition` quality gate
+enforces exactly these keys; the presence of `role_counts` is a hard failure.

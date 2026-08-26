@@ -1,11 +1,7 @@
 {
   "coverage": {
-    "role_counts": {
-      "EMBARGO": 0,
-      "EXCLUDED": 360,
-      "TEST": 72,
-      "TRAIN": 0
-    },
+    "fold_count": 1,
+    "test_rows": 72,
     "total_rows": 432
   },
   "excluded_head_rows": 360,
