@@ -183,3 +183,81 @@ def test_perturbing_bars_after_t_leaves_prior_features_bit_identical(data, n: in
         assert baseline[name][: t + 1] == perturbed[name][: t + 1], (
             f"feature {name} leaked future information at t={t}"
         )
+
+
+# --- Task 4: forward label engines ---------------------------------------------
+
+from quantara.features import compute_labels  # noqa: E402 - task section
+
+
+def _labels(closes_strings, horizon=24):
+    return compute_labels([Decimal(c) for c in closes_strings], horizon)
+
+
+def test_label_trailing_nulls_exact_counts() -> None:
+    closes = [str(100 + i) for i in range(N)]
+    labels = _labels(closes)
+    valid_through = N - 1 - 24
+    assert all(
+        labels["l_fwdret_24"][t] is not None for t in range(valid_through + 1)
+    )
+    assert all(labels["l_fwdret_24"][t] is None for t in range(valid_through + 1, N))
+    assert all(labels["l_fwddir_24"][t] is None for t in range(valid_through + 1, N))
+    assert labels["l_fwddir_24"][valid_through] == 1  # strictly ascending closes
+
+
+def test_zero_return_sign_fixture_is_exact_zero_not_tolerance() -> None:
+    closes = ["100"] * 40
+    labels = _labels(closes)
+    ret = labels["l_fwdret_24"][0]
+    assert ret == 0 and ret.as_tuple() == Decimal(0).as_tuple()
+    assert labels["l_fwddir_24"][0] == 0
+
+
+def test_label_sign_matches_direction() -> None:
+    closes = [str(100 + (-i if i % 2 == 0 else i)) for i in range(30)]
+    labels = _labels(closes)
+    numbers = [Decimal(c) for c in closes]
+    for t in range(6):
+        expected_dir = 1 if numbers[t + 24] > numbers[t] else -1
+        assert labels["l_fwddir_24"][t] == expected_dir
+
+
+def test_fwdret_value_hand_computed() -> None:
+    closes = ["100"] * 24 + ["101"]
+    labels = _labels(closes)
+    assert labels["l_fwdret_24"][0] == Decimal("0.01")
+    assert labels["l_fwddir_24"][0] == 1
+
+
+def _labels_as_text(closes, horizon=24):
+    labels = compute_labels([Decimal(c) for c in closes], horizon)
+    return {
+        "fwdret": [
+            None if v is None else v.as_tuple() for v in labels["l_fwdret_24"]
+        ],
+        "fwddir": list(labels["l_fwddir_24"]),
+    }
+
+
+@settings(max_examples=25, deadline=None)
+@given(
+    data=st.data(),
+    n=st.integers(min_value=85, max_value=110),
+    t=st.integers(min_value=30, max_value=60),
+)
+def test_perturbing_bars_before_t_leaves_later_labels_bit_identical(
+    data, n: int, t: int
+) -> None:
+    closes = [str(data.draw(_money)) for _ in range(n)]
+    baseline = _labels_as_text(closes)
+
+    mutated = list(closes)
+    for i in range(t):  # strictly before t
+        mutated[i] = str(data.draw(_money))
+
+    perturbed = _labels_as_text(mutated)
+    assert baseline["fwddir"][t:] == perturbed["fwddir"][t:]
+    assert baseline["fwdret"][t:] == perturbed["fwdret"][t:], (
+        f"label leaked past information at t={t}"
+    )
