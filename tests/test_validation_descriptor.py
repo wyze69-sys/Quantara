@@ -184,3 +184,75 @@ def test_wrong_legal_record_rejected(tmp_path: Path) -> None:
         tmp_path,
         legal_record="configs/legal/binance-usdm-provider-rights.v1.yaml",
     )
+
+
+# --- Task 2: Hashing tests ---------------------------------------------------
+
+
+def test_validation_schema_fingerprint_determinism_and_domain_separation() -> None:
+    from quantara.hashing import (
+        research_schema_fingerprint,
+        schema_fingerprint,
+        validation_schema_fingerprint,
+    )
+
+    base = validation_schema_fingerprint()
+    assert len(base) == 64
+    assert base == validation_schema_fingerprint()
+
+    # Predecessor fingerprints are distinct
+    kline_fp = schema_fingerprint()
+    research_fp = research_schema_fingerprint()
+    assert base != kline_fp
+    assert base != research_fp
+    assert kline_fp == "feab7d2bb40de94e3621d6ff9847363eddd52b7fd8cd3c07f66def664da614c8"
+
+    # Sensitivity to every dimension
+    assert base != validation_schema_fingerprint(schema_id="other_schema")
+    assert base != validation_schema_fingerprint(scheme="other_scheme")
+    assert base != validation_schema_fingerprint(
+        parameters={"test_size": 48, "min_train_size": 336, "embargo": 24}
+    )
+    assert base != validation_schema_fingerprint(fold_set_name="other_folds")
+    assert base != validation_schema_fingerprint(fold_set_version="2")
+    assert base != validation_schema_fingerprint(
+        parent_fingerprint="0" * 64
+    )
+
+
+def test_validation_content_hash_determinism_and_types() -> None:
+    from quantara.hashing import (
+        HashPayloadError,
+        validation_content_hash,
+        validation_schema_fingerprint,
+    )
+
+    fp = validation_schema_fingerprint()
+    artifact = {
+        "schema": "quantara.validation_folds/v1",
+        "fold_set": "btcusdt_core_v1_wf72_v1",
+        "scheme": "anchored_walkforward_v1",
+        "parent_rows": 744,
+        "folds": [{"fold_id": 0}],
+    }
+    h1 = validation_content_hash(fp, artifact)
+    assert len(h1) == 64
+    assert h1 == validation_content_hash(fp, artifact)
+
+    # String and bytes forms match
+    from quantara.jcs import canonicalize
+
+    canonical_str = canonicalize(artifact)
+    assert h1 == validation_content_hash(fp, canonical_str)
+    assert h1 == validation_content_hash(fp, canonical_str.encode("utf-8"))
+
+    # Different content produces different hash
+    artifact_diff = dict(artifact, parent_rows=745)
+    assert h1 != validation_content_hash(fp, artifact_diff)
+
+    # Different fingerprint produces different hash
+    assert h1 != validation_content_hash("0" * 64, artifact)
+
+    # Invalid type rejected
+    with pytest.raises(HashPayloadError):
+        validation_content_hash(fp, 12345)  # type: ignore[arg-type]

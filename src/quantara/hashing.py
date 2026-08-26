@@ -25,7 +25,8 @@ __all__ = [
     "RESEARCH_COLUMNS",
     "RESEARCH_CONTENT_HASH_DOMAIN",
     "RESEARCH_SCHEMA_VERSION",
-    "SCHEMA_VERSION",
+    "VALIDATION_CONTENT_HASH_DOMAIN",
+    "VALIDATION_SCHEMA_VERSION",
     "canonical_content_hash",
     "canonical_row_array",
     "descriptor_hash",
@@ -36,6 +37,8 @@ __all__ = [
     "research_schema_fingerprint",
     "schema_fingerprint",
     "sha256_hex",
+    "validation_content_hash",
+    "validation_schema_fingerprint",
 ]
 
 HASH_CONTRACT_VERSION = "hash_contract_v1"
@@ -45,6 +48,10 @@ SCHEMA_VERSION = "binance_usdm_kline_1m_v1"
 # Data slice 003b: research-table identity domain and schema version.
 RESEARCH_CONTENT_HASH_DOMAIN = "quantara-research-content-v1"
 RESEARCH_SCHEMA_VERSION = "quantara_research_featureset_v1"
+
+# Data slice 004: validation-folds identity domain and schema version.
+VALIDATION_CONTENT_HASH_DOMAIN = "quantara-validation-content-v1"
+VALIDATION_SCHEMA_VERSION = "quantara_validation_folds_v1"
 
 DECIMAL_TYPE = "decimal128_38_18"
 
@@ -284,4 +291,74 @@ def research_content_hash(
     for row in rows:
         parts.append(canonicalize(research_row_array(row)).encode("utf-8"))
         parts.append(b"\n")
+    return sha256_hex(b"".join(parts))
+
+
+# --- Data slice 004: validation-folds identity -------------------------------
+
+
+def validation_schema_fingerprint(
+    parent_fingerprint: str | None = None,
+    schema_id: str = VALIDATION_SCHEMA_VERSION,
+    scheme: str = "anchored_walkforward_v1",
+    parameters: dict[str, int] | None = None,
+    fold_set_name: str = "btcusdt_core_v1_wf72_v1",
+    fold_set_version: str = "1",
+) -> str:
+    """SHA-256 over JCS of the validation schema domain payload.
+
+    Domain-separated over schema id, scheme, parameters (test_size,
+    min_train_size, embargo), fold set name/version, and parent research
+    fingerprint.
+    """
+    if parent_fingerprint is None:
+        parent_fingerprint = research_schema_fingerprint()
+    if parameters is None:
+        parameters = {"test_size": 72, "min_train_size": 336, "embargo": 24}
+    payload = {
+        "domain": "quantara-validation-schema-v1",
+        "schema_id": schema_id,
+        "scheme": scheme,
+        "parameters": {
+            "test_size": parameters["test_size"],
+            "min_train_size": parameters["min_train_size"],
+            "embargo": parameters.get("embargo", 24),
+        },
+        "fold_set": {
+            "name": fold_set_name,
+            "version": str(fold_set_version),
+        },
+        "parent_research_fingerprint": parent_fingerprint.lower(),
+    }
+    return sha256_hex(canonicalize(payload).encode("utf-8"))
+
+
+def validation_content_hash(
+    fingerprint: str,
+    artifact: bytes | str | dict,
+) -> str:
+    """SHA-256 over domain-separated validation artifact bytes.
+
+    Binds the validation schema fingerprint and canonical artifact bytes
+    under the dedicated ``quantara-validation-content-v1`` domain.
+    """
+    if isinstance(artifact, dict):
+        payload_bytes = canonicalize(artifact).encode("utf-8")
+    elif isinstance(artifact, str):
+        payload_bytes = artifact.encode("utf-8")
+    elif isinstance(artifact, (bytes, bytearray)):
+        payload_bytes = bytes(artifact)
+    else:
+        raise HashPayloadError(
+            f"validation artifact must be dict, str, or bytes, got {type(artifact)!r}"
+        )
+
+    parts: list[bytes] = [
+        VALIDATION_CONTENT_HASH_DOMAIN.encode("ascii"),
+        b"\x00",
+        fingerprint.lower().encode("ascii"),
+        b"\n",
+        payload_bytes,
+        b"\n",
+    ]
     return sha256_hex(b"".join(parts))
