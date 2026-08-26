@@ -51,6 +51,13 @@ Do not commit provider archives, normalized datasets, credentials, tokens, model
 
 No universal setup command exists yet because executable project scaffolding has not been approved. Each implementation plan must define its own environment and verification commands before code is added.
 
+The offline suite runs in parallel by default during development:
+
+```powershell
+uv run pytest -n 4          # offline tests only; integration stays excluded
+uv run pytest -m integration # networked acceptance; always serial, never with -n
+```
+
 Pull requests must list the exact commands executed and their real results. Depending on scope, evidence may include:
 
 - unit and property tests;
