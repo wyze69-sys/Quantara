@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import calendar
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -33,6 +35,31 @@ schema_version: binance_usdm_kline_1m_v1
 timestamp_semantics: closed_interval_v1
 quality_policy_version: "1"
 legal_record: configs/legal/binance-usdm-provider-rights.v1.yaml
+"""
+
+VALID_TWO_MONTH_DESCRIPTOR_YAML = """\
+schema: quantara.dataset-descriptor/v2
+dataset_id: binance_usdm_btcusdt_klines_1m_2024_q1
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1m
+months: ["2024-01", "2024-02"]
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2024-03-01T00:00:00Z"
+source:
+  allowed_hosts: [data.binance.vision]
+schema_version: binance_usdm_kline_1m_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
 """
 
 
@@ -95,6 +122,35 @@ def build_month_csv() -> bytes:
             f"{t},42571.90,42600.00,42500.10,42590.50,12.5,"
             f"{t + 59_999},500000.25,3210,6.25,250000.125,0\n"
         )
+    return "".join(lines).encode("utf-8")
+
+
+def build_range_month_csv(
+    month: str,
+    *,
+    drop_indices: frozenset[int] = frozenset(),
+    duplicate_indices: frozenset[int] = frozenset(),
+) -> bytes:
+    """Build one exact calendar month for additive range-pipeline fixtures."""
+    start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
+    row_count = calendar.monthrange(start.year, start.month)[1] * 1_440
+    start_ms = int(start.timestamp() * 1_000)
+    header = (
+        "open_time,open,high,low,close,volume,close_time,"
+        "quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore\n"
+    )
+    lines = [header]
+    for index in range(row_count):
+        if index in drop_indices:
+            continue
+        open_time = start_ms + index * 60_000
+        line = (
+            f"{open_time},42571.90,42600.00,42500.10,42590.50,12.5,"
+            f"{open_time + 59_999},500000.25,3210,6.25,250000.125,0\n"
+        )
+        lines.append(line)
+        if index in duplicate_indices:
+            lines.append(line)
     return "".join(lines).encode("utf-8")
 
 

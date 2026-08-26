@@ -166,19 +166,7 @@ def _validate_range_segments(segment_rows, descriptor: DatasetDescriptor) -> Non
         raise MultiMonthInvariantViolation(
             "segment accounting differs from the descriptor month count"
         )
-    for position, rows in enumerate(segment_rows):
-        expected = _segment_descriptor(descriptor, position).expected_row_count
-        if len(rows) != expected:
-            raise MultiMonthInvariantViolation(
-                f"month {descriptor.months[position]} parsed {len(rows)} rows; "
-                f"expected {expected}"
-            )
     combined = [row for rows in segment_rows for row in rows]
-    if len(combined) != descriptor.expected_row_count:
-        raise MultiMonthInvariantViolation(
-            f"concatenated rows {len(combined)} differ from expected "
-            f"{descriptor.expected_row_count}"
-        )
     times = [row.open_time for row in combined]
     if len(set(times)) != len(times):
         raise MultiMonthInvariantViolation(
@@ -197,6 +185,18 @@ def _validate_range_segments(segment_rows, descriptor: DatasetDescriptor) -> Non
     ):
         raise MultiMonthInvariantViolation(
             "concatenated months are not continuous at one-minute cadence"
+        )
+    for position, rows in enumerate(segment_rows):
+        expected = _segment_descriptor(descriptor, position).expected_row_count
+        if len(rows) != expected:
+            raise MultiMonthInvariantViolation(
+                f"month {descriptor.months[position]} parsed {len(rows)} rows; "
+                f"expected {expected}"
+            )
+    if len(combined) != descriptor.expected_row_count:
+        raise MultiMonthInvariantViolation(
+            f"concatenated rows {len(combined)} differ from expected "
+            f"{descriptor.expected_row_count}"
         )
 
 
