@@ -112,6 +112,25 @@ def dataset_dir_for(data_root):
     )
 
 
+def build_varying_month_csv() -> bytes:
+    """Slice 003b additive: like build_month_csv but with deterministic
+    time-varying closes/volumes so derived bars are non-degenerate research
+    parents (a constant series would trip the loud zero-variance check)."""
+    header = (
+        "open_time,open,high,low,close,volume,close_time,"
+        "quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore\n"
+    )
+    lines = [header]
+    for i in range(MONTH_ROW_COUNT):
+        t = MONTH_OPEN_START + i * 60_000
+        c = 42500 + (i % 97) * 3
+        v = f"{10 + (i % 13)}.5"
+        lines.append(
+            f"{t},{c},{c + 5},{c - 5},{c},{v},{t + 59_999},500000.25,3210,6.25,250000.125,0\n"
+        )
+    return "".join(lines).encode("utf-8")
+
+
 @pytest.fixture()
 def valid_path(tmp_path: Path) -> Path:
     return write_text(tmp_path, VALID_DESCRIPTOR_YAML)
@@ -336,3 +355,35 @@ def make_hour_bar(open_time_ms: int, close: str, volume: str = "12.5"):
         taker_buy_quote_volume=d("50"),
         source_ignore="0",
     )
+
+
+def publish_month_via_slice_001(tmp_path: Path):
+    """Publish the synthetic 44,640-row month through the REAL slice 001
+    pipeline (MockTransport); returns (repo_root, data_root)."""
+    import hashlib
+    import zipfile
+
+    import httpx
+
+    from quantara.pipeline import run_pipeline
+
+    root = research_cfg_tree(tmp_path)
+    archive = tmp_path / "BTCUSDT-1m-2024-01.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("BTCUSDT-1m-2024-01.csv", build_varying_month_csv().decode("utf-8"))
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(".CHECKSUM"):
+            return httpx.Response(200, text=f"{digest}  BTCUSDT-1m-2024-01.zip\n")
+        return httpx.Response(200, content=archive.read_bytes())
+
+    base_descriptor = tmp_path / "configs" / "datasets" / BASE_DESCRIPTOR_NAME
+    code = run_pipeline(
+        descriptor_path=base_descriptor,
+        data_root=tmp_path / "data",
+        repo_root=root,
+        transport=httpx.MockTransport(handler),
+    )
+    assert code == 0
+    return root, tmp_path / "data"
