@@ -191,3 +191,25 @@ through the same immutable protocol with lineage-bound addresses, PASS-only
 quality gating, and exact designed-null budgets. Like everything else here it
 is strictly internal-use: gated on `analyze_internal` under rights v2, never
 customer-facing, redistributable, or commercially eligible.
+
+## Validation folds status
+
+Validation folds (`btcusdt_core_v1_wf72_v1`: anchored walk-forward scheme,
+`test_size = 72`, `min_train_size = 336`, `embargo = 24`) are deterministically
+partitioned from the verified January 2024 1h research parent (`N = 744` bars)
+and published through the immutable content-addressed protocol.
+
+- **Frozen acceptance numbers:**
+  - `5` walk-forward folds
+  - `384` test bars total (`72, 72, 72, 72, 96` test segment lengths; remainder-merge rule applied to final block)
+  - `360` excluded head bars (`[0, 360)`)
+  - `24` bars embargo on every fold (derived from parent `label_horizon = 24`)
+  - Exact structural nulls (`24` null labels on the tail of the final fold, zero nulls on earlier folds or features)
+- **Legal posture & scope bounds:**
+  - Strictly internal-use under the `analyze_internal` permission of rights record v2.
+  - `model_train_internal` remains `UNKNOWN`.
+  - **No models, no fitting, no parameter search, and no information-coefficient (IC) calculations** exist in this slice. Folds and per-segment descriptive statistics are pure data partitioning.
+- **Running integration validation:**
+  ```bash
+  uv run pytest -m integration tests/test_integration_validation.py
+  ```
