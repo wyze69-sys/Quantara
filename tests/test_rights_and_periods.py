@@ -27,6 +27,19 @@ from quantara.descriptor import (
     load_rights_record,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+V2_RECORD_PATH = (
+    REPO_ROOT / "configs" / "legal" / "binance-usdm-provider-rights.v2.yaml"
+)
+
+
+def test_v2_rights_record_loads_and_authorizes_analytical_use() -> None:
+    record = load_rights_record(V2_RECORD_PATH)
+    assert record.record_id == "binance-usdm-provider-rights.v2"
+    assert set(record.operations) == set(RIGHTS_OPERATIONS)
+    assert record.review_date == "2026-08-26"
+    assert record.permits("analyze_internal") is True
+
 
 def test_bad_periods_are_rejected(valid_path: Path) -> None:
     bad_periods = [
