@@ -512,3 +512,61 @@ def validation_cfg_tree(tmp_path: Path) -> Path:
     write_research_descriptor(root, "1h")
     write_research_descriptor(root, "1d")
     return root
+
+
+# --- Additive helpers for data slice 006 (dual-IC feature evaluation) --------
+
+EVALUATION_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.evaluation-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_01_evaluation_dual_ic_v1
+dataset_type: feature_evaluation
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_01
+parent_descriptor: configs/datasets/{parent_name}
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2024-02-01T00:00:00Z"
+evaluation_set:
+  name: btcusdt_core_v1_dual_ic_v1
+  version: "1"
+features:
+  - f_ret_1
+  - f_roc_60
+  - f_rvol_20
+  - f_volratio_20
+target: l_fwdret_24
+metrics:
+  - pearson_ic
+  - spearman_ic
+schema_version: quantara_feature_evaluation_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+
+def write_evaluation_descriptor(root: Path, interval: str = "1h") -> Path:
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-01-evaluation-dual-ic-v1.yaml"
+    )
+    parent_name = f"binance-usdm-btcusdt-{interval}-2024-01-validation-wf-v1.yaml"
+    target.write_text(
+        EVALUATION_DESCRIPTOR_TEMPLATE.format(
+            interval=interval,
+            parent_name=parent_name,
+        ),
+        encoding="utf-8",
+    )
+    return target
+
+
+def evaluation_cfg_tree(tmp_path: Path) -> Path:
+    """Repo-shaped tree with research, validation, and evaluation descriptors."""
+    root = validation_cfg_tree(tmp_path)
+    write_validation_descriptor(root, "1h")
+    write_validation_descriptor(root, "1d")
+    return root
+
