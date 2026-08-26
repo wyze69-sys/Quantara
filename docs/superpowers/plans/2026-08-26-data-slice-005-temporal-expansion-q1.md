@@ -73,6 +73,7 @@ tests/test_pipeline_multi_month.py
 tests/test_derive_pipeline.py # modified: v1/v2 parent-fingerprint regression
 tests/test_recovery.py        # modified: additive second-archive corruption cases
 tests/test_integration_q1.py  # marked integration, serial, networked
+tests/test_validation_pipeline.py # modified: make recovery regression xdist-independent
 README.md                     # modified: one appended short section "## Q1 2024 expansion status"
 ```
 
@@ -97,6 +98,15 @@ The narrowly approved repair adds `cli.py`, `derive_pipeline.py`, and the two re
 files named in §5.1: v2 dispatch routes through the existing base pipeline, while parent
 authentication selects the frozen legacy fingerprint for v1 and the ordered-month-bound
 fingerprint for v2. No derived artifact schema or transformation behavior changes.
+
+### 5.4 Scope amendment — final parallel-gate blocker (2026-08-27)
+
+The required default-xdist gate exposed a pre-existing order dependency in
+`test_lost_pointer_recovery_reports_truthful_milestones`: it assumed another test had already
+published `current.json` on the same worker. Default xdist scheduling provides no such guarantee.
+The narrowly approved repair adds `tests/test_validation_pipeline.py` to §5.1 and makes only that
+recovery regression self-contained by publishing its prerequisite before simulating pointer loss.
+Production behavior, scheduling policy, and acceptance semantics remain unchanged.
 
 ## 6. Tasks (each red→green with raw gate output pasted before its commit)
 

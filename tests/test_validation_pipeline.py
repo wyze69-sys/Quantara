@@ -165,13 +165,14 @@ def test_offline_end_to_end_publication_with_lineage_binding(chain) -> None:
 
 def test_lost_pointer_recovery_reports_truthful_milestones(chain) -> None:
     root, data_root = chain
+    descriptor = write_validation_descriptor(root, "1h")
+    assert run_validation_pipeline(descriptor, data_root, repo_root=root) == 0
     dataset_dir = _validation_dataset_dir(data_root)
     pointer_before = (dataset_dir / "current.json").read_bytes()
 
     # Lose the pointer; commit stays in place
     (dataset_dir / "current.json").unlink()
     before = _attempts(data_root)
-    descriptor = write_validation_descriptor(root, "1h")
     assert run_validation_pipeline(descriptor, data_root, repo_root=root) == 0
 
     new_attempts = _attempts(data_root) - before
