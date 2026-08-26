@@ -21,6 +21,8 @@ from quantara.jcs import canonicalize
 __all__ = [
     "CANONICAL_COLUMNS",
     "CONTENT_HASH_DOMAIN",
+    "EVALUATION_CONTENT_HASH_DOMAIN",
+    "EVALUATION_SCHEMA_VERSION",
     "HASH_CONTRACT_VERSION",
     "RESEARCH_COLUMNS",
     "RESEARCH_CONTENT_HASH_DOMAIN",
@@ -31,6 +33,8 @@ __all__ = [
     "canonical_content_hash",
     "canonical_row_array",
     "descriptor_hash",
+    "evaluation_content_hash",
+    "evaluation_schema_fingerprint",
     "quality_identity",
     "render_decimal_18",
     "research_content_hash",
@@ -54,6 +58,10 @@ RESEARCH_SCHEMA_VERSION = "quantara_research_featureset_v1"
 # Data slice 004: validation-folds identity domain and schema version.
 VALIDATION_CONTENT_HASH_DOMAIN = "quantara-validation-content-v1"
 VALIDATION_SCHEMA_VERSION = "quantara_validation_folds_v1"
+
+# Data slice 006: dual-IC feature-evaluation identity domain and schema version.
+EVALUATION_CONTENT_HASH_DOMAIN = "quantara-evaluation-content-v1"
+EVALUATION_SCHEMA_VERSION = "quantara_feature_evaluation_v1"
 
 DECIMAL_TYPE = "decimal128_38_18"
 
@@ -377,3 +385,104 @@ def validation_content_hash(
         b"\n",
     ]
     return sha256_hex(b"".join(parts))
+
+
+# --- Data slice 006: dual-IC feature-evaluation identity ---------------------
+
+
+def evaluation_schema_fingerprint(
+    parent_validation_fingerprint: str | None = None,
+    schema_id: str = EVALUATION_SCHEMA_VERSION,
+    evaluation_set: dict[str, str] | None = None,
+    features: Sequence[str] | None = None,
+    target: str = "l_fwdret_24",
+    metrics: Sequence[str] | None = None,
+    decimal_contract: dict | None = None,
+) -> str:
+    """SHA-256 over JCS of the evaluation schema domain payload (design §9.3)."""
+    if parent_validation_fingerprint is None:
+        parent_validation_fingerprint = validation_schema_fingerprint()
+    if (
+        not isinstance(parent_validation_fingerprint, str)
+        or len(parent_validation_fingerprint) != 64
+        or any(c not in "0123456789abcdef" for c in parent_validation_fingerprint)
+    ):
+        raise HashPayloadError(
+            "parent_validation_fingerprint must be a 64-character lowercase hex digest"
+        )
+    if evaluation_set is None:
+        evaluation_set = {"name": "btcusdt_core_v1_dual_ic_v1", "version": "1"}
+    if features is None:
+        features = ("f_ret_1", "f_roc_60", "f_rvol_20", "f_volratio_20")
+    if metrics is None:
+        metrics = ("pearson_ic", "spearman_ic")
+    if decimal_contract is None:
+        decimal_contract = {
+            "precision": 50,
+            "rounding": "ROUND_HALF_EVEN",
+            "emin": -999999,
+            "emax": 999999,
+            "capitals": 1,
+            "clamp": 0,
+            "enabled_traps": ["InvalidOperation", "DivisionByZero", "Overflow"],
+            "storage_quantum": "0.000000000000000001",
+        }
+    payload = {
+        "domain": "quantara-evaluation-schema-v1",
+        "schema_id": schema_id,
+        "evaluation_set": {
+            "name": evaluation_set["name"],
+            "version": str(evaluation_set["version"]),
+        },
+        "features": list(features),
+        "target": target,
+        "metrics": list(metrics),
+        "decimal_contract": decimal_contract,
+        "parent_validation_fingerprint": parent_validation_fingerprint,
+    }
+    return sha256_hex(canonicalize(payload).encode("utf-8"))
+
+
+def evaluation_content_hash(
+    fingerprint: str,
+    artifact: bytes | str | dict,
+) -> str:
+    """SHA-256 over domain-separated evaluation artifact bytes (design §9.3).
+
+    Binds the evaluation schema fingerprint and canonical artifact bytes
+    under the dedicated ``quantara-evaluation-content-v1`` domain.
+    """
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or any(c not in "0123456789abcdef" for c in fingerprint)
+    ):
+        raise HashPayloadError(
+            "fingerprint must be a 64-character lowercase hex digest"
+        )
+
+    if isinstance(artifact, dict):
+        payload_bytes = canonicalize(artifact).encode("utf-8") + b"\n"
+    elif isinstance(artifact, str):
+        payload_bytes = artifact.encode("utf-8")
+        if not payload_bytes.endswith(b"\n"):
+            payload_bytes += b"\n"
+    elif isinstance(artifact, (bytes, bytearray)):
+        payload_bytes = bytes(artifact)
+        if not payload_bytes.endswith(b"\n"):
+            payload_bytes += b"\n"
+    else:
+        raise HashPayloadError(
+            f"evaluation artifact must be dict, str, or bytes, got {type(artifact)!r}"
+        )
+
+    parts: list[bytes] = [
+        EVALUATION_CONTENT_HASH_DOMAIN.encode("ascii"),
+        b"\x00",
+        fingerprint.encode("ascii"),
+        b"\n",
+        payload_bytes,
+        b"\n",
+    ]
+    return sha256_hex(b"".join(parts))
+
