@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from quantara.descriptor import load_rights_record
+from quantara.errors import QuantaraError
 from quantara.evaluation_descriptor import (
     EvaluationDescriptor,
     load_evaluation_descriptor,
@@ -28,9 +29,11 @@ from quantara.hashing import (
     HashPayloadError,
     evaluation_content_hash,
     evaluation_schema_fingerprint,
+    quality_identity,
     sha256_hex,
 )
 from quantara.jcs import canonicalize
+from quantara.publication import verify_commit_graph
 from quantara.research_pipeline import (
     read_research_rows,
     verify_research_current_graph,
@@ -47,6 +50,7 @@ __all__ = [
     "build_evaluation_artifact",
     "evaluation_commit_identity",
     "run_evaluation_pipeline",
+    "verify_evaluation_current_graph",
 ]
 
 EXIT_OK = 0
@@ -483,3 +487,133 @@ def run_evaluation_pipeline(
         return EXIT_OK
 
     return EXIT_OK
+
+
+def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
+    """Full lock-free authentication of an evaluation current graph (spec §11, §13)."""
+    pointer_path = dataset_dir / "current.json"
+    if not pointer_path.exists():
+        raise QuantaraError(f"no current.json under {dataset_dir}")
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"invalid current.json: {exc}") from exc
+    if not isinstance(pointer, dict):
+        raise QuantaraError("current.json must be a JSON object")
+
+    expected_pointer_keys = {
+        "publication_protocol_version",
+        "commit",
+        "manifest_sha256",
+    }
+    if set(pointer) != expected_pointer_keys:
+        raise QuantaraError(
+            f"current.json keys must be exactly {sorted(expected_pointer_keys)}, "
+            f"got {sorted(pointer)}"
+        )
+    if pointer["publication_protocol_version"] != "v1":
+        raise QuantaraError("unsupported publication protocol version")
+
+    for label in ("commit", "manifest_sha256"):
+        val = str(pointer[label]).lower()
+        if len(val) != 64 or any(c not in "0123456789abcdef" for c in val):
+            raise QuantaraError(f"pointer {label} is not a sha256 hex digest")
+
+    address = str(pointer["commit"]).lower()
+    commit_dir = dataset_dir / "commits" / address
+    content = verify_commit_graph(Path(data_root), commit_dir)
+
+    try:
+        manifest_bytes = (commit_dir / "manifest.json").read_bytes()
+    except OSError as exc:
+        raise QuantaraError(f"manifest.json unreadable: {exc}") from exc
+    if sha256_hex(manifest_bytes) != str(pointer["manifest_sha256"]).lower():
+        raise QuantaraError("manifest bytes disagree with current.json manifest_sha256")
+
+    try:
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"manifest not valid JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise QuantaraError("manifest.json must be a JSON object")
+
+    lineage = content.get("evaluation_from")
+    content_hash = content.get("canonical_content_hash")
+    recorded_address = content.get("evaluation_commit_identity")
+    if lineage is None or content_hash is None or recorded_address is None:
+        raise QuantaraError("content.json lacks evaluation identity evidence")
+
+    recomputed_address = evaluation_commit_identity(content_hash, lineage)
+    if recomputed_address != address or recorded_address != address:
+        raise QuantaraError(
+            f"address binding mismatch: recomputed {recomputed_address!r}, "
+            f"recorded {recorded_address!r}, pointer/commit {address!r}"
+        )
+
+    for key in (
+        "schema_fingerprint",
+        "parser_version",
+        "canonical_content_hash",
+        "quality_identity",
+        "object_refs",
+        "evaluation_from",
+    ):
+        if manifest.get(key) != content.get(key):
+            raise QuantaraError(f"manifest/content disagreement on {key!r}")
+    if manifest.get("commit_identity") != address:
+        raise QuantaraError("manifest commit_identity disagrees with commit address")
+
+    normalized_refs = [
+        ref for ref in content.get("object_refs", []) if ref.get("kind") == "normalized"
+    ]
+    if (
+        len(normalized_refs) != 1
+        or manifest.get("artifact_sha256") != normalized_refs[0]["sha256"]
+    ):
+        raise QuantaraError("manifest artifact SHA-256 disagrees with object ref")
+
+    # Authenticate artifact object from CAS
+    art_sha = normalized_refs[0]["sha256"]
+    art_path = Path(data_root) / "objects" / "normalized" / "sha256" / art_sha
+    if not art_path.exists():
+        raise QuantaraError(f"referenced artifact object missing from CAS: {art_path}")
+    art_bytes = art_path.read_bytes()
+    if sha256_hex(art_bytes) != art_sha:
+        raise QuantaraError("artifact bytes disagree with SHA-256 in CAS")
+    if len(art_bytes) != manifest.get("artifact_size"):
+        raise QuantaraError("artifact byte size disagrees with manifest artifact_size")
+
+    # Recompute content hash from artifact bytes
+    recomputed_cch = evaluation_content_hash(content["schema_fingerprint"], art_bytes)
+    if recomputed_cch != content_hash:
+        raise QuantaraError(
+            f"artifact canonical content hash mismatch: recomputed {recomputed_cch!r} "
+            f"vs recorded {content_hash!r}"
+        )
+
+    # Authenticate quality document
+    quality_path = commit_dir / "quality.json"
+    if not quality_path.exists():
+        raise QuantaraError("quality.json missing in commit directory")
+    try:
+        quality_doc = json.loads(quality_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"quality.json invalid: {exc}") from exc
+    if not isinstance(quality_doc, dict):
+        raise QuantaraError("quality.json must be a JSON object")
+
+    if quality_doc.get("state") != "PASS" or manifest.get("quality_state") != "PASS":
+        raise QuantaraError(
+            "evaluation quality state is not PASS; unverified graph cannot be honored"
+        )
+
+    committed_findings = quality_doc.get("findings", [])
+    expected_qid = quality_identity(committed_findings)
+    if (
+        quality_doc.get("identity") != expected_qid
+        or manifest.get("quality_identity") != expected_qid
+    ):
+        raise QuantaraError("quality identity disagrees with findings")
+
+    return {**content, "commit": address}
+
