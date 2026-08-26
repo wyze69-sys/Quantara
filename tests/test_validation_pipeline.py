@@ -216,3 +216,51 @@ def test_cli_validation_schema_dispatch(chain) -> None:
         )
         == 0
     )
+
+
+# --- Task 8: frozen golden validation fold fixture ------------------------------
+
+GOLDEN_VALIDATION_DIR = (
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "golden_validation"
+)
+
+
+def test_golden_validation_folds_equality(chain) -> None:
+    root, _ = chain
+    descriptor_path = write_validation_descriptor(root, "1h")
+
+    parent_json = json.loads((GOLDEN_VALIDATION_DIR / "parent_table.json").read_text())
+    expected_artifact = json.loads(
+        (GOLDEN_VALIDATION_DIR / "expected_artifact.json").read_text()
+    )
+
+    from quantara.fold_stats import compute_fold_stats
+    from quantara.folds import build_walkforward_folds
+    from quantara.jcs import canonicalize
+    from quantara.validation_descriptor import load_validation_descriptor
+    from quantara.validation_pipeline import build_validation_artifact
+
+    descriptor = load_validation_descriptor(descriptor_path)
+    parent_rows = parent_json["rows"]
+
+    partition = build_walkforward_folds(
+        len(parent_rows),
+        test_size=descriptor.parameters["test_size"],
+        min_train_size=descriptor.parameters["min_train_size"],
+        embargo=descriptor.embargo,
+    )
+    stats_list = [
+        compute_fold_stats(
+            parent_rows,
+            fold.test_range,
+            total_parent_rows=len(parent_rows),
+            parameters=descriptor.parent_descriptor.parameters,
+        )
+        for fold in partition.folds
+    ]
+
+    artifact = build_validation_artifact(descriptor, partition, stats_list)
+
+    # Byte-exact equality between independently generated fixture and production code
+    assert artifact == expected_artifact
+    assert canonicalize(artifact) == canonicalize(expected_artifact)

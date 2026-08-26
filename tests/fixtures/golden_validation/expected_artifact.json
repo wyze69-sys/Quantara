@@ -1,0 +1,67 @@
+{
+  "coverage": {
+    "role_counts": {
+      "EMBARGO": 0,
+      "EXCLUDED": 360,
+      "TEST": 72,
+      "TRAIN": 0
+    },
+    "total_rows": 432
+  },
+  "excluded_head_rows": 360,
+  "fold_set": "btcusdt_core_v1_wf72_v1",
+  "folds": [
+    {
+      "embargo_range": [
+        336,
+        360
+      ],
+      "fold_id": 0,
+      "stats": {
+        "expected_null_counts": {
+          "f_ret_1": 0,
+          "f_roc_60": 0,
+          "f_rvol_20": 0,
+          "f_volratio_20": 0,
+          "l_fwddir_24": 24,
+          "l_fwdret_24": 24
+        },
+        "fwdret_max": "0.000000000000000000",
+        "fwdret_mean": "0.000000000000000000",
+        "fwdret_min": "0.000000000000000000",
+        "null_counts": {
+          "f_ret_1": 0,
+          "f_roc_60": 0,
+          "f_rvol_20": 0,
+          "f_volratio_20": 0,
+          "l_fwddir_24": 24,
+          "l_fwdret_24": 24
+        },
+        "open_time_ms_first": 1705363200000,
+        "open_time_ms_last": 1705618800000,
+        "row_count": 72,
+        "sign_distribution": {
+          "-1": 20,
+          "0": 7,
+          "1": 21
+        }
+      },
+      "test_range": [
+        360,
+        432
+      ],
+      "train_range": [
+        0,
+        336
+      ]
+    }
+  ],
+  "parameters": {
+    "embargo": 24,
+    "min_train_size": 336,
+    "test_size": 72
+  },
+  "parent_rows": 432,
+  "schema": "quantara.validation_folds/v1",
+  "scheme": "anchored_walkforward_v1"
+}
