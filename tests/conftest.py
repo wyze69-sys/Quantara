@@ -357,9 +357,11 @@ def make_hour_bar(open_time_ms: int, close: str, volume: str = "12.5"):
     )
 
 
-def publish_month_via_slice_001(tmp_path: Path):
+def publish_month_via_slice_001(tmp_path: Path, price_offset: int = 0):
     """Publish the synthetic 44,640-row month through the REAL slice 001
-    pipeline (MockTransport); returns (repo_root, data_root)."""
+    pipeline (MockTransport); returns (repo_root, data_root). A nonzero
+    ``price_offset`` shifts every close so a second call against the SAME
+    tmp tree legitimately republishes a corrected dataset."""
     import hashlib
     import zipfile
 
@@ -368,9 +370,21 @@ def publish_month_via_slice_001(tmp_path: Path):
     from quantara.pipeline import run_pipeline
 
     root = research_cfg_tree(tmp_path)
-    archive = tmp_path / "BTCUSDT-1m-2024-01.zip"
+    archive = tmp_path / f"BTCUSDT-1m-2024-01-{price_offset}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("BTCUSDT-1m-2024-01.csv", build_varying_month_csv().decode("utf-8"))
+        csv = build_varying_month_csv().decode("utf-8")
+        if price_offset:
+            lines = csv.splitlines(keepends=True)
+            header, body = lines[0], lines[1:]
+            shifted = []
+            for line in body:
+                fields = line.split(",")
+                # Shift the whole OHLC complex so invariants still hold.
+                for i in (1, 2, 3, 4):
+                    fields[i] = str(int(fields[i]) + price_offset)
+                shifted.append(",".join(fields))
+            csv = header + "".join(shifted)
+        zf.writestr("BTCUSDT-1m-2024-01.csv", csv)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
 
     def handler(request: httpx.Request) -> httpx.Response:
