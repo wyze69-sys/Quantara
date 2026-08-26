@@ -181,3 +181,13 @@ full lineage back to the parent commit.
 All derived artifacts inherit the parent's restrictions completely: they are
 internal-use only and remain ineligible for commercial use or customer
 display while commercial rights are pending counsel review.
+
+## Research tables status
+
+The first research table (`btcusdt_core_v1`: four causal decimal features,
+two strictly-forward 24-bar labels, single-rounding `Q18` storage
+quantization) is computed from the verified 1h parent commit and published
+through the same immutable protocol with lineage-bound addresses, PASS-only
+quality gating, and exact designed-null budgets. Like everything else here it
+is strictly internal-use: gated on `analyze_internal` under rights v2, never
+customer-facing, redistributable, or commercially eligible.
