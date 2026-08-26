@@ -164,6 +164,13 @@ Configuration lives in
 the governing provider-rights record is
 [configs/legal/binance-usdm-provider-rights.v1.yaml](configs/legal/binance-usdm-provider-rights.v1.yaml).
 
+A versioned amendment,
+[configs/legal/binance-usdm-provider-rights.v2.yaml](configs/legal/binance-usdm-provider-rights.v2.yaml),
+now authorizes internal analytical computation over already-retained
+artifacts while counsel review remains pending; v1 stays the binding record
+for published datasets, and training, commercial production, customer
+display, and redistribution remain ineligible.
+
 ## Derived datasets status
 
 The 1-hour (744 bars) and 1-day (31 bars) klines for January 2024 are
