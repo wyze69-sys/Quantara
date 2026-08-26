@@ -100,6 +100,7 @@ APPROVED_INTERNAL_OPERATIONS = (
     "acquire_internal",
     "retain_raw_internal",
     "normalize_internal",
+    "analyze_internal",
 )
 
 

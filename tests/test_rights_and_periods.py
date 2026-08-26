@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,9 @@ from quantara.descriptor import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+V1_RECORD_PATH = (
+    REPO_ROOT / "configs" / "legal" / "binance-usdm-provider-rights.v1.yaml"
+)
 V2_RECORD_PATH = (
     REPO_ROOT / "configs" / "legal" / "binance-usdm-provider-rights.v2.yaml"
 )
@@ -39,6 +43,44 @@ def test_v2_rights_record_loads_and_authorizes_analytical_use() -> None:
     assert set(record.operations) == set(RIGHTS_OPERATIONS)
     assert record.review_date == "2026-08-26"
     assert record.permits("analyze_internal") is True
+
+
+def test_permit_matrix_v1_versus_v2() -> None:
+    v1 = load_rights_record(V1_RECORD_PATH)
+    v2 = load_rights_record(V2_RECORD_PATH)
+    assert v1.record_id == "binance-usdm-provider-rights.v1"
+    assert v2.record_id == "binance-usdm-provider-rights.v2"
+    assert v1.permits("analyze_internal") is False
+    assert v2.permits("analyze_internal") is True
+    for operation in ("acquire_internal", "retain_raw_internal",
+                      "normalize_internal"):
+        assert v1.permits(operation) is True
+        assert v2.permits(operation) is True
+    for operation in (
+        "model_train_internal",
+        "commercial_production_eligible",
+        "customer_display",
+        "raw_redistribution",
+    ):
+        assert v1.permits(operation) is False
+        assert v2.permits(operation) is False
+
+
+def test_pending_counsel_state_cannot_unlock_model_training() -> None:
+    v1 = load_rights_record(V1_RECORD_PATH)
+    entry = replace(
+        v1.operations["model_train_internal"],
+        state="OWNER_APPROVED_PENDING_COUNSEL",
+    )
+    laundered = replace(
+        v1,
+        operations={**v1.operations, "model_train_internal": entry},
+    )
+    assert (
+        laundered.operations["model_train_internal"].state
+        == "OWNER_APPROVED_PENDING_COUNSEL"
+    )
+    assert laundered.permits("model_train_internal") is False
 
 
 def test_bad_periods_are_rejected(valid_path: Path) -> None:
@@ -143,4 +185,5 @@ def test_approved_internal_operation_names() -> None:
         "acquire_internal",
         "retain_raw_internal",
         "normalize_internal",
+        "analyze_internal",
     )
