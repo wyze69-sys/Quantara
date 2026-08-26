@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 import shutil
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -27,7 +28,12 @@ from quantara.canonical import (
     reconcile_rows,
     write_canonical_parquet,
 )
-from quantara.descriptor import DatasetDescriptor, load_descriptor, load_rights_record
+from quantara.descriptor import (
+    V2_SCHEMA,
+    DatasetDescriptor,
+    load_descriptor,
+    load_rights_record,
+)
 from quantara.errors import QuantaraError
 from quantara.hashing import (
     canonical_content_hash,
@@ -59,6 +65,10 @@ EXIT_OK = 0
 EXIT_BLOCKED = 2
 EXIT_FAILED = 3
 EXIT_QUARANTINED = 4
+
+
+class MultiMonthInvariantViolation(QuantaraError):
+    error_id = "multi_month_invariant_violation"
 
 
 def _dataset_dir(data_root: Path, descriptor: DatasetDescriptor) -> Path:
@@ -120,6 +130,82 @@ def _quality_payload(report) -> dict:
             for f in report.findings
         ],
     }
+
+
+def _month_bounds(month: str) -> tuple[datetime, datetime]:
+    start = datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
+    end = (
+        start.replace(year=start.year + 1, month=1)
+        if start.month == 12
+        else start.replace(month=start.month + 1)
+    )
+    return start, end
+
+
+def _segment_descriptor(
+    descriptor: DatasetDescriptor, position: int
+) -> DatasetDescriptor:
+    month = descriptor.months[position]
+    start, end = _month_bounds(month)
+    return replace(
+        descriptor,
+        start_utc=start,
+        end_utc=end,
+        archive_url=descriptor.archive_urls[position],
+        checksum_url=descriptor.checksum_urls[position],
+        member_pattern=descriptor.member_patterns[position],
+        months=(month,),
+        archive_urls=(descriptor.archive_urls[position],),
+        checksum_urls=(descriptor.checksum_urls[position],),
+        member_patterns=(descriptor.member_patterns[position],),
+    )
+
+
+def _validate_range_segments(segment_rows, descriptor: DatasetDescriptor) -> None:
+    if len(segment_rows) != len(descriptor.months):
+        raise MultiMonthInvariantViolation(
+            "segment accounting differs from the descriptor month count"
+        )
+    for position, rows in enumerate(segment_rows):
+        expected = _segment_descriptor(descriptor, position).expected_row_count
+        if len(rows) != expected:
+            raise MultiMonthInvariantViolation(
+                f"month {descriptor.months[position]} parsed {len(rows)} rows; "
+                f"expected {expected}"
+            )
+    combined = [row for rows in segment_rows for row in rows]
+    if len(combined) != descriptor.expected_row_count:
+        raise MultiMonthInvariantViolation(
+            f"concatenated rows {len(combined)} differ from expected "
+            f"{descriptor.expected_row_count}"
+        )
+    times = [row.open_time for row in combined]
+    if len(set(times)) != len(times):
+        raise MultiMonthInvariantViolation(
+            "concatenated months contain duplicate open times"
+        )
+    if any(
+        current <= previous
+        for previous, current in zip(times, times[1:], strict=False)
+    ):
+        raise MultiMonthInvariantViolation(
+            "concatenated months are not strictly chronological"
+        )
+    if any(
+        current - previous != 60_000
+        for previous, current in zip(times, times[1:], strict=False)
+    ):
+        raise MultiMonthInvariantViolation(
+            "concatenated months are not continuous at one-minute cadence"
+        )
+
+
+def _retry_payload(acquirers: list[Acquirer]) -> list[dict]:
+    return [asdict(item) for acquirer in acquirers for item in acquirer.retry_evidence]
+
+
+def _http_statuses(acquirers: list[Acquirer]) -> list[int]:
+    return [status for acquirer in acquirers for status in acquirer.http_statuses]
 
 
 def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §10
@@ -210,15 +296,23 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
 
     # Steps 3–8 (+12.3 reuse): verified acquisition into staging and objects.
     attempt_id = attempt_id_now()
-    acquirer = Acquirer(
-        descriptor,
-        data,
-        attempt_id,
-        transport=transport,
-        sleeper=sleeper,
-    )
+    segment_descriptors = [
+        _segment_descriptor(descriptor, position)
+        for position in range(len(descriptor.months))
+    ]
+    acquirers: list[Acquirer] = []
+    evidences = []
     try:
-        evidence = acquirer.acquire()
+        for segment in segment_descriptors:
+            acquirer = Acquirer(
+                segment,
+                data,
+                attempt_id,
+                transport=transport,
+                sleeper=sleeper,
+            )
+            acquirers.append(acquirer)
+            evidences.append(acquirer.acquire())
     except ChecksumMismatch as exc:
         print(f"quarantined: {exc}", file=sys.stderr)
         _write_attempt(
@@ -226,11 +320,12 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
             root,
             terminal_result="QUARANTINED",
             dispositions={"zip": "quarantined", "checksum": "downloaded"},
-            retry_evidence=[asdict(r) for r in acquirer.retry_evidence],
-            http_statuses=list(acquirer.http_statuses),
+            retry_evidence=_retry_payload(acquirers),
+            http_statuses=_http_statuses(acquirers),
             referenced_commit=None,
             diagnostics=[ChecksumMismatch.error_id],
         )
+        shutil.rmtree(data / "staging" / attempt_id, ignore_errors=True)
         return EXIT_QUARANTINED
     except QuantaraError as exc:
         print(f"acquisition failed: {exc}", file=sys.stderr)
@@ -239,20 +334,34 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
             root,
             terminal_result="FAILED",
             dispositions={"zip": "not_published", "checksum": "downloaded"},
-            retry_evidence=[asdict(r) for r in acquirer.retry_evidence],
-            http_statuses=list(acquirer.http_statuses),
+            retry_evidence=_retry_payload(acquirers),
+            http_statuses=_http_statuses(acquirers),
             referenced_commit=None,
             diagnostics=["download_failed"],
         )
+        shutil.rmtree(data / "staging" / attempt_id, ignore_errors=True)
         return EXIT_FAILED
 
     # Steps 9–17: archive inspection, parsing, canonical assembly, quality,
     # Parquet write/read-back, reconciliation.
     try:
-        spec = inspect_zip(evidence.zip_path, descriptor.member_pattern)
-        member_bytes = read_member_bytes(evidence.zip_path, spec)
-        member_sha = sha256_hex(member_bytes)
-        source_rows = parse_rows(decode_member(member_bytes), descriptor)
+        specs = []
+        members = []
+        member_shas = []
+        segment_rows = []
+        for segment, evidence in zip(
+            segment_descriptors, evidences, strict=True
+        ):
+            spec = inspect_zip(evidence.zip_path, segment.member_pattern)
+            member_bytes = read_member_bytes(evidence.zip_path, spec)
+            rows = parse_rows(decode_member(member_bytes), segment)
+            specs.append(spec)
+            members.append(member_bytes)
+            member_shas.append(sha256_hex(member_bytes))
+            segment_rows.append(rows)
+        if descriptor.schema == V2_SCHEMA:
+            _validate_range_segments(segment_rows, descriptor)
+        source_rows = [row for rows in segment_rows for row in rows]
         assembled, order_ok = assemble_canonical_rows(source_rows, descriptor)
         report = evaluate_quality(
             assembled,
@@ -268,13 +377,14 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
                 terminal_result="BLOCKED",
                 dispositions={"zip": "retained", "normalized_parquet": "not_written"},
                 retry_evidence=[],
-                http_statuses=list(acquirer.http_statuses),
+                http_statuses=_http_statuses(acquirers),
                 referenced_commit=None,
                 diagnostics=[
                     f.check_id for f in report.findings if f.outcome != "pass"
                 ]
                 or [f"quality_state_{report.state}"],
             )
+            shutil.rmtree(data / "staging" / attempt_id, ignore_errors=True)
             return EXIT_BLOCKED
 
         staging = data / "staging" / attempt_id
@@ -282,15 +392,39 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         write_canonical_parquet(assembled, parquet_path)
         persisted_rows = read_canonical_rows(parquet_path)
         reconcile_rows(assembled, persisted_rows)
-    except ChecksumMismatch as exc:
-        print(f"quarantined: {exc}", file=sys.stderr)
-        return EXIT_QUARANTINED
+    except MultiMonthInvariantViolation as exc:
+        print(f"range invariant blocks publication: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="BLOCKED",
+            dispositions={"zip": "retained", "normalized_parquet": "not_written"},
+            retry_evidence=_retry_payload(acquirers),
+            http_statuses=_http_statuses(acquirers),
+            referenced_commit=None,
+            diagnostics=[exc.error_id],
+        )
+        shutil.rmtree(data / "staging" / attempt_id, ignore_errors=True)
+        return EXIT_BLOCKED
     except QuantaraError as exc:
         print(f"normalization failed: {exc}", file=sys.stderr)
+        _write_attempt(
+            data,
+            root,
+            terminal_result="FAILED",
+            dispositions={"zip": "retained", "normalized_parquet": "not_written"},
+            retry_evidence=_retry_payload(acquirers),
+            http_statuses=_http_statuses(acquirers),
+            referenced_commit=None,
+            diagnostics=[exc.error_id],
+        )
+        shutil.rmtree(data / "staging" / attempt_id, ignore_errors=True)
         return EXIT_FAILED
 
     # Step 18: content identities.
-    fingerprint = schema_fingerprint()
+    fingerprint = schema_fingerprint(
+        months=descriptor.months if descriptor.schema == V2_SCHEMA else None
+    )
     descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
     content_hash = canonical_content_hash(
         fingerprint, [row.to_content_array() for row in assembled]
@@ -299,13 +433,24 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     parquet_sha = sha256_hex(parquet_bytes)
     normalized_ref = put_object(data, "normalized", parquet_bytes)
 
-    object_refs = [
-        {"kind": "raw", "sha256": evidence.zip_sha256},
-        {"kind": "checksum", "sha256": evidence.checksum_document_sha256},
-        {"kind": "normalized", "sha256": normalized_ref},
-    ]
+    object_refs = []
+    for evidence in evidences:
+        object_refs.extend(
+            [
+                {"kind": "raw", "sha256": evidence.zip_sha256},
+                {
+                    "kind": "checksum",
+                    "sha256": evidence.checksum_document_sha256,
+                },
+            ]
+        )
+    object_refs.append({"kind": "normalized", "sha256": normalized_ref})
     identity_evidence = {
-        "source_sha256": evidence.zip_sha256,
+        "source_sha256": (
+            evidences[0].zip_sha256
+            if descriptor.schema != V2_SCHEMA
+            else [evidence.zip_sha256 for evidence in evidences]
+        ),
         "descriptor_sha256": descriptor_sha,
         "schema_fingerprint": fingerprint,
         "parser_version": PARSER_VERSION,
@@ -313,6 +458,8 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         "quality_identity": report.identity(),
         "object_refs": object_refs,
     }
+    if descriptor.schema == V2_SCHEMA:
+        identity_evidence["months"] = list(descriptor.months)
 
     # Steps 12.3/§16: idempotent rerun — verify the existing commit instead of
     # publishing an identical one. A malformed or non-object pointer behaves
@@ -336,8 +483,8 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
                     "checksum": "downloaded",
                     "normalized_parquet": "already_published",
                 },
-                retry_evidence=[asdict(r) for r in acquirer.retry_evidence],
-                http_statuses=list(acquirer.http_statuses),
+                retry_evidence=_retry_payload(acquirers),
+                http_statuses=_http_statuses(acquirers),
                 referenced_commit=current_commit,
                 diagnostics=[],
             )
@@ -348,16 +495,52 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     manifest = build_dataset_manifest(
         dataset_id=descriptor.dataset_id,
         instrument_id=descriptor.instrument_id,
-        archive_url=descriptor.archive_url,
-        checksum_url=descriptor.checksum_url,
-        official_checksum_sha256=evidence.official_digest,
-        checksum_document_sha256=evidence.checksum_document_sha256,
-        local_zip_sha256=evidence.zip_sha256,
-        local_zip_size=evidence.zip_size,
-        member_name=spec.name,
-        member_size=spec.uncompressed_size,
-        member_sha256=member_sha,
-        source_header=list(decode_member(member_bytes).splitlines()[0].split(",")),
+        archive_url=(
+            descriptor.archive_url
+            if descriptor.schema != V2_SCHEMA
+            else list(descriptor.archive_urls)
+        ),
+        checksum_url=(
+            descriptor.checksum_url
+            if descriptor.schema != V2_SCHEMA
+            else list(descriptor.checksum_urls)
+        ),
+        official_checksum_sha256=(
+            evidences[0].official_digest
+            if descriptor.schema != V2_SCHEMA
+            else [evidence.official_digest for evidence in evidences]
+        ),
+        checksum_document_sha256=(
+            evidences[0].checksum_document_sha256
+            if descriptor.schema != V2_SCHEMA
+            else [evidence.checksum_document_sha256 for evidence in evidences]
+        ),
+        local_zip_sha256=(
+            evidences[0].zip_sha256
+            if descriptor.schema != V2_SCHEMA
+            else [evidence.zip_sha256 for evidence in evidences]
+        ),
+        local_zip_size=(
+            evidences[0].zip_size
+            if descriptor.schema != V2_SCHEMA
+            else [evidence.zip_size for evidence in evidences]
+        ),
+        member_name=(
+            specs[0].name
+            if descriptor.schema != V2_SCHEMA
+            else [spec.name for spec in specs]
+        ),
+        member_size=(
+            specs[0].uncompressed_size
+            if descriptor.schema != V2_SCHEMA
+            else [spec.uncompressed_size for spec in specs]
+        ),
+        member_sha256=(
+            member_shas[0]
+            if descriptor.schema != V2_SCHEMA
+            else member_shas
+        ),
+        source_header=list(decode_member(members[0]).splitlines()[0].split(",")),
         parser_version=PARSER_VERSION,
         schema_version=descriptor.schema_version,
         schema_fingerprint=fingerprint,
@@ -428,8 +611,8 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
             "checksum": "reused" if evidence.reused_checksum else "downloaded",
             "normalized_parquet": "published",
         },
-        retry_evidence=[asdict(r) for r in acquirer.retry_evidence],
-        http_statuses=list(acquirer.http_statuses),
+        retry_evidence=_retry_payload(acquirers),
+        http_statuses=_http_statuses(acquirers),
         referenced_commit=content_hash,
         diagnostics=[],
     )
