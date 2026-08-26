@@ -76,6 +76,7 @@ tests/test_integration_q1.py  # marked integration, serial, networked
 tests/test_validation_pipeline.py # modified: make recovery regression xdist-independent
 tests/test_integration.py     # modified: assert retained-commit stability on rerun
 tests/test_integration_research.py # modified: assert retained-commit stability on rerun
+tests/test_validation_recovery.py # modified: isolate post-pointer regression state
 README.md                     # modified: one appended short section "## Q1 2024 expansion status"
 ```
 
@@ -118,6 +119,15 @@ January commits, so those assertions reject a healthy evolved store. The narrowl
 adds `tests/test_integration.py` and `tests/test_integration_research.py` to §5.1 and changes only
 their rerun checks to compare the retained commit-name set before and after the no-op invocation.
 Pointer and current-commit byte stability checks remain intact; production code is unchanged.
+
+### 5.6 Scope amendment — shared recovery-fixture mutation (2026-08-27)
+
+The strict default-xdist rerun exposed another pre-existing isolation defect: an earlier recovery
+test intentionally removes the module-scoped chain's pointer, while
+`test_post_pointer_failure_references_published_commit` assumed it still existed. The narrowly
+approved repair adds `tests/test_validation_recovery.py` to §5.1 and makes only that test restore
+its published prerequisite before injecting the post-pointer verification failure. Production
+behavior and the recovery assertions remain unchanged.
 
 ## 6. Tasks (each red→green with raw gate output pasted before its commit)
 

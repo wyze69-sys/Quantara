@@ -274,6 +274,8 @@ def test_post_pointer_failure_references_published_commit(chain, monkeypatch) ->
     fails, the FAILED attempt must reference the published commit (referenced_commit
     follows pointer_replaced, never commit_renamed)."""
     root, data_root = chain
+    descriptor = write_validation_descriptor(root, "1h")
+    assert run_validation_pipeline(descriptor, data_root, repo_root=root) == 0
     dataset_dir = _validation_dir(data_root)
     pointer_path = dataset_dir / "current.json"
     pointer_before = pointer_path.read_bytes()
@@ -287,7 +289,6 @@ def test_post_pointer_failure_references_published_commit(chain, monkeypatch) ->
     before = _attempts(data_root)
     _inject(monkeypatch, "verify_validation_current_graph", boom)
     try:
-        descriptor = write_validation_descriptor(root, "1h")
         assert run_validation_pipeline(descriptor, data_root, repo_root=root) == 3
     finally:
         monkeypatch.undo()
