@@ -38,11 +38,6 @@ from quantara.evaluation_metrics import (
     build_evaluation_summaries,
     evaluate_fold_feature,
 )
-from quantara.evaluation_pipeline import (
-    DISCLAIMER,
-    EVALUATION_ARTIFACT_SCHEMA,
-    evaluation_commit_identity,
-)
 from quantara.hashing import (
     evaluation_content_hash,
     evaluation_schema_fingerprint,
@@ -53,11 +48,19 @@ from quantara.jcs import canonicalize
 
 __all__ = [
     "CHECK_IDS",
+    "DISCLAIMER",
+    "EVALUATION_ARTIFACT_SCHEMA",
     "EvaluationQualityReport",
     "Finding",
     "QUALITY_POLICY_VERSION",
     "evaluate_evaluation_quality",
 ]
+
+DISCLAIMER = (
+    "internal descriptive analysis only; no model, signal, backtest, "
+    "significance, or performance claim"
+)
+EVALUATION_ARTIFACT_SCHEMA = "quantara.feature_evaluation/v1"
 
 QUALITY_POLICY_VERSION = "1"
 
@@ -500,6 +503,8 @@ def evaluate_evaluation_quality(
     record("canonical_structure", canonical_ok, count=0 if canonical_ok else 1)
 
     # 13. identity_contract
+    from quantara.evaluation_pipeline import evaluation_commit_identity
+
     parent_fp = validation_parent_info.get("schema_fingerprint")
     expected_schema_fp = evaluation_schema_fingerprint(
         parent_validation_fingerprint=parent_fp
