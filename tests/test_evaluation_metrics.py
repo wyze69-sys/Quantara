@@ -37,6 +37,8 @@ from quantara.evaluation_metrics import (
     STORAGE_QUANTUM,
     MetricDomainError,
     average_ranks,
+    build_evaluation_records,
+    build_evaluation_summaries,
     evaluate_fold_feature,
 )
 
@@ -315,3 +317,125 @@ def test_hypothesis_average_ranks_properties(values: list[int]) -> None:
         v1 = sorted_unique_vals[i]
         v2 = sorted_unique_vals[i + 1]
         assert val_to_rank[v1] < val_to_rank[v2]
+
+
+def test_build_evaluation_records_ordering_and_keys() -> None:
+    # 2 folds, 4 rows total
+    folds = [
+        {"fold_id": 0, "test_range": [0, 2]},
+        {"fold_id": 1, "test_range": [2, 4]},
+    ]
+    # Rows: 0: open_time_ms, 1: f_ret_1, 2: f_roc_60, 3: f_rvol_20, 4: f_volratio_20, 5: l_fwdret_24
+    rows = [
+        (0, Decimal("1"), Decimal("10"), Decimal("100"), Decimal("1000"), Decimal("2"), 0),
+        (1, Decimal("2"), Decimal("20"), Decimal("200"), Decimal("2000"), Decimal("4"), 0),
+        (2, Decimal("3"), Decimal("30"), Decimal("300"), Decimal("3000"), Decimal("6"), 0),
+        (3, Decimal("4"), Decimal("40"), Decimal("400"), Decimal("4000"), Decimal("8"), 0),
+    ]
+    records = build_evaluation_records(folds, rows)
+    # Exactly 2 folds * 4 features = 8 records
+    assert len(records) == 8
+
+    # Fold-major, feature-major ordering
+    expected_order = [
+        (0, "f_ret_1"),
+        (0, "f_roc_60"),
+        (0, "f_rvol_20"),
+        (0, "f_volratio_20"),
+        (1, "f_ret_1"),
+        (1, "f_roc_60"),
+        (1, "f_rvol_20"),
+        (1, "f_volratio_20"),
+    ]
+    actual_order = [(r["fold_id"], r["feature"]) for r in records]
+    assert actual_order == expected_order
+
+    # Required key set
+    expected_keys = {
+        "fold_id",
+        "feature",
+        "target",
+        "test_range",
+        "test_row_count",
+        "valid_pair_count",
+        "excluded_pair_count",
+        "feature_null_count",
+        "target_null_count",
+        "pearson_ic",
+        "spearman_ic",
+    }
+    for r in records:
+        assert set(r.keys()) == expected_keys
+        assert r["test_row_count"] == 2
+        assert r["valid_pair_count"] == 2
+        assert r["excluded_pair_count"] == 0
+        assert r["feature_null_count"] == 0
+        assert r["target_null_count"] == 0
+
+
+def test_build_evaluation_summary_calculation_and_median() -> None:
+    # 4 folds for feature 'f_ret_1', metric values: [-0.2, -0.1, +0.3, +0.4]
+    # Even count median = (-0.1 + 0.3) / 2 = 0.1
+    # Mean = (-0.2 - 0.1 + 0.3 + 0.4) / 4 = 0.4 / 4 = 0.1
+    # Min = -0.2, Max = 0.4
+    # Positive = 2, Negative = 2, Zero = 0
+    records = [
+        {
+            "fold_id": 0,
+            "feature": "f_ret_1",
+            "target": "l_fwdret_24",
+            "valid_pair_count": 72,
+            "pearson_ic": "-0.200000000000000000",
+            "spearman_ic": "-0.100000000000000000",
+        },
+        {
+            "fold_id": 1,
+            "feature": "f_ret_1",
+            "target": "l_fwdret_24",
+            "valid_pair_count": 72,
+            "pearson_ic": "-0.100000000000000000",
+            "spearman_ic": "0.000000000000000000",
+        },
+        {
+            "fold_id": 2,
+            "feature": "f_ret_1",
+            "target": "l_fwdret_24",
+            "valid_pair_count": 72,
+            "pearson_ic": "0.300000000000000000",
+            "spearman_ic": "0.200000000000000000",
+        },
+        {
+            "fold_id": 3,
+            "feature": "f_ret_1",
+            "target": "l_fwdret_24",
+            "valid_pair_count": 72,
+            "pearson_ic": "0.400000000000000000",
+            "spearman_ic": "0.300000000000000000",
+        },
+    ]
+    summaries = build_evaluation_summaries(records, features=["f_ret_1"])
+    # 1 feature * 2 metrics = 2 summaries
+    assert len(summaries) == 2
+
+    # Feature-major, metric-major order
+    assert summaries[0]["feature"] == "f_ret_1"
+    assert summaries[0]["metric"] == "pearson_ic"
+    assert summaries[1]["feature"] == "f_ret_1"
+    assert summaries[1]["metric"] == "spearman_ic"
+
+    p_sum = summaries[0]
+    assert p_sum["fold_count"] == 4
+    assert p_sum["total_valid_pair_count"] == 288
+    assert p_sum["positive_fold_count"] == 2
+    assert p_sum["negative_fold_count"] == 2
+    assert p_sum["zero_fold_count"] == 0
+    assert p_sum["minimum"] == "-0.200000000000000000"
+    assert p_sum["maximum"] == "0.400000000000000000"
+    assert p_sum["median"] == "0.100000000000000000"
+    assert p_sum["equal_weight_mean"] == "0.100000000000000000"
+
+    # Odd count median: 3 folds [-0.2, -0.1, 0.3] -> median is -0.1
+    odd_records = records[:3]
+    odd_summaries = build_evaluation_summaries(odd_records, features=["f_ret_1"])
+    assert odd_summaries[0]["median"] == "-0.100000000000000000"
+
