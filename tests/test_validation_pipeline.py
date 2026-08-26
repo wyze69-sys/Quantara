@@ -198,3 +198,21 @@ def test_analyze_internal_gate_blocks_before_any_compute(tmp_path) -> None:
     descriptor = write_validation_descriptor(root, "1h")
     code = run_validation_pipeline(descriptor, tmp_path / "data", repo_root=root)
     assert code == 2
+
+
+def test_cli_validation_schema_dispatch(chain) -> None:
+    from quantara.cli import main as cli_main
+
+    root, data_root = chain
+    descriptor = write_validation_descriptor(root, "1h")
+    assert (
+        cli_main(
+            [
+                "--descriptor",
+                str(descriptor),
+                "--data-root",
+                str(data_root),
+            ]
+        )
+        == 0
+    )
