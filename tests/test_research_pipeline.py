@@ -21,6 +21,8 @@ from conftest import (
     write_derived_descriptor,
     write_research_descriptor,
 )
+from quantara.cli import BASE_SCHEMA, RESEARCH_SCHEMA
+from quantara.cli import main as cli_main
 from quantara.derive_pipeline import run_derivation_pipeline
 from quantara.research_pipeline import run_research_pipeline
 
@@ -173,3 +175,45 @@ def test_analyze_internal_gate_blocks_before_any_compute(tmp_path) -> None:
     descriptor = write_research_descriptor(root, "1h")
     code = run_research_pipeline(descriptor, tmp_path / "data", repo_root=root)
     assert code == 2
+
+
+# --- Task 7: CLI dispatch -------------------------------------------------------
+
+
+def test_cli_research_schema_dispatch(chain) -> None:
+    root, data_root = chain
+    descriptor = write_research_descriptor(root, "1h")
+    # The research table is already published by the earlier test in this
+    # module; the CLI must dispatch to the research pipeline and report a
+    # truthful idempotent no-op.
+    assert (
+        cli_main(
+            [
+                "--descriptor",
+                str(descriptor),
+                "--data-root",
+                str(data_root),
+            ]
+        )
+        == 0
+    )
+    # Dry-run parity through the same entry point.
+    assert (
+        cli_main(
+            [
+                "--descriptor",
+                str(descriptor),
+                "--data-root",
+                str(data_root),
+                "--dry-run",
+            ]
+        )
+        == 0
+    )
+
+
+def test_cli_unknown_schema_is_invalid_descriptor(tmp_path) -> None:
+    bogus = tmp_path / "bogus.yaml"
+    bogus.write_text("schema: quantara.not-a-schema/v9\n", encoding="utf-8")
+    assert cli_main(["--descriptor", str(bogus), "--data-root", str(tmp_path)]) == 3
+    assert BASE_SCHEMA != RESEARCH_SCHEMA
