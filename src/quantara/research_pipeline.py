@@ -869,7 +869,12 @@ def run_research_pipeline(
         )
         post_pointer = milestones["pointer_replaced"]
         extra = {"post_pointer": "published_unverified"} if post_pointer else None
-        referenced = commit_address if milestones["commit_renamed"] else None
+        # Slice 002 closure contract: a replaced pointer means the graph IS
+        # published (discoverable, verification pending) regardless of whether
+        # this invocation renamed its own staging commit or reused a retained
+        # equivalent. The FAILED evidence must therefore reference the
+        # published commit whenever the pointer was replaced.
+        referenced = commit_address if post_pointer else None
         return _terminal_failure(diagnostic, referenced, extra, exc)
 
     _cleanup_attempt()

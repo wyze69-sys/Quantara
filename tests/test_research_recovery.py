@@ -271,3 +271,50 @@ def test_undersized_base_blocked_before_any_compute(tmp_path) -> None:
     # Pre-compute: no objects, no datasets, no staging residue.
     assert not (tmp_path / "data" / "objects" / "normalized" / "sha256").exists()
     assert not (tmp_path / "data" / "datasets").exists()
+
+
+# --- post-pointer evidence truthfulness ------------------------------------------
+
+
+def test_post_pointer_failure_references_published_commit(chain, monkeypatch) -> None:
+    """Closure contract inherited from slice 002: when recovery replaces the
+    pointer and discovery verification then fails, the FAILED attempt must
+    reference the published commit — ``referenced_commit`` follows
+    ``pointer_replaced``, never ``commit_renamed`` (retained-commit reuse
+    keeps ``commit_renamed`` False while the graph IS published)."""
+    root, data_root = chain
+    dataset_dir = _research_dir(data_root)
+    pointer_path = dataset_dir / "current.json"
+    pointer_before = pointer_path.read_bytes()
+    retained_commit = json.loads(pointer_before)["commit"]
+
+    pointer_path.unlink()  # lose only the pointer; commit + object retained
+
+    def boom(*a, **k):
+        raise QuantaraError("injected discovery verification failure")
+
+    before = _attempts(data_root)
+    _inject(monkeypatch, "verify_research_current_graph", boom)
+    try:
+        descriptor = write_research_descriptor(root, "1h")
+        assert run_research_pipeline(descriptor, data_root, repo_root=root) == 3
+    finally:
+        monkeypatch.undo()
+
+    attempt = _latest_attempt(data_root, before)
+    assert attempt["terminal_result"] == "FAILED"
+    dispositions = attempt["artifact_dispositions"]
+    assert dispositions["pointer_replaced"] is True
+    assert dispositions["commit_renamed"] is False
+    assert dispositions["object_written"] is False
+    assert dispositions["post_pointer"] == "published_unverified"
+    # The evidence must name the published commit it marked published-but-
+    # unverified — a null reference contradicts its own post_pointer marker.
+    assert attempt["referenced_commit"] == retained_commit
+
+    # The rewritten pointer is byte-identical to the lost one.
+    assert pointer_path.read_bytes() == pointer_before
+
+    # A clean rerun settles back to VERIFIED_NO_OP.
+    descriptor = write_research_descriptor(root, "1h")
+    assert run_research_pipeline(descriptor, data_root, repo_root=root) == 0
