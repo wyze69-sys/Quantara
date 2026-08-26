@@ -251,17 +251,30 @@ def run_evaluation_pipeline(
 
     def _pre_attempt(
         terminal_result: str,
-        diagnostic: str,
+        diagnostic: str | list[str],
         referenced: str | None = None,
     ) -> None:
         if not dry_run:
+            diagnostics_list = (
+                [diagnostic] if isinstance(diagnostic, str) else list(diagnostic)
+            )
             _write_attempt(
                 data,
                 root,
                 terminal_result=terminal_result,
-                dispositions={"evaluation_artifact": "not_written"},
+                dispositions={
+                    "evaluation_artifact": "not_written",
+                    "lock_acquired": False,
+                    "lock_released": False,
+                    "attempt_staged": False,
+                    "object_written": False,
+                    "commit_renamed": False,
+                    "pointer_replaced": False,
+                    "discovery_verified": False,
+                    "attempt_staging": "not_staged",
+                },
                 referenced_commit=referenced,
-                diagnostics=[diagnostic],
+                diagnostics=diagnostics_list,
             )
 
     # 1. Strictly load recognized evaluation descriptor
@@ -571,7 +584,8 @@ def run_evaluation_pipeline(
     )
     if quality_report.state != "PASS":
         print(f"quality evaluation failed: {quality_report.failing_checks()}", file=sys.stderr)
-        _pre_attempt("BLOCKED", "quality_failed")
+        failing = quality_report.failing_checks() or ["quality_failed"]
+        _pre_attempt("BLOCKED", failing)
         return EXIT_BLOCKED
 
     # Dry-run terminates here completely write-free
