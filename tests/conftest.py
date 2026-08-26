@@ -401,3 +401,58 @@ def publish_month_via_slice_001(tmp_path: Path, price_offset: int = 0):
     )
     assert code == 0
     return root, tmp_path / "data"
+
+
+# --- Additive helpers for data slice 004 (validation folds) -------------------
+
+VALIDATION_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.validation-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_01_validation_wf_v1
+dataset_type: validation_folds
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_01
+parent_descriptor: configs/datasets/{parent_name}
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2024-02-01T00:00:00Z"
+feature_set:
+  name: btcusdt_core_v1
+  version: "1"
+scheme: anchored_walkforward_v1
+fold_set:
+  name: btcusdt_core_v1_wf72_v1
+  version: "1"
+parameters:
+  test_size: 72
+  min_train_size: 336
+schema_version: quantara_validation_folds_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+
+def write_validation_descriptor(root: Path, interval: str = "1h") -> Path:
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-01-validation-wf-v1.yaml"
+    )
+    parent_name = f"binance-usdm-btcusdt-{interval}-2024-01-research-core-v1.yaml"
+    target.write_text(
+        VALIDATION_DESCRIPTOR_TEMPLATE.format(
+            interval=interval,
+            parent_name=parent_name,
+        ),
+        encoding="utf-8",
+    )
+    return target
+
+
+def validation_cfg_tree(tmp_path: Path) -> Path:
+    """Repo-shaped tree with 1h/1d research parents and validation descriptors."""
+    root = research_cfg_tree(tmp_path)
+    write_research_descriptor(root, "1h")
+    write_research_descriptor(root, "1d")
+    return root
