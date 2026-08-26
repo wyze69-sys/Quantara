@@ -572,6 +572,7 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         ).encode(),
     }
     staged_commit = stage_commit(dataset_directory, attempt_id, files)
+    published_manifest_bytes = manifest_bytes
     try:
         commit_dir = publish_commit(
             staged_commit, dataset_directory / "commits", content_hash
@@ -589,13 +590,14 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
             )
             return EXIT_FAILED
         commit_dir = candidate
+        published_manifest_bytes = (candidate / "manifest.json").read_bytes()
 
     # Step 21: verify the committed directory independently before pointing.
     verify_commit_graph(data, commit_dir)
     write_current(
         dataset_directory,
         content_hash,
-        manifest_digest=sha256_hex(manifest_bytes),
+        manifest_digest=sha256_hex(published_manifest_bytes),
     )
 
     # Step 22: reopen discovery through current.json and verify the graph.
