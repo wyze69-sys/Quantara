@@ -210,6 +210,27 @@ and published through the immutable content-addressed protocol.
   - `model_train_internal` remains `UNKNOWN`.
   - **No models, no fitting, no parameter search, and no information-coefficient (IC) calculations** exist in this slice. Folds and per-segment descriptive statistics are pure data partitioning.
 - **Running integration validation:**
+
   ```bash
   uv run pytest -m integration tests/test_integration_validation.py
   ```
+
+## Q1 2024 expansion status
+
+The verified BTCUSDT window now spans all of 2024 Q1 through the same
+fail-closed integrity and immutable publication protocol:
+
+- `131,040` canonical one-minute rows from the three checksum-verified monthly
+  archives.
+- `2,184` derived one-hour bars and `91` derived one-day bars.
+- `2,184` `btcusdt_core_v1` research rows with unchanged designed-null budgets.
+- `25` anchored walk-forward validation folds covering `1,824` test rows after
+  `360` excluded head rows; test lengths are `72` bars for the first `24` folds
+  and `96` bars for the final remainder-merged fold.
+- One-day validation remains correctly blocked because `91` rows are below the
+  required `432` rows.
+
+These Q1 artifacts are strictly for private internal analysis under the
+owner-approved-pending-counsel operations in provider-rights record v2. They
+are not approved for model training, commercial production, customer display,
+or redistribution.
