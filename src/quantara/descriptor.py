@@ -39,9 +39,10 @@ class DescriptorError(QuantaraError):
     error_id = INVALID_DESCRIPTOR
 
 
-APPROVED_IDENTITIES: dict[str, str] = {
-    "schema": "quantara.dataset-descriptor/v1",
-    "dataset_id": "binance_usdm_btcusdt_klines_1m_2024_01",
+V1_SCHEMA = "quantara.dataset-descriptor/v1"
+V2_SCHEMA = "quantara.dataset-descriptor/v2"
+
+COMMON_APPROVED_IDENTITIES: dict[str, str] = {
     "provider": "binance",
     "market_type": "usd_m_futures",
     "instrument_id": "binance:usd_m_futures:BTCUSDT:perpetual",
@@ -56,7 +57,26 @@ APPROVED_IDENTITIES: dict[str, str] = {
     "timestamp_semantics": "closed_interval_v1",
 }
 
+APPROVED_IDENTITIES: dict[str, str] = {
+    "schema": V1_SCHEMA,
+    "dataset_id": "binance_usdm_btcusdt_klines_1m_2024_01",
+    **COMMON_APPROVED_IDENTITIES,
+}
+
+V2_APPROVED_IDENTITIES: dict[str, str] = {
+    "schema": V2_SCHEMA,
+    "dataset_id": "binance_usdm_btcusdt_klines_1m_2024_q1",
+    **COMMON_APPROVED_IDENTITIES,
+}
+
 DESCRIPTOR_KEYS = frozenset(APPROVED_IDENTITIES) | {
+    "period",
+    "source",
+    "quality_policy_version",
+    "legal_record",
+}
+V2_DESCRIPTOR_KEYS = frozenset(V2_APPROVED_IDENTITIES) | {
+    "months",
     "period",
     "source",
     "quality_policy_version",
@@ -124,6 +144,10 @@ class DatasetDescriptor:
     checksum_url: str
     allowed_hosts: tuple[str, ...]
     member_pattern: str
+    months: tuple[str, ...]
+    archive_urls: tuple[str, ...]
+    checksum_urls: tuple[str, ...]
+    member_patterns: tuple[str, ...]
     schema_version: str
     timestamp_semantics: str
     quality_policy_version: str
@@ -136,19 +160,28 @@ class DatasetDescriptor:
 
     def canonical_semantics(self) -> str:
         """JCS serialization of validated semantics (formatting-independent)."""
-        semantics: dict[str, Any] = dict(APPROVED_IDENTITIES)
+        identities = (
+            APPROVED_IDENTITIES if self.schema == V1_SCHEMA else V2_APPROVED_IDENTITIES
+        )
+        semantics: dict[str, Any] = dict(identities)
+        source: dict[str, Any]
+        if self.schema == V1_SCHEMA:
+            source = {
+                "archive_url": self.archive_url,
+                "checksum_url": self.checksum_url,
+                "allowed_hosts": list(self.allowed_hosts),
+                "member_pattern": self.member_pattern,
+            }
+        else:
+            semantics["months"] = list(self.months)
+            source = {"allowed_hosts": list(self.allowed_hosts)}
         semantics.update(
             {
                 "period": {
                     "start": self.start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "end": self.end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 },
-                "source": {
-                    "archive_url": self.archive_url,
-                    "checksum_url": self.checksum_url,
-                    "allowed_hosts": list(self.allowed_hosts),
-                    "member_pattern": self.member_pattern,
-                },
+                "source": source,
                 "quality_policy_version": self.quality_policy_version,
                 "legal_record": self.legal_record,
             }
@@ -209,19 +242,80 @@ def _validate_urls(
     return expected_archive, expected_checksum, allowed_hosts
 
 
+def _month_start(month: str) -> datetime:
+    if not isinstance(month, str) or not MONTH_PATTERN.fullmatch(month):
+        _reject("months entries must be YYYY-MM strings")
+    try:
+        return datetime.strptime(month, "%Y-%m").replace(tzinfo=UTC)
+    except ValueError:
+        _reject("months entries must be valid YYYY-MM calendar months")
+
+
+def _next_month(start: datetime) -> datetime:
+    if start.month == 12:
+        return start.replace(year=start.year + 1, month=1)
+    return start.replace(month=start.month + 1)
+
+
+def _parse_months(raw: Any, start: datetime, end: datetime) -> tuple[str, ...]:
+    if not isinstance(raw, list) or not raw:
+        _reject("months must be a non-empty list")
+    if not all(isinstance(month, str) for month in raw):
+        _reject("months entries must be YYYY-MM strings")
+    months = tuple(raw)
+    starts = tuple(_month_start(month) for month in months)
+    if len(set(months)) != len(months):
+        _reject("months must be unique")
+    if any(
+        current <= previous
+        for previous, current in zip(starts, starts[1:], strict=False)
+    ):
+        _reject("months must be strictly chronological")
+    if any(
+        current != _next_month(previous)
+        for previous, current in zip(starts, starts[1:], strict=False)
+    ):
+        _reject("months must form one consecutive calendar union")
+    if start != starts[0] or end != _next_month(starts[-1]):
+        _reject("period must equal the union of the listed month calendars")
+    return months
+
+
+def _validate_allowed_hosts(source: dict[str, Any]) -> tuple[str, ...]:
+    if set(source) != {"allowed_hosts"}:
+        _reject("v2 source must contain exactly 'allowed_hosts'")
+    hosts = source["allowed_hosts"]
+    if (
+        not isinstance(hosts, list)
+        or not hosts
+        or not all(
+            isinstance(host, str) and HOSTNAME_PATTERN.match(host) for host in hosts
+        )
+    ):
+        _reject("source.allowed_hosts must be a non-empty list of hostnames")
+    return tuple(hosts)
+
+
 def load_descriptor(path: Path | str) -> DatasetDescriptor:
     document = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         _reject("descriptor must be a YAML mapping")
+    schema = document.get("schema")
+    if schema not in (V1_SCHEMA, V2_SCHEMA):
+        _reject(f"schema must equal {V1_SCHEMA!r} or {V2_SCHEMA!r}")
+    approved_identities = (
+        APPROVED_IDENTITIES if schema == V1_SCHEMA else V2_APPROVED_IDENTITIES
+    )
+    descriptor_keys = DESCRIPTOR_KEYS if schema == V1_SCHEMA else V2_DESCRIPTOR_KEYS
     keys = set(document)
-    missing = DESCRIPTOR_KEYS - keys
+    missing = descriptor_keys - keys
     if missing:
         _reject(f"missing descriptor keys: {sorted(missing)}")
-    unknown = keys - DESCRIPTOR_KEYS
+    unknown = keys - descriptor_keys
     if unknown:
         _reject(f"unknown descriptor keys: {sorted(unknown)}")
 
-    for field, approved in APPROVED_IDENTITIES.items():
+    for field, approved in approved_identities.items():
         value = document[field]
         if not isinstance(value, str) or value != approved:
             _reject(f"{field} must equal approved value {approved!r}")
@@ -234,22 +328,40 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:
         _reject("interval must be exactly '1m'")
 
     start, end = _parse_period(document["period"])
-    month = start.strftime("%Y-%m")
-    if not MONTH_PATTERN.match(month):
-        _reject("derived month segment must match YYYY-MM")
-
     source = document["source"]
     if not isinstance(source, dict):
         _reject("source must be a mapping")
-    archive_url, checksum_url, allowed_hosts = _validate_urls(
-        source, symbol, interval, month
-    )
-
-    expected_member_pattern = MEMBER_PATTERN_TEMPLATE.format(
-        symbol=symbol, interval=interval, month=month
-    )
-    if source.get("member_pattern") != expected_member_pattern:
-        _reject("source.member_pattern must equal the approved member pattern")
+    if schema == V1_SCHEMA:
+        months = (start.strftime("%Y-%m"),)
+        archive_url, checksum_url, allowed_hosts = _validate_urls(
+            source, symbol, interval, months[0]
+        )
+        expected_member_pattern = MEMBER_PATTERN_TEMPLATE.format(
+            symbol=symbol, interval=interval, month=months[0]
+        )
+        if source.get("member_pattern") != expected_member_pattern:
+            _reject("source.member_pattern must equal the approved member pattern")
+        archive_urls = (archive_url,)
+        checksum_urls = (checksum_url,)
+        member_patterns = (expected_member_pattern,)
+    else:
+        months = _parse_months(document["months"], start, end)
+        allowed_hosts = _validate_allowed_hosts(source)
+        archive_urls = tuple(
+            ARCHIVE_URL_TEMPLATE.format(symbol=symbol, interval=interval, month=month)
+            for month in months
+        )
+        checksum_urls = tuple(
+            CHECKSUM_URL_TEMPLATE.format(symbol=symbol, interval=interval, month=month)
+            for month in months
+        )
+        member_patterns = tuple(
+            MEMBER_PATTERN_TEMPLATE.format(symbol=symbol, interval=interval, month=month)
+            for month in months
+        )
+        archive_url = archive_urls[0]
+        checksum_url = checksum_urls[0]
+        expected_member_pattern = member_patterns[0]
 
     quality_policy_version = document["quality_policy_version"]
     legal_record = document["legal_record"]
@@ -277,6 +389,10 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:
         checksum_url=checksum_url,
         allowed_hosts=allowed_hosts,
         member_pattern=expected_member_pattern,
+        months=months,
+        archive_urls=archive_urls,
+        checksum_urls=checksum_urls,
+        member_patterns=member_patterns,
         schema_version=document["schema_version"],
         timestamp_semantics=document["timestamp_semantics"],
         quality_policy_version=quality_policy_version,
