@@ -11,6 +11,7 @@ from every payload.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterable, Sequence
 from decimal import MAX_EMAX, MIN_EMIN, ROUND_HALF_EVEN, Context, Decimal
 
@@ -21,12 +22,18 @@ __all__ = [
     "CANONICAL_COLUMNS",
     "CONTENT_HASH_DOMAIN",
     "HASH_CONTRACT_VERSION",
+    "RESEARCH_COLUMNS",
+    "RESEARCH_CONTENT_HASH_DOMAIN",
+    "RESEARCH_SCHEMA_VERSION",
     "SCHEMA_VERSION",
     "canonical_content_hash",
     "canonical_row_array",
     "descriptor_hash",
     "quality_identity",
     "render_decimal_18",
+    "research_content_hash",
+    "research_row_array",
+    "research_schema_fingerprint",
     "schema_fingerprint",
     "sha256_hex",
 ]
@@ -34,6 +41,10 @@ __all__ = [
 HASH_CONTRACT_VERSION = "hash_contract_v1"
 CONTENT_HASH_DOMAIN = "quantara-canonical-content-v1"
 SCHEMA_VERSION = "binance_usdm_kline_1m_v1"
+
+# Data slice 003b: research-table identity domain and schema version.
+RESEARCH_CONTENT_HASH_DOMAIN = "quantara-research-content-v1"
+RESEARCH_SCHEMA_VERSION = "quantara_research_featureset_v1"
 
 DECIMAL_TYPE = "decimal128_38_18"
 
@@ -166,5 +177,111 @@ def canonical_content_hash(fingerprint: str, rows: Iterable[Sequence[object]]) -
     ]
     for row in rows:
         parts.append(canonicalize(canonical_row_array(row)).encode("utf-8"))
+        parts.append(b"\n")
+    return sha256_hex(b"".join(parts))
+
+
+# --- Data slice 003b: research-table identity ---------------------------------
+
+# The fixed seven-column research schema in order (design §5). Each column
+# carries its authoritative role so consumers cannot confuse features with
+# labels without producing a different schema fingerprint.
+RESEARCH_COLUMNS: tuple[tuple[str, str, str, bool], ...] = (
+    # (name, type, role, nullable)
+    ("open_time_ms", "int64", "index", False),
+    ("f_ret_1", DECIMAL_TYPE, "feature", True),
+    ("f_roc_60", DECIMAL_TYPE, "feature", True),
+    ("f_rvol_20", DECIMAL_TYPE, "feature", True),
+    ("f_volratio_20", DECIMAL_TYPE, "feature", True),
+    ("l_fwdret_24", DECIMAL_TYPE, "label", True),
+    ("l_fwddir_24", "int8", "label", True),
+)
+
+_RESEARCH_Q18_PATTERN = re.compile(r"^-?\d+\.\d{18}$")
+
+
+def _research_fingerprint_payload(
+    schema_version: str = RESEARCH_SCHEMA_VERSION,
+) -> dict:
+    return {
+        "schema_version": schema_version,
+        "columns": [
+            {
+                "index": index,
+                "name": name,
+                "type": ctype,
+                "role": role,
+                "nullable": nullable,
+            }
+            for index, (name, ctype, role, nullable) in enumerate(RESEARCH_COLUMNS)
+        ],
+    }
+
+
+def research_schema_fingerprint(
+    schema_version: str = RESEARCH_SCHEMA_VERSION,
+) -> str:
+    """SHA-256 over JCS of the ordered seven-column research payload.
+
+    The role registry and nullability participate in the identity; the
+    no-argument call is the approved ``quantara_research_featureset_v1``
+    fingerprint.
+    """
+    payload = _research_fingerprint_payload(schema_version)
+    return sha256_hex(canonicalize(payload).encode("utf-8"))
+
+
+def research_row_array(values: Sequence[object]) -> list[object]:
+    """Validate one research row into its JSON-ready JCS array form.
+
+    Decimal columns must already be Q18-framed strings (exactly 18 fractional
+    digits) or null; binary floats are structurally excluded everywhere.
+    """
+    if len(values) != len(RESEARCH_COLUMNS):
+        raise HashPayloadError(
+            f"research row must have exactly {len(RESEARCH_COLUMNS)} fields"
+        )
+    for index, value in enumerate(values):
+        name, ctype, _role, nullable = RESEARCH_COLUMNS[index]
+        if isinstance(value, float):
+            raise HashPayloadError("binary floats are forbidden in research rows")
+        if value is None:
+            if not nullable:
+                raise HashPayloadError(f"research column {name} is never null")
+            continue
+        if ctype == DECIMAL_TYPE:
+            if not isinstance(value, str) or not _RESEARCH_Q18_PATTERN.fullmatch(
+                value
+            ):
+                raise HashPayloadError(
+                    f"research column {name} must be a Q18-framed string "
+                    f"(exactly 18 fractional digits), got {value!r}"
+                )
+        else:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise HashPayloadError(
+                    f"research column {name} must be an int, got {type(value)!r}"
+                )
+    return list(values)
+
+
+def research_content_hash(
+    fingerprint: str,
+    rows: Iterable[Sequence[object]],
+) -> str:
+    """SHA-256 over the domain-separated research row framing.
+
+    Same framing grammar as the canonical contract but under the dedicated
+    ``quantara-research-content-v1`` domain — kline framing can never collide
+    with research-table identity.
+    """
+    parts: list[bytes] = [
+        RESEARCH_CONTENT_HASH_DOMAIN.encode("ascii"),
+        b"\x00",
+        fingerprint.lower().encode("ascii"),
+        b"\n",
+    ]
+    for row in rows:
+        parts.append(canonicalize(research_row_array(row)).encode("utf-8"))
         parts.append(b"\n")
     return sha256_hex(b"".join(parts))

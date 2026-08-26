@@ -15,6 +15,21 @@ import pytest
 import yaml
 
 from conftest import research_cfg_tree, write_research_descriptor
+from quantara.hashing import (
+    CONTENT_HASH_DOMAIN as KLINE_DOMAIN,
+)
+from quantara.hashing import (
+    RESEARCH_CONTENT_HASH_DOMAIN,
+    RESEARCH_SCHEMA_VERSION,
+    render_decimal_18,
+    research_content_hash,
+    research_schema_fingerprint,
+    sha256_hex,
+)
+from quantara.hashing import (
+    schema_fingerprint as kline_schema_fingerprint,
+)
+from quantara.jcs import canonicalize
 from quantara.research_descriptor import (
     MINIMUM_PARENT_ROWS,
     ResearchDescriptorError,
@@ -160,3 +175,85 @@ def test_daily_base_is_structurally_undersized(tmp_path: Path) -> None:
 
 def test_minimum_parent_rows_arithmetic() -> None:
     assert MINIMUM_PARENT_ROWS == max(60, 20) + 24 == 84
+
+
+# --- Task 2: research-table content identity ----------------------------------
+
+FROZEN_SLICE_001_FINGERPRINT = (
+    "feab7d2bb40de94e3621d6ff9847363eddd52b7fd8cd3c07f66def664da614c8"
+)
+
+
+def test_kline_fingerprint_anchor_untouched() -> None:
+    assert kline_schema_fingerprint() == FROZEN_SLICE_001_FINGERPRINT
+
+
+def test_research_fingerprint_is_stable_and_parameterized() -> None:
+    left = research_schema_fingerprint()
+    right = research_schema_fingerprint(RESEARCH_SCHEMA_VERSION)
+    assert left == right
+    assert left != research_schema_fingerprint("quantara_research_featureset_v2")
+
+
+def test_research_fingerprint_covers_roles_nullability_order() -> None:
+    from quantara.hashing import _research_fingerprint_payload
+
+    base = research_schema_fingerprint()
+    payload = _research_fingerprint_payload(RESEARCH_SCHEMA_VERSION)
+    assert [c["role"] for c in payload["columns"]] == [
+        "index", "feature", "feature", "feature", "feature",
+        "label", "label",
+    ]
+    swapped = {**payload, "columns": [
+        {**c, "role": "label"} if c["name"] == "f_ret_1" else c
+        for c in payload["columns"]
+    ]}
+    unnullable = {**payload, "columns": [
+        {**c, "nullable": False} if c["name"] == "f_ret_1" else c
+        for c in payload["columns"]
+    ]}
+    reordered = {**payload, "columns": list(reversed(payload["columns"]))}
+
+    def digest(p):
+        return sha256_hex(canonicalize(p).encode("utf-8"))
+
+    assert len({base, digest(swapped), digest(unnullable), digest(reordered)}) == 4
+
+
+def _row(ret="0.000000000000000001"):
+    return [
+        1704067200000, ret, None, None, None, None, None,
+    ]
+
+
+def test_research_content_hash_domain_separated_and_value_sensitive() -> None:
+    fingerprint = research_schema_fingerprint()
+    base = research_content_hash(fingerprint, [_row(), _row()])
+    assert base != research_content_hash(
+        fingerprint, [_row("0.000000000000000002"), _row()]
+    )
+    assert base != research_content_hash(
+        research_schema_fingerprint("other"), [_row(), _row()]
+    )
+    # Domain separation: the kline domain never produces this identity.
+    assert KLINE_DOMAIN != RESEARCH_CONTENT_HASH_DOMAIN
+
+
+def test_research_content_hash_enforces_q18_string_framing() -> None:
+    from quantara.hashing import HashPayloadError
+
+    fingerprint = research_schema_fingerprint()
+    with pytest.raises(HashPayloadError):
+        research_content_hash(fingerprint, [_row("0.5")])  # not Q18-framed
+    with pytest.raises(HashPayloadError):
+        research_content_hash(fingerprint, [_row("0.1234567890123456789")])
+    with pytest.raises(HashPayloadError):
+        research_content_hash(fingerprint, [[0.5] + [None] * 6])  # float
+    with pytest.raises(HashPayloadError):
+        # open_time_ms is never nullable.
+        research_content_hash(fingerprint, [[None] + [None] * 6])
+    # Exact Q18 strings pass; render_decimal_18 agrees with the framing.
+    exact = _row(render_decimal_18("0.5"))
+    assert research_content_hash(fingerprint, [exact]) == research_content_hash(
+        fingerprint, [exact]
+    )
