@@ -97,24 +97,14 @@ def test_hand_computed_pearson() -> None:
 
 def test_perfect_positive_and_negative_correlation() -> None:
     # Positive
-    rows_pos = [
-        (i, Decimal(i), 0, 0, 0, Decimal(i * 10), 0)
-        for i in range(1, 5)
-    ]
-    res_pos = evaluate_fold_feature(
-        0, "f_ret_1", "l_fwdret_24", (0, 4), rows_pos, 1, 5
-    )
+    rows_pos = [(i, Decimal(i), 0, 0, 0, Decimal(i * 10), 0) for i in range(1, 5)]
+    res_pos = evaluate_fold_feature(0, "f_ret_1", "l_fwdret_24", (0, 4), rows_pos, 1, 5)
     assert res_pos["pearson_ic"] == "1.000000000000000000"
     assert res_pos["spearman_ic"] == "1.000000000000000000"
 
     # Negative
-    rows_neg = [
-        (i, Decimal(i), 0, 0, 0, Decimal((5 - i) * 10), 0)
-        for i in range(1, 5)
-    ]
-    res_neg = evaluate_fold_feature(
-        0, "f_ret_1", "l_fwdret_24", (0, 4), rows_neg, 1, 5
-    )
+    rows_neg = [(i, Decimal(i), 0, 0, 0, Decimal((5 - i) * 10), 0) for i in range(1, 5)]
+    res_neg = evaluate_fold_feature(0, "f_ret_1", "l_fwdret_24", (0, 4), rows_neg, 1, 5)
     assert res_neg["pearson_ic"] == "-1.000000000000000000"
     assert res_neg["spearman_ic"] == "-1.000000000000000000"
 
@@ -128,9 +118,7 @@ def test_zero_correlation_fixture() -> None:
         (1, Decimal("0"), 0, 0, 0, Decimal("0"), 0),
         (2, Decimal("1"), 0, 0, 0, Decimal("1"), 0),
     ]
-    res = evaluate_fold_feature(
-        0, "f_ret_1", "l_fwdret_24", (0, 3), rows, 1, 5
-    )
+    res = evaluate_fold_feature(0, "f_ret_1", "l_fwdret_24", (0, 3), rows, 1, 5)
     assert res["pearson_ic"] == "0.000000000000000000"
 
 
@@ -168,9 +156,7 @@ def test_spearman_invariance_under_strictly_increasing_transforms() -> None:
         (3, Decimal("4.0"), 0, 0, 0, Decimal("2.2"), 0),
         (4, Decimal("2.5"), 0, 0, 0, Decimal("7.0"), 0),  # tie in x
     ]
-    res1 = evaluate_fold_feature(
-        0, "f_ret_1", "l_fwdret_24", (0, 5), rows1, 1, 5
-    )
+    res1 = evaluate_fold_feature(0, "f_ret_1", "l_fwdret_24", (0, 5), rows1, 1, 5)
 
     # Strictly increasing transformation on x and y:
     # x' = x * 3 + 10, y' = y + 100
@@ -181,9 +167,7 @@ def test_spearman_invariance_under_strictly_increasing_transforms() -> None:
         (3, Decimal("4.0") * 3 + 10, 0, 0, 0, Decimal("2.2") + 100, 0),
         (4, Decimal("2.5") * 3 + 10, 0, 0, 0, Decimal("7.0") + 100, 0),
     ]
-    res2 = evaluate_fold_feature(
-        0, "f_ret_1", "l_fwdret_24", (0, 5), rows2, 1, 5
-    )
+    res2 = evaluate_fold_feature(0, "f_ret_1", "l_fwdret_24", (0, 5), rows2, 1, 5)
     assert res1["spearman_ic"] == res2["spearman_ic"]
 
 
@@ -201,9 +185,7 @@ def test_overlapping_null_accounting() -> None:
         (3, None, 0, 0, 0, None, 0),
         (4, Decimal("5"), 0, 0, 0, Decimal("50"), 0),
     ]
-    res = evaluate_fold_feature(
-        0, "f_ret_1", "l_fwdret_24", (0, 5), rows, 1, 5
-    )
+    res = evaluate_fold_feature(0, "f_ret_1", "l_fwdret_24", (0, 5), rows, 1, 5)
     assert res["test_row_count"] == 5
     assert res["valid_pair_count"] == 2
     assert res["excluded_pair_count"] == 3
@@ -438,4 +420,3 @@ def test_build_evaluation_summary_calculation_and_median() -> None:
     odd_records = records[:3]
     odd_summaries = build_evaluation_summaries(odd_records, features=["f_ret_1"])
     assert odd_summaries[0]["median"] == "-0.100000000000000000"
-

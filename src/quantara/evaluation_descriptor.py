@@ -189,9 +189,7 @@ def load_evaluation_descriptor(path: Path | str) -> EvaluationDescriptor:
         or evaluation_set["name"] != EVALUATION_SET["name"]
         or str(evaluation_set["version"]) != EVALUATION_SET["version"]
     ):
-        _reject(
-            f"evaluation_set must equal {EVALUATION_SET!r}, got {evaluation_set!r}"
-        )
+        _reject(f"evaluation_set must equal {EVALUATION_SET!r}, got {evaluation_set!r}")
 
     # Features
     features = document["features"]
@@ -210,8 +208,7 @@ def load_evaluation_descriptor(path: Path | str) -> EvaluationDescriptor:
     metrics = document["metrics"]
     if not isinstance(metrics, list) or tuple(metrics) != APPROVED_METRICS:
         _reject(
-            "metrics must equal approved ordered list "
-            f"{list(APPROVED_METRICS)!r}, got {metrics!r}"
+            f"metrics must equal approved ordered list {list(APPROVED_METRICS)!r}, got {metrics!r}"
         )
 
     if document["schema_version"] != SCHEMA_VERSION:
@@ -266,9 +263,7 @@ def load_evaluation_descriptor(path: Path | str) -> EvaluationDescriptor:
             "approved 'btcusdt_core_v1' v1"
         )
     if parent.scheme != "anchored_walkforward_v1":
-        _reject(
-            f"parent scheme {parent.scheme!r} does not match 'anchored_walkforward_v1'"
-        )
+        _reject(f"parent scheme {parent.scheme!r} does not match 'anchored_walkforward_v1'")
     if parent.fold_set != {"name": "btcusdt_core_v1_wf72_v1", "version": "1"}:
         _reject(
             f"parent fold_set {parent.fold_set!r} does not match "
@@ -280,9 +275,7 @@ def load_evaluation_descriptor(path: Path | str) -> EvaluationDescriptor:
             "approved values test_size=72, min_train_size=336"
         )
     if parent.embargo != 24:
-        _reject(
-            f"parent embargo {parent.embargo!r} does not match approved value 24"
-        )
+        _reject(f"parent embargo {parent.embargo!r} does not match approved value 24")
 
     # Derived dataset ID
     expected_dataset_id = f"{parent.parent_descriptor.base_dataset_id}_evaluation_dual_ic_v1"

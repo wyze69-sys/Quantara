@@ -193,6 +193,7 @@ def setup_offline_q1_parents(tmp_path: Path) -> tuple[Path, Path, Path]:
     data_root = tmp_path / "data"
 
     import shutil
+
     shutil.copytree(Path("configs"), repo_root / "configs")
     eval_desc = (
         repo_root
@@ -493,6 +494,7 @@ def test_pointer_snapshot_stability(tmp_path: Path, monkeypatch) -> None:
     )
 
     from quantara import evaluation_pipeline as ep_module
+
     orig_verify = ep_module.verify_validation_current_graph
 
     def tampered_verify(dataset_dir, data_root):
@@ -766,6 +768,7 @@ def test_parent_pointer_drift_pre_publication_blocks(tmp_path: Path, monkeypatch
     )
 
     from quantara import evaluation_pipeline as ep_module
+
     orig_evaluate_quality = ep_module.evaluate_evaluation_quality
 
     def tampering_eval_quality(*args, **kwargs):
@@ -786,5 +789,3 @@ def test_parent_pointer_drift_pre_publication_blocks(tmp_path: Path, monkeypatch
     attempt = json.loads(manifests[0].read_text(encoding="utf-8"))
     assert attempt["terminal_result"] == "BLOCKED"
     assert "validation_pointer_drift" in attempt["diagnostics"]
-
-

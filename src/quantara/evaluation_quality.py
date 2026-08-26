@@ -179,9 +179,7 @@ def evaluate_evaluation_quality(
     res_sha_ok = isinstance(res_sha, str) and len(res_sha) == 64
     res_size = research_parent_info.get("parquet_size")
     res_size_ok = isinstance(res_size, int) and not isinstance(res_size, bool) and res_size > 0
-    parents_ok = (
-        val_pass and res_pass and val_sha_ok and val_size_ok and res_sha_ok and res_size_ok
-    )
+    parents_ok = val_pass and res_pass and val_sha_ok and val_size_ok and res_sha_ok and res_size_ok
     record(
         "parents_authenticated",
         parents_ok,
@@ -193,25 +191,21 @@ def evaluate_evaluation_quality(
     )
 
     # 2. lineage_binding
-    lineage_dataset_ok = (
-        validation_lineage.get("parent_dataset_id") == research_parent_info.get("dataset_id")
+    lineage_dataset_ok = validation_lineage.get("parent_dataset_id") == research_parent_info.get(
+        "dataset_id"
     )
-    lineage_commit_ok = (
-        validation_lineage.get("parent_commit_address")
-        == research_parent_info.get("commit_address")
+    lineage_commit_ok = validation_lineage.get("parent_commit_address") == research_parent_info.get(
+        "commit_address"
     )
-    lineage_hash_ok = (
-        validation_lineage.get("parent_canonical_content_hash")
-        == research_parent_info.get("canonical_content_hash")
-    )
-    lineage_parquet_sha_ok = (
-        validation_lineage.get("parent_parquet_sha256")
-        == research_parent_info.get("parquet_sha256")
-    )
-    lineage_parquet_size_ok = (
-        validation_lineage.get("parent_parquet_size")
-        == research_parent_info.get("parquet_size")
-    )
+    lineage_hash_ok = validation_lineage.get(
+        "parent_canonical_content_hash"
+    ) == research_parent_info.get("canonical_content_hash")
+    lineage_parquet_sha_ok = validation_lineage.get(
+        "parent_parquet_sha256"
+    ) == research_parent_info.get("parquet_sha256")
+    lineage_parquet_size_ok = validation_lineage.get(
+        "parent_parquet_size"
+    ) == research_parent_info.get("parquet_size")
     lineage_ok = (
         lineage_dataset_ok
         and lineage_commit_ok
@@ -283,21 +277,14 @@ def evaluate_evaluation_quality(
     # 5. row_alignment
     n_rows = len(research_rows)
     parent_rows_match = validation_artifact.get("parent_rows") == n_rows == 2184
-    time_strictly_increasing = (
-        n_rows == 2184
-        and all(
-            isinstance(research_rows[i][0], int)
-            and not isinstance(research_rows[i][0], bool)
-            and research_rows[i][0] < research_rows[i + 1][0]
-            for i in range(n_rows - 1)
-        )
+    time_strictly_increasing = n_rows == 2184 and all(
+        isinstance(research_rows[i][0], int)
+        and not isinstance(research_rows[i][0], bool)
+        and research_rows[i][0] < research_rows[i + 1][0]
+        for i in range(n_rows - 1)
     )
-    time_hourly = (
-        n_rows == 2184
-        and all(
-            research_rows[i + 1][0] - research_rows[i][0] == 3600000
-            for i in range(n_rows - 1)
-        )
+    time_hourly = n_rows == 2184 and all(
+        research_rows[i + 1][0] - research_rows[i][0] == 3600000 for i in range(n_rows - 1)
     )
     row_align_ok = parent_rows_match and time_strictly_increasing and time_hourly
     record(
@@ -314,15 +301,8 @@ def evaluate_evaluation_quality(
     if len(records) != 100:
         matrix_ok = False
     else:
-        expected_matrix = [
-            (fold_id, feat)
-            for fold_id in range(25)
-            for feat in APPROVED_FEATURES
-        ]
-        actual_matrix = [
-            (r.get("fold_id"), r.get("feature"))
-            for r in records
-        ]
+        expected_matrix = [(fold_id, feat) for fold_id in range(25) for feat in APPROVED_FEATURES]
+        actual_matrix = [(r.get("fold_id"), r.get("feature")) for r in records]
         if actual_matrix != expected_matrix:
             matrix_ok = False
         if not all(r.get("target") == APPROVED_TARGET for r in records):
@@ -429,7 +409,7 @@ def evaluate_evaluation_quality(
             feat = r["feature"]
             f_idx = FEATURE_COLUMN_INDICES[feat]
             test_range = r["test_range"]
-            fold_rows = research_rows[test_range[0]:test_range[1]]
+            fold_rows = research_rows[test_range[0] : test_range[1]]
             rec_fresh = evaluate_fold_feature(
                 fold_id=fold_id,
                 feature=feat,
@@ -506,9 +486,7 @@ def evaluate_evaluation_quality(
     from quantara.evaluation_pipeline import evaluation_commit_identity
 
     parent_fp = validation_parent_info.get("schema_fingerprint")
-    expected_schema_fp = evaluation_schema_fingerprint(
-        parent_validation_fingerprint=parent_fp
-    )
+    expected_schema_fp = evaluation_schema_fingerprint(parent_validation_fingerprint=parent_fp)
     schema_fp_ok = schema_fingerprint == expected_schema_fp
     expected_content_hash = evaluation_content_hash(schema_fingerprint, artifact_bytes)
     content_hash_ok = canonical_content_hash == expected_content_hash

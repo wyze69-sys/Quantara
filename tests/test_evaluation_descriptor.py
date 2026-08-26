@@ -78,9 +78,7 @@ def test_real_repo_config_loads_against_real_validation_descriptor() -> None:
     descriptor = load_evaluation_descriptor(REAL_EVALUATION_CONFIG)
     assert isinstance(descriptor, EvaluationDescriptor)
     assert descriptor.schema == EVALUATION_SCHEMA
-    assert descriptor.dataset_id == (
-        "binance_usdm_btcusdt_klines_1h_2024_q1_evaluation_dual_ic_v1"
-    )
+    assert descriptor.dataset_id == ("binance_usdm_btcusdt_klines_1h_2024_q1_evaluation_dual_ic_v1")
     assert descriptor.dataset_type == EVALUATION_DATASET_TYPE
     assert descriptor.evaluation_set == EVALUATION_SET
     assert descriptor.features == APPROVED_FEATURES
@@ -181,9 +179,7 @@ def test_metrics_exact_order_and_rejection(tmp_path: Path) -> None:
 
 
 def test_identity_drift_rejected(tmp_path: Path) -> None:
-    _assert_invalid(
-        tmp_path, instrument_id="binance:usd_m_futures:ETHUSDT:perpetual"
-    )
+    _assert_invalid(tmp_path, instrument_id="binance:usd_m_futures:ETHUSDT:perpetual")
     _assert_invalid(tmp_path, provider="coinbase")
     _assert_invalid(tmp_path, base_dataset_id="other_base")
 

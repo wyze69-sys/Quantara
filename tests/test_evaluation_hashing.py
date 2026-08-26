@@ -28,12 +28,8 @@ from quantara.hashing import (
 )
 from quantara.jcs import canonicalize
 
-FROZEN_VALIDATION_FP = (
-    "06f0cff54df3b5f61943423f6925c6e4ab7b4ed323c59eeb2a91f2d309d17c1c"
-)
-FROZEN_EVALUATION_FP = (
-    "d454a7e142ac19cfbb75ccabd53f1fb20f26bc471968c6e4b84203030aa10843"
-)
+FROZEN_VALIDATION_FP = "06f0cff54df3b5f61943423f6925c6e4ab7b4ed323c59eeb2a91f2d309d17c1c"
+FROZEN_EVALUATION_FP = "d454a7e142ac19cfbb75ccabd53f1fb20f26bc471968c6e4b84203030aa10843"
 
 
 def test_evaluation_constants() -> None:
@@ -52,8 +48,7 @@ def test_frozen_identity_vector_evaluation_schema_fingerprint() -> None:
 
 def test_predecessors_unchanged() -> None:
     assert (
-        schema_fingerprint()
-        == "feab7d2bb40de94e3621d6ff9847363eddd52b7fd8cd3c07f66def664da614c8"
+        schema_fingerprint() == "feab7d2bb40de94e3621d6ff9847363eddd52b7fd8cd3c07f66def664da614c8"
     )
     assert (
         research_schema_fingerprint()
@@ -85,9 +80,7 @@ def test_evaluation_schema_fingerprint_sensitivity() -> None:
     # Sensitivity to metrics
     assert base != evaluation_schema_fingerprint(metrics=["pearson_ic"])
     # Sensitivity to parent validation fingerprint
-    assert base != evaluation_schema_fingerprint(
-        parent_validation_fingerprint="0" * 64
-    )
+    assert base != evaluation_schema_fingerprint(parent_validation_fingerprint="0" * 64)
 
 
 def test_evaluation_schema_fingerprint_requires_lowercase_parent() -> None:

@@ -92,9 +92,7 @@ EVALUATION_EVIDENCE_KEYS: tuple[str, ...] = (
 )
 
 
-def _evaluation_dataset_dir(
-    data_root: Path, symbol: str, interval: str, start: datetime
-) -> Path:
+def _evaluation_dataset_dir(data_root: Path, symbol: str, interval: str, start: datetime) -> Path:
     return (
         Path(data_root)
         / "datasets"
@@ -108,9 +106,7 @@ def _evaluation_dataset_dir(
     )
 
 
-def _validation_dataset_dir(
-    data_root: Path, symbol: str, interval: str, start: datetime
-) -> Path:
+def _validation_dataset_dir(data_root: Path, symbol: str, interval: str, start: datetime) -> Path:
     return (
         Path(data_root)
         / "datasets"
@@ -124,9 +120,7 @@ def _validation_dataset_dir(
     )
 
 
-def _research_dataset_dir(
-    data_root: Path, symbol: str, interval: str, start: datetime
-) -> Path:
+def _research_dataset_dir(data_root: Path, symbol: str, interval: str, start: datetime) -> Path:
     return (
         Path(data_root)
         / "datasets"
@@ -179,9 +173,7 @@ def evaluation_commit_identity(canonical_content_hash: str, evaluation_from: dic
         or len(canonical_content_hash) != 64
         or any(c not in "0123456789abcdef" for c in canonical_content_hash)
     ):
-        raise HashPayloadError(
-            "canonical_content_hash must be a 64-character lowercase hex digest"
-        )
+        raise HashPayloadError("canonical_content_hash must be a 64-character lowercase hex digest")
     if not isinstance(evaluation_from, dict):
         raise HashPayloadError("evaluation_from must be a dict")
     payload = {
@@ -241,11 +233,7 @@ def run_evaluation_pipeline(
     dry_run: bool = False,
 ) -> int:
     """Orchestrate the feature evaluation pipeline (design §8, plan §7)."""
-    root = (
-        Path(repo_root)
-        if repo_root is not None
-        else Path(descriptor_path).resolve().parents[2]
-    )
+    root = Path(repo_root) if repo_root is not None else Path(descriptor_path).resolve().parents[2]
     data = Path(data_root)
     descriptor_file = Path(descriptor_path)
 
@@ -255,9 +243,7 @@ def run_evaluation_pipeline(
         referenced: str | None = None,
     ) -> None:
         if not dry_run:
-            diagnostics_list = (
-                [diagnostic] if isinstance(diagnostic, str) else list(diagnostic)
-            )
+            diagnostics_list = [diagnostic] if isinstance(diagnostic, str) else list(diagnostic)
             _write_attempt(
                 data,
                 root,
@@ -793,12 +779,12 @@ def run_evaluation_pipeline(
         manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
         files = {
             "manifest.json": manifest_bytes,
-            "content.json": (
-                json.dumps(content_evidence, indent=2, sort_keys=True) + "\n"
-            ).encode("utf-8"),
-            "quality.json": (
-                json.dumps(quality_payload, indent=2, sort_keys=True) + "\n"
-            ).encode("utf-8"),
+            "content.json": (json.dumps(content_evidence, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            ),
+            "quality.json": (json.dumps(quality_payload, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            ),
         }
         staged_commit = stage_commit(eval_dir, attempt_id, files)
         try:
@@ -910,10 +896,7 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
     normalized_refs = [
         ref for ref in content.get("object_refs", []) if ref.get("kind") == "normalized"
     ]
-    if (
-        len(normalized_refs) != 1
-        or manifest.get("artifact_sha256") != normalized_refs[0]["sha256"]
-    ):
+    if len(normalized_refs) != 1 or manifest.get("artifact_sha256") != normalized_refs[0]["sha256"]:
         raise QuantaraError("manifest artifact SHA-256 disagrees with object ref")
 
     # Authenticate artifact object from CAS
