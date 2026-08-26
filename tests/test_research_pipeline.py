@@ -10,6 +10,7 @@ recovery with truthful milestones, and the analyze_internal legal gate.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 import yaml
@@ -217,3 +218,40 @@ def test_cli_unknown_schema_is_invalid_descriptor(tmp_path) -> None:
     bogus.write_text("schema: quantara.not-a-schema/v9\n", encoding="utf-8")
     assert cli_main(["--descriptor", str(bogus), "--data-root", str(tmp_path)]) == 3
     assert BASE_SCHEMA != RESEARCH_SCHEMA
+
+
+# --- Task 8: frozen golden research table fixture -------------------------------
+
+GOLDEN_DIR = (
+    Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "golden_research"
+)
+
+
+def test_golden_research_table_equality() -> None:
+    parent = json.loads((GOLDEN_DIR / "parent_bars.json").read_text())
+    expected = json.loads((GOLDEN_DIR / "expected_table.json").read_text())
+
+    from conftest import make_hour_bar
+    from quantara.features import build_research_rows
+    from quantara.hashing import research_content_hash, research_schema_fingerprint
+    from quantara.research_pipeline import render_content_rows
+
+    n = parent["bar_count"]
+    parent_rows = [
+        make_hour_bar(
+            parent["first_open_time_ms"] + i * parent["interval_ms"],
+            parent["closes"][i],
+            parent["volumes"][i],
+        ).to_content_array()
+        for i in range(n)
+    ]
+    table = build_research_rows(parent_rows)
+
+    # Byte-exact equality with the independently computed golden table.
+    rendered = render_content_rows(table)
+    assert rendered == expected["rows"]
+
+    # Frozen identities.
+    fingerprint = research_schema_fingerprint(expected["schema_version"])
+    assert fingerprint == expected["fingerprint"]
+    assert research_content_hash(fingerprint, rendered) == expected["content_hash"]
