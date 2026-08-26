@@ -65,9 +65,12 @@ src/quantara/descriptor.py    # modified: additive v2 loader branch (months list
 src/quantara/hashing.py       # modified: additive fingerprint binding for v2 month lists only
 src/quantara/archive.py       # modified: reusable single-month fetch+verify helper if needed
 src/quantara/pipeline.py      # modified: v2 multi-archive acquire + chronological concat + §4 invariant checks
+src/quantara/cli.py           # modified: route base descriptor v1 and v2 through run_pipeline
+src/quantara/derive_pipeline.py # modified: authenticate v2 parents with month-bound range fingerprint; preserve v1 identity
 tests/conftest.py             # modified: additive synthetic two-month builder helpers
 tests/test_descriptor.py      # modified: additive v2 matrix cases
 tests/test_pipeline_multi_month.py
+tests/test_derive_pipeline.py # modified: v1/v2 parent-fingerprint regression
 tests/test_recovery.py        # modified: additive second-archive corruption cases
 tests/test_integration_q1.py  # marked integration, serial, networked
 README.md                     # modified: one appended short section "## Q1 2024 expansion status"
@@ -75,14 +78,25 @@ README.md                     # modified: one appended short section "## Q1 2024
 
 ### 5.2 Forbidden changes
 
-- No edits to: `derive_*`, `research_*`, `validation_*`, `features.py`, `folds.py`,
+- No edits to: `research_*`, `validation_*`, `features.py`, `folds.py`,
   `fold_stats.py`, `publication.py`, `manifests.py`, `errors.py`, `canonical.py`, `jcs.py`
-  beyond the allowlist; existing v1 configs or their published artifacts; existing specs/plans;
-  `.github/**`; `.gitignore`.
-- No modification of existing tests except additive conftest helpers and additive test cases;
+  beyond the allowlist; existing v1 configs or their published artifacts; existing specs/plans
+  except this recorded scope amendment; `.github/**`; `.gitignore`.
+- No modification of existing tests except the additive cases explicitly listed in §5.1;
   kline v1 fingerprint, v1 rights SHA, and all predecessor hash outputs byte-for-byte stable.
 - No training/model/search code; no new instruments/intervals beyond configured Q1 set; no
   force-push; `/data/` never tracked; network confined to the integration-marked module.
+
+### 5.3 Scope amendment — T7 preflight blocker (2026-08-26)
+
+Codex correctly stopped before T7 because the original allowlist omitted two required
+integration surfaces. `cli.py` recognized only base descriptor v1, and
+`derive_pipeline.py` authenticated a retained parent using the v1-only fingerprint call.
+The plan author's “downstream modules are config-only” assumption was therefore false.
+The narrowly approved repair adds `cli.py`, `derive_pipeline.py`, and the two regression-test
+files named in §5.1: v2 dispatch routes through the existing base pipeline, while parent
+authentication selects the frozen legacy fingerprint for v1 and the ordered-month-bound
+fingerprint for v2. No derived artifact schema or transformation behavior changes.
 
 ## 6. Tasks (each red→green with raw gate output pasted before its commit)
 

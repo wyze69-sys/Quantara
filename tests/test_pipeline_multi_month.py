@@ -80,6 +80,37 @@ def _run_range(tmp_path: Path, **fixture_options) -> tuple[int, Path]:
     return code, data_root
 
 
+def test_cli_dispatches_v2_descriptor_to_base_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import quantara.pipeline
+    from quantara.cli import main
+
+    descriptor = write_text(
+        tmp_path,
+        VALID_TWO_MONTH_DESCRIPTOR_YAML,
+        name="range.yaml",
+    )
+    calls: list[tuple[str, str, bool]] = []
+
+    def fake_run_pipeline(*, descriptor_path, data_root, dry_run):
+        calls.append((str(descriptor_path), str(data_root), dry_run))
+        return 0
+
+    monkeypatch.setattr(quantara.pipeline, "run_pipeline", fake_run_pipeline)
+    data_root = tmp_path / "data"
+    assert main(
+        [
+            "--descriptor",
+            str(descriptor),
+            "--data-root",
+            str(data_root),
+            "--dry-run",
+        ]
+    ) == 0
+    assert calls == [(str(descriptor), str(data_root), True)]
+
+
 def test_clean_two_month_seam_publishes(tmp_path: Path) -> None:
     code, data_root = _run_range(tmp_path)
     assert code == 0

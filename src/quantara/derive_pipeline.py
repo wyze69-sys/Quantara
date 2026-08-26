@@ -29,7 +29,7 @@ from quantara.canonical import (
 )
 from quantara.derive_descriptor import load_derived_descriptor
 from quantara.derive_quality import evaluate_derived_quality
-from quantara.descriptor import load_rights_record
+from quantara.descriptor import V1_SCHEMA, load_rights_record
 from quantara.errors import QuantaraError
 from quantara.hashing import (
     canonical_content_hash,
@@ -225,6 +225,17 @@ def _derive_rows(parent_parquet_path: Path, descriptor, staging: Path):
     return minutes, bars, parquet_path, report
 
 
+def _parent_schema_fingerprint(base) -> str:
+    """Return the retained base fingerprint without changing v1 identity.
+
+    V1 descriptors internally carry a one-month tuple for acquisition, but their
+    frozen fingerprint deliberately excludes it. V2 range descriptors bind the
+    ordered month set into the fingerprint.
+    """
+    months = None if base.schema == V1_SCHEMA else base.months
+    return schema_fingerprint(base.schema_version, months=months)
+
+
 def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
     """Full parent verification before any computation (correction 2).
 
@@ -342,7 +353,7 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
             f"parent schema_version {manifest['schema_version']!r} does not "
             f"match the approved base descriptor's {base.schema_version!r}"
         )
-    expected_fingerprint = schema_fingerprint(base.schema_version)
+    expected_fingerprint = _parent_schema_fingerprint(base)
     if manifest["schema_fingerprint"] != expected_fingerprint:
         raise QuantaraError(
             "parent schema_fingerprint does not match the approved base "
@@ -396,7 +407,7 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
     # canonical content identity from every real row in canonical order.
     decoded_rows = rows_from_persisted(read_canonical_rows(object_path))
     recomputed_cch = canonical_content_hash(
-        schema_fingerprint(base.schema_version),
+        expected_fingerprint,
         [row.to_content_array() for row in decoded_rows],
     )
     if recomputed_cch != commit_hash:

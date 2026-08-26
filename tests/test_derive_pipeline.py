@@ -49,6 +49,25 @@ def test_explicit_1m_version_equals_default_behavior() -> None:
     assert schema_fingerprint(SCHEMA_VERSION) == FROZEN_SLICE_001_FINGERPRINT
 
 
+def test_parent_fingerprint_preserves_v1_and_binds_v2_months() -> None:
+    from quantara.derive_pipeline import _parent_schema_fingerprint
+    from quantara.descriptor import load_descriptor
+
+    repo_root = Path(__file__).resolve().parents[1]
+    jan = load_descriptor(
+        repo_root / "configs/datasets/binance-usdm-btcusdt-1m-2024-01.yaml"
+    )
+    q1 = load_descriptor(
+        repo_root / "configs/datasets/binance-usdm-btcusdt-1m-2024-q1.yaml"
+    )
+
+    assert _parent_schema_fingerprint(jan) == FROZEN_SLICE_001_FINGERPRINT
+    assert _parent_schema_fingerprint(q1) == schema_fingerprint(
+        q1.schema_version, months=("2024-01", "2024-02", "2024-03")
+    )
+    assert _parent_schema_fingerprint(q1) != FROZEN_SLICE_001_FINGERPRINT
+
+
 def test_distinct_timeframe_versions_produce_distinct_fingerprints() -> None:
     one_m = schema_fingerprint("binance_usdm_kline_1m_v1")
     one_h = schema_fingerprint("binance_usdm_kline_1h_v1")

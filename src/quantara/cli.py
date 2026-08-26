@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 BASE_SCHEMA = "quantara.dataset-descriptor/v1"
+BASE_SCHEMA_V2 = "quantara.dataset-descriptor/v2"
 DERIVED_SCHEMA = "quantara.derived-dataset-descriptor/v1"
 RESEARCH_SCHEMA = "quantara.research-descriptor/v1"
 VALIDATION_SCHEMA = "quantara.validation-descriptor/v1"
@@ -39,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, yaml.YAMLError):
         schema = None
 
-    if schema == BASE_SCHEMA:
+    if schema in (BASE_SCHEMA, BASE_SCHEMA_V2):
         from quantara.pipeline import run_pipeline
 
         return run_pipeline(
