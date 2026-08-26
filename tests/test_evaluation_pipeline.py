@@ -28,6 +28,7 @@ from quantara.evaluation_pipeline import (
     EVALUATION_ARTIFACT_SCHEMA,
     build_evaluation_artifact,
     run_evaluation_pipeline,
+    verify_evaluation_current_graph,
 )
 from quantara.hashing import (
     quality_identity,
@@ -585,4 +586,205 @@ def test_dry_run_quality_failure_returns_blocked(tmp_path: Path, monkeypatch) ->
     )
     assert not eval_dir.exists()
     assert not (data_root / "attempts" / "evaluation").exists()
+
+
+def test_end_to_end_locked_publication(tmp_path: Path) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    eval_dir = (
+        data_root
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "evaluation"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+
+    code = run_evaluation_pipeline(
+        descriptor_path=eval_desc,
+        data_root=data_root,
+        repo_root=repo_root,
+        dry_run=False,
+    )
+    assert code == 0
+
+    # 1. Lock must be deleted on exit
+    assert not (eval_dir / "evaluation.lock").exists()
+
+    # 2. current.json must exist and point to committed commit
+    pointer_file = eval_dir / "current.json"
+    assert pointer_file.exists()
+    pointer = json.loads(pointer_file.read_text(encoding="utf-8"))
+    commit_id = pointer["commit"]
+
+    # 3. Verified commit directory
+    commit_dir = eval_dir / "commits" / commit_id
+    assert commit_dir.is_dir()
+    assert (commit_dir / "COMMITTED").is_file()
+    assert (commit_dir / "manifest.json").is_file()
+    assert (commit_dir / "content.json").is_file()
+    assert (commit_dir / "quality.json").is_file()
+
+    # 4. Verified current graph
+    verified = verify_evaluation_current_graph(eval_dir, data_root)
+    assert verified["commit"] == commit_id
+
+    # 5. Truthful attempt manifest
+    attempts_dir = data_root / "attempts" / "evaluation"
+    assert attempts_dir.is_dir()
+    manifests = list(attempts_dir.glob("*.json"))
+    assert len(manifests) == 1
+    attempt_doc = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert attempt_doc["terminal_result"] == "PUBLISHED"
+    assert attempt_doc["referenced_commit"] == commit_id
+    disps = attempt_doc["artifact_dispositions"]
+    assert disps["lock_acquired"] is True
+    assert disps["lock_released"] is True
+    assert disps["attempt_staged"] is True
+    assert disps["object_written"] is True
+    assert disps["commit_renamed"] is True
+    assert disps["pointer_replaced"] is True
+    assert disps["discovery_verified"] is True
+
+
+def test_idempotent_no_op_when_already_published(tmp_path: Path) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+
+    # First run publishes
+    code1 = run_evaluation_pipeline(
+        descriptor_path=eval_desc,
+        data_root=data_root,
+        repo_root=repo_root,
+        dry_run=False,
+    )
+    assert code1 == 0
+
+    # Second run is VERIFIED_NO_OP
+    code2 = run_evaluation_pipeline(
+        descriptor_path=eval_desc,
+        data_root=data_root,
+        repo_root=repo_root,
+        dry_run=False,
+    )
+    assert code2 == 0
+
+    attempts_dir = data_root / "attempts" / "evaluation"
+    attempts = [json.loads(p.read_text(encoding="utf-8")) for p in attempts_dir.glob("*.json")]
+    attempts.sort(key=lambda a: a["started_at_utc"])
+    assert len(attempts) == 2
+    assert attempts[0]["terminal_result"] == "PUBLISHED"
+    assert attempts[1]["terminal_result"] == "VERIFIED_NO_OP"
+    assert attempts[1]["artifact_dispositions"]["evaluation_artifact"] == "already_published"
+
+
+def test_lost_pointer_recovery(tmp_path: Path) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    eval_dir = (
+        data_root
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "evaluation"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+
+    # First run publishes
+    assert run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root) == 0
+
+    # Delete current.json (lost pointer scenario)
+    pointer_file = eval_dir / "current.json"
+    assert pointer_file.exists()
+    pointer_file.unlink()
+
+    # Second run recovers pointer without rewriting artifact
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 0
+
+    # Pointer is restored
+    assert pointer_file.exists()
+    verified = verify_evaluation_current_graph(eval_dir, data_root)
+    assert len(verified["commit"]) == 64
+
+    # Check attempt manifest reflects recovery
+    attempts_dir = data_root / "attempts" / "evaluation"
+    attempts = [json.loads(p.read_text(encoding="utf-8")) for p in attempts_dir.glob("*.json")]
+    attempts.sort(key=lambda a: a["started_at_utc"])
+    assert len(attempts) == 2
+    assert attempts[1]["terminal_result"] == "PUBLISHED"
+    assert attempts[1]["artifact_dispositions"].get("lost_pointer_recovered") is True
+
+
+def test_lock_contested_blocks(tmp_path: Path) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    eval_dir = (
+        data_root
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "evaluation"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    lock_file = eval_dir / "evaluation.lock"
+    lock_file.write_text('{"pid": 999999}')
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 2
+
+    # Verify lock was not deleted
+    assert lock_file.exists()
+
+    # Check attempt manifest has lock_contested
+    attempts_dir = data_root / "attempts" / "evaluation"
+    manifests = list(attempts_dir.glob("*.json"))
+    assert len(manifests) == 1
+    attempt = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert attempt["terminal_result"] == "BLOCKED"
+    assert "lock_contested" in attempt["diagnostics"]
+
+
+def test_parent_pointer_drift_pre_publication_blocks(tmp_path: Path, monkeypatch) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    val_dir = (
+        data_root
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "validation"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+
+    from quantara import evaluation_pipeline as ep_module
+    orig_evaluate_quality = ep_module.evaluate_evaluation_quality
+
+    def tampering_eval_quality(*args, **kwargs):
+        res = orig_evaluate_quality(*args, **kwargs)
+        # Mutate validation current.json right before lock acquisition / publication
+        (val_dir / "current.json").write_text('{"drifted": true}')
+        return res
+
+    monkeypatch.setattr(ep_module, "evaluate_evaluation_quality", tampering_eval_quality)
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 2
+
+    # Attempt manifest records validation_pointer_drift
+    attempts_dir = data_root / "attempts" / "evaluation"
+    manifests = list(attempts_dir.glob("*.json"))
+    assert len(manifests) == 1
+    attempt = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert attempt["terminal_result"] == "BLOCKED"
+    assert "validation_pointer_drift" in attempt["diagnostics"]
+
 

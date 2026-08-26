@@ -9,6 +9,8 @@ artifacts under exclusive lock ownership with truthful attempt evidence.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +26,10 @@ from quantara.evaluation_metrics import (
     build_evaluation_records,
     build_evaluation_summaries,
 )
-from quantara.evaluation_quality import evaluate_evaluation_quality
+from quantara.evaluation_quality import (
+    QUALITY_POLICY_VERSION,
+    evaluate_evaluation_quality,
+)
 from quantara.hashing import (
     HashPayloadError,
     evaluation_content_hash,
@@ -33,7 +38,19 @@ from quantara.hashing import (
     sha256_hex,
 )
 from quantara.jcs import canonicalize
-from quantara.publication import verify_commit_graph
+from quantara.manifests import (
+    attempt_id_now,
+    environment_evidence,
+    new_attempt_manifest,
+    write_json,
+)
+from quantara.publication import (
+    publish_commit,
+    stage_commit,
+    store_object,
+    verify_commit_graph,
+    write_current,
+)
 from quantara.research_pipeline import (
     read_research_rows,
     verify_research_current_graph,
@@ -123,6 +140,33 @@ def _research_dataset_dir(
     )
 
 
+def _write_attempt(
+    data_root: Path,
+    repo_root: Path,
+    *,
+    terminal_result: str,
+    dispositions: dict[str, str | bool | None],
+    referenced_commit: str | None,
+    diagnostics: list[str],
+) -> None:
+    attempt = new_attempt_manifest(
+        terminal_result=terminal_result,
+        artifact_dispositions=dispositions,
+        retry_evidence=[],
+        http_statuses=[],
+        referenced_commit=referenced_commit,
+        diagnostics=diagnostics,
+        repo_root=repo_root,
+    )
+    attempts_dir = Path(data_root) / "attempts" / "evaluation"
+    target = attempts_dir / f"{attempt['attempt_id']}.json"
+    try:
+        attempts_dir.mkdir(parents=True, exist_ok=True)
+        write_json(target, attempt)
+    except OSError as exc:
+        print(f"failed to record attempt manifest {target}: {exc}", file=sys.stderr)
+
+
 def evaluation_commit_identity(canonical_content_hash: str, evaluation_from: dict) -> str:
     """Deterministic evaluation commit address (design §9.4).
 
@@ -205,11 +249,27 @@ def run_evaluation_pipeline(
     data = Path(data_root)
     descriptor_file = Path(descriptor_path)
 
+    def _pre_attempt(
+        terminal_result: str,
+        diagnostic: str,
+        referenced: str | None = None,
+    ) -> None:
+        if not dry_run:
+            _write_attempt(
+                data,
+                root,
+                terminal_result=terminal_result,
+                dispositions={"evaluation_artifact": "not_written"},
+                referenced_commit=referenced,
+                diagnostics=[diagnostic],
+            )
+
     # 1. Strictly load recognized evaluation descriptor
     try:
         descriptor = load_evaluation_descriptor(descriptor_file)
     except Exception as exc:
         print(f"invalid evaluation descriptor: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "invalid_descriptor")
         return EXIT_BLOCKED
 
     # 2. Rights check: require analyze_internal
@@ -218,10 +278,12 @@ def run_evaluation_pipeline(
         rights_record = load_rights_record(legal_path)
     except Exception as exc:
         print(f"rights loading failed: {exc}", file=sys.stderr)
+        _pre_attempt("FAILED", "rights_loading_failed")
         return EXIT_FAILED
 
     if not rights_record.permits("analyze_internal"):
         print("analyze_internal not permitted", file=sys.stderr)
+        _pre_attempt("BLOCKED", "legal_not_permitted")
         return EXIT_BLOCKED
 
     # 3. Resolve validation directory from nested descriptor identity
@@ -231,6 +293,7 @@ def run_evaluation_pipeline(
     val_pointer_file = val_dir / "current.json"
     if not val_pointer_file.exists():
         print(f"validation pointer missing: {val_pointer_file}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_validation_pointer")
         return EXIT_BLOCKED
 
     # 4. Read and retain exact validation pointer bytes
@@ -238,6 +301,7 @@ def run_evaluation_pipeline(
         val_pointer_bytes_initial = val_pointer_file.read_bytes()
     except OSError as exc:
         print(f"validation pointer unreadable: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "unreadable_validation_pointer")
         return EXIT_BLOCKED
 
     # 5. Call verify_validation_current_graph()
@@ -245,6 +309,7 @@ def run_evaluation_pipeline(
         val_graph = verify_validation_current_graph(val_dir, data)
     except Exception as exc:
         print(f"validation graph verification failed: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_graph_verification_failed")
         return EXIT_BLOCKED
 
     # 6. Re-read and require byte-identical validation pointer bytes
@@ -252,9 +317,11 @@ def run_evaluation_pipeline(
         val_pointer_bytes_post = val_pointer_file.read_bytes()
     except OSError as exc:
         print(f"validation pointer post-read failed: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "unreadable_validation_pointer_post")
         return EXIT_BLOCKED
     if val_pointer_bytes_post != val_pointer_bytes_initial:
         print("validation pointer modified during verification", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_pointer_modified")
         return EXIT_BLOCKED
 
     # 7. Load authenticated manifest and artifact object selected by pointer
@@ -262,11 +329,13 @@ def run_evaluation_pipeline(
     val_manifest_file = val_dir / "commits" / val_commit / "manifest.json"
     if not val_manifest_file.exists():
         print(f"validation manifest missing: {val_manifest_file}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_validation_manifest")
         return EXIT_BLOCKED
     try:
         val_manifest = json.loads(val_manifest_file.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         print(f"validation manifest corrupt: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "corrupt_validation_manifest")
         return EXIT_BLOCKED
 
     # 8. Require Q1 dataset, period, 2,184 rows, 25 folds, approved fold set, PASS
@@ -277,34 +346,41 @@ def run_evaluation_pipeline(
         or val_manifest.get("fold_set") != {"name": "btcusdt_core_v1_wf72_v1", "version": "1"}
     ):
         print("validation manifest does not match required Q1 contract", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_manifest_contract_mismatch")
         return EXIT_BLOCKED
 
     val_artifact_sha = val_manifest.get("artifact_sha256")
     val_artifact_file = data / "objects" / "normalized" / "sha256" / val_artifact_sha
     if not val_artifact_file.exists():
         print(f"validation artifact missing from CAS: {val_artifact_file}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_validation_artifact_object")
         return EXIT_BLOCKED
     val_artifact_bytes = val_artifact_file.read_bytes()
     if sha256_hex(val_artifact_bytes) != val_artifact_sha:
         print("validation artifact SHA-256 mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_artifact_sha_mismatch")
         return EXIT_BLOCKED
     if len(val_artifact_bytes) != val_manifest.get("artifact_size"):
         print("validation artifact size mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_artifact_size_mismatch")
         return EXIT_BLOCKED
     try:
         val_artifact = json.loads(val_artifact_bytes.decode("utf-8"))
     except ValueError as exc:
         print(f"validation artifact not valid JSON: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "invalid_validation_artifact_json")
         return EXIT_BLOCKED
 
     if len(val_artifact.get("folds", [])) != 25:
         print("validation artifact does not contain 25 folds", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_fold_count_mismatch")
         return EXIT_BLOCKED
 
     # 9. Extract bound research lineage
     val_lineage = val_graph.get("validation_from")
     if not isinstance(val_lineage, dict):
         print("validation_from lineage missing in validation graph", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_validation_lineage")
         return EXIT_BLOCKED
 
     # 10. Resolve research directory from validation parent descriptor
@@ -312,6 +388,7 @@ def run_evaluation_pipeline(
     res_pointer_file = res_dir / "current.json"
     if not res_pointer_file.exists():
         print(f"research pointer missing: {res_pointer_file}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_research_pointer")
         return EXIT_BLOCKED
 
     # 11. Read and retain exact research pointer bytes
@@ -319,6 +396,7 @@ def run_evaluation_pipeline(
         res_pointer_bytes_initial = res_pointer_file.read_bytes()
     except OSError as exc:
         print(f"research pointer unreadable: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "unreadable_research_pointer")
         return EXIT_BLOCKED
 
     # 12. Call verify_research_current_graph()
@@ -326,6 +404,7 @@ def run_evaluation_pipeline(
         res_graph = verify_research_current_graph(res_dir, data)
     except Exception as exc:
         print(f"research graph verification failed: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_graph_verification_failed")
         return EXIT_BLOCKED
 
     # 13. Re-read and require byte-identical research pointer bytes
@@ -333,9 +412,11 @@ def run_evaluation_pipeline(
         res_pointer_bytes_post = res_pointer_file.read_bytes()
     except OSError as exc:
         print(f"research pointer post-read failed: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "unreadable_research_pointer_post")
         return EXIT_BLOCKED
     if res_pointer_bytes_post != res_pointer_bytes_initial:
         print("research pointer modified during verification", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_pointer_modified")
         return EXIT_BLOCKED
 
     # 14. Require current research stable identities match validation lineage
@@ -343,11 +424,13 @@ def run_evaluation_pipeline(
     res_manifest_file = res_dir / "commits" / res_commit / "manifest.json"
     if not res_manifest_file.exists():
         print(f"research manifest missing: {res_manifest_file}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_research_manifest")
         return EXIT_BLOCKED
     try:
         res_manifest = json.loads(res_manifest_file.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         print(f"research manifest corrupt: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "corrupt_research_manifest")
         return EXIT_BLOCKED
 
     mismatches = []
@@ -375,32 +458,39 @@ def run_evaluation_pipeline(
             f"validation lineage does not match research graph: {mismatches}",
             file=sys.stderr,
         )
+        _pre_attempt("BLOCKED", "lineage_mismatch")
         return EXIT_BLOCKED
 
     # 15. Research object read & row reconciliation
     if not isinstance(res_parquet_sha, str) or not isinstance(res_parquet_size, int):
         print("research manifest lacks valid parquet refs", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_parquet_refs")
         return EXIT_BLOCKED
     res_parquet_file = data / "objects" / "normalized" / "sha256" / res_parquet_sha
     if not res_parquet_file.exists():
         print(f"research parquet missing from CAS: {res_parquet_file}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "missing_research_parquet_object")
         return EXIT_BLOCKED
     res_parquet_bytes = res_parquet_file.read_bytes()
     if sha256_hex(res_parquet_bytes) != res_parquet_sha:
         print("research parquet SHA-256 mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_parquet_sha_mismatch")
         return EXIT_BLOCKED
     if len(res_parquet_bytes) != res_parquet_size:
         print("research parquet size mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_parquet_size_mismatch")
         return EXIT_BLOCKED
 
     try:
         research_rows = read_research_rows(res_parquet_file)
     except Exception as exc:
         print(f"reading research rows failed: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "read_research_rows_failed")
         return EXIT_BLOCKED
 
     if len(research_rows) != 2184:
         print(f"expected 2184 research rows, got {len(research_rows)}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_row_count_mismatch")
         return EXIT_BLOCKED
 
     # 16. Build records, summaries, artifact, prospective identities, quality
@@ -409,6 +499,7 @@ def run_evaluation_pipeline(
         summaries = build_evaluation_summaries(records)
     except Exception as exc:
         print(f"evaluating metrics failed: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "metric_evaluation_failed")
         return EXIT_BLOCKED
 
     validation_parent_info = {
@@ -480,13 +571,252 @@ def run_evaluation_pipeline(
     )
     if quality_report.state != "PASS":
         print(f"quality evaluation failed: {quality_report.failing_checks()}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "quality_failed")
         return EXIT_BLOCKED
 
     # Dry-run terminates here completely write-free
     if dry_run:
         return EXIT_OK
 
-    return EXIT_OK
+    # 17. Non-dry-run publication setup
+    eval_dir = _evaluation_dataset_dir(data, symbol, interval, descriptor.start_utc)
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    commits_dir = eval_dir / "commits"
+    commits_dir.mkdir(parents=True, exist_ok=True)
+
+    attempt_id = attempt_id_now()
+    staging_dir = eval_dir / "commits" / f".staging-{attempt_id}"
+    staging_root = data / "staging" / f"attempt-{attempt_id}"
+
+    milestones: dict[str, bool] = {
+        "lock_acquired": False,
+        "lock_released": False,
+        "attempt_staged": False,
+        "object_written": False,
+        "commit_renamed": False,
+        "pointer_replaced": False,
+        "discovery_verified": False,
+    }
+    artifact_state = "not_written"
+    cleanup_state: dict[str, str] = {"staging": "pending", "lock_cleanup": "pending"}
+
+    def _cleanup_staging() -> None:
+        ok = True
+        for directory in (staging_dir, staging_root):
+            try:
+                if directory.exists():
+                    shutil.rmtree(directory)
+            except OSError:
+                if directory.exists():
+                    ok = False
+        cleanup_state["staging"] = "discarded" if ok else "cleanup_failed"
+
+    def _dispositions(extra: dict | None = None) -> dict:
+        dispositions = {
+            "evaluation_artifact": artifact_state,
+            **milestones,
+            "attempt_staging": cleanup_state["staging"],
+        }
+        if extra:
+            dispositions.update(extra)
+        return dispositions
+
+    def _release_lock() -> None:
+        if milestones.get("lock_acquired") and not milestones.get("lock_released"):
+            try:
+                if lock_path.exists():
+                    lock_path.unlink()
+                milestones["lock_released"] = True
+                cleanup_state["lock_cleanup"] = "cleaned"
+            except Exception:
+                cleanup_state["lock_cleanup"] = "cleanup_failed"
+
+    def _write_terminal_attempt(
+        terminal_result: str,
+        referenced_commit: str | None,
+        diagnostics: list[str],
+        extra: dict | None = None,
+    ) -> None:
+        _release_lock()
+        _write_attempt(
+            data,
+            root,
+            terminal_result=terminal_result,
+            dispositions=_dispositions(extra),
+            referenced_commit=referenced_commit,
+            diagnostics=diagnostics,
+        )
+
+    # 18. Lock acquisition
+    lock_path = eval_dir / "evaluation.lock"
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"attempt_id": attempt_id, "pid": os.getpid()}))
+        milestones["lock_acquired"] = True
+    except OSError:
+        print(f"lock contested: {lock_path}", file=sys.stderr)
+        _write_terminal_attempt("BLOCKED", None, ["lock_contested"])
+        return EXIT_BLOCKED
+
+    try:
+        # Step 19: Immediately before publication, re-read both parent pointers
+        try:
+            if val_pointer_file.read_bytes() != val_pointer_bytes_initial:
+                print("validation pointer drifted before publication", file=sys.stderr)
+                _write_terminal_attempt("BLOCKED", None, ["validation_pointer_drift"])
+                return EXIT_BLOCKED
+            if res_pointer_file.read_bytes() != res_pointer_bytes_initial:
+                print("research pointer drifted before publication", file=sys.stderr)
+                _write_terminal_attempt("BLOCKED", None, ["research_pointer_drift"])
+                return EXIT_BLOCKED
+        except OSError as exc:
+            print(f"pointer re-read error: {exc}", file=sys.stderr)
+            _write_terminal_attempt("BLOCKED", None, ["parent_pointer_unreadable"])
+            return EXIT_BLOCKED
+
+        # Step 20: Check existing pointer and idempotency
+        pointer_file = eval_dir / "current.json"
+        candidate_commit_dir = commits_dir / prospective_commit
+
+        if pointer_file.exists():
+            try:
+                parsed_pointer = json.loads(pointer_file.read_text(encoding="utf-8"))
+                if parsed_pointer.get("commit") == prospective_commit:
+                    verify_evaluation_current_graph(eval_dir, data)
+                    milestones["discovery_verified"] = True
+                    _write_terminal_attempt(
+                        "VERIFIED_NO_OP",
+                        prospective_commit,
+                        [],
+                        {"evaluation_artifact": "already_published"},
+                    )
+                    return EXIT_OK
+            except Exception:
+                pass
+
+        # Step 21: Lost-pointer recovery check
+        if candidate_commit_dir.exists() and (candidate_commit_dir / "COMMITTED").is_file():
+            try:
+                verify_commit_graph(data, candidate_commit_dir)
+                cand_manifest_bytes = (candidate_commit_dir / "manifest.json").read_bytes()
+                write_current(eval_dir, prospective_commit, sha256_hex(cand_manifest_bytes))
+                milestones["pointer_replaced"] = True
+                verify_evaluation_current_graph(eval_dir, data)
+                milestones["discovery_verified"] = True
+                _write_terminal_attempt(
+                    "PUBLISHED",
+                    prospective_commit,
+                    [],
+                    {"evaluation_artifact": "already_published", "lost_pointer_recovered": True},
+                )
+                return EXIT_OK
+            except Exception as exc:
+                print(f"candidate commit unverified: {exc}", file=sys.stderr)
+
+        # Step 22: Fresh publication
+        stored_obj = store_object(data, "normalized", artifact_bytes)
+        milestones["object_written"] = stored_obj.created
+        artifact_state = "object_written" if stored_obj.created else "object_reused"
+
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        milestones["attempt_staged"] = True
+
+        env_ev = environment_evidence(root)
+        manifest = {
+            "dataset_id": descriptor.dataset_id,
+            "schema_version": descriptor.schema_version,
+            "schema_fingerprint": schema_fp,
+            "parser_version": "1.0.0",
+            "canonical_content_hash": content_hash,
+            "quality_identity": quality_report.identity(),
+            "quality_state": quality_report.state,
+            "quality_policy_version": QUALITY_POLICY_VERSION,
+            "commit_identity": prospective_commit,
+            "artifact_sha256": stored_obj.sha256,
+            "artifact_size": len(artifact_bytes),
+            "object_refs": [{"kind": "normalized", "sha256": stored_obj.sha256}],
+            "evaluation_from": evaluation_from,
+            "period": {
+                "start": descriptor.start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "end": descriptor.end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            },
+            "evaluation_set": dict(descriptor.evaluation_set),
+            "features": list(descriptor.features),
+            "target": descriptor.target,
+            "metrics": list(descriptor.metrics),
+            "decimal_contract": dict(DECIMAL_CONTRACT),
+            "legal_record_id": rights_record.record_id,
+            "legal_states": {name: entry.state for name, entry in rights_record.operations.items()},
+            "environment": env_ev,
+        }
+        content_evidence = {
+            "descriptor_sha256": sha256_hex(descriptor_file.read_bytes()),
+            "schema_fingerprint": schema_fp,
+            "parser_version": "1.0.0",
+            "canonical_content_hash": content_hash,
+            "quality_identity": quality_report.identity(),
+            "object_refs": [{"kind": "normalized", "sha256": stored_obj.sha256}],
+            "evaluation_from": evaluation_from,
+            "evaluation_commit_identity": prospective_commit,
+        }
+        quality_payload = {
+            "state": quality_report.state,
+            "policy_version": QUALITY_POLICY_VERSION,
+            "identity": quality_report.identity(),
+            "findings": [
+                {
+                    "check_id": f.check_id,
+                    "count": f.count,
+                    "evidence": f.evidence,
+                    "outcome": f.outcome,
+                    "severity": f.severity,
+                }
+                for f in quality_report.findings
+            ],
+        }
+
+        manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        files = {
+            "manifest.json": manifest_bytes,
+            "content.json": (
+                json.dumps(content_evidence, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8"),
+            "quality.json": (
+                json.dumps(quality_payload, indent=2, sort_keys=True) + "\n"
+            ).encode("utf-8"),
+        }
+        staged_commit = stage_commit(eval_dir, attempt_id, files)
+        try:
+            publish_commit(staged_commit, commits_dir, prospective_commit)
+            milestones["commit_renamed"] = True
+        except QuantaraError:
+            if not candidate_commit_dir.is_dir():
+                raise
+            milestones["commit_renamed"] = True
+
+        write_current(eval_dir, prospective_commit, sha256_hex(manifest_bytes))
+        milestones["pointer_replaced"] = True
+
+        verify_evaluation_current_graph(eval_dir, data)
+        milestones["discovery_verified"] = True
+
+        _cleanup_staging()
+        _write_terminal_attempt(
+            "PUBLISHED",
+            prospective_commit,
+            [],
+            {"evaluation_artifact": "published"},
+        )
+        return EXIT_OK
+    except Exception as exc:
+        _cleanup_staging()
+        diagnostic = getattr(exc, "error_id", None) or "evaluation_publication_failed"
+        print(f"evaluation publication failed: {exc}", file=sys.stderr)
+        _write_terminal_attempt("FAILED", None, [diagnostic])
+        return EXIT_FAILED
+    finally:
+        _release_lock()
 
 
 def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
@@ -616,4 +946,3 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
         raise QuantaraError("quality identity disagrees with findings")
 
     return {**content, "commit": address}
-
