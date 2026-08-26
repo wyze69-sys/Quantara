@@ -122,6 +122,11 @@ def test_official_january_2024_archive_end_to_end() -> None:
 
     pointer_before = (_dataset_dir() / "current.json").read_bytes()
     tree_before = _tree_digest(commit_dir)
+    commits_before = {
+        p.name
+        for p in (_dataset_dir() / "commits").iterdir()
+        if not p.name.startswith(".")
+    }
 
     # ------------------------------------------------------------------
     # Phase 3: rerun must be VERIFIED_NO_OP and leave everything untouched.
@@ -135,12 +140,12 @@ def test_official_january_2024_archive_end_to_end() -> None:
     ]
     print("[phase3] attempt results observed:", sorted(results))
     assert "VERIFIED_NO_OP" in results
-    commits = [
-        p
+    commits_after = {
+        p.name
         for p in (_dataset_dir() / "commits").iterdir()
         if not p.name.startswith(".")
-    ]
-    assert len(commits) == 1
+    }
+    assert commits_after == commits_before
 
     # ------------------------------------------------------------------
     # Phase 4: cross-run content-hash and Parquet-byte stability.

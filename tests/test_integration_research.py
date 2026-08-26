@@ -128,12 +128,13 @@ def test_real_parent_research_acceptance() -> None:
     assert manifest["designed_null_budgets"] == NULL_BUDGETS
     assert manifest["quality_state"] == "PASS"
 
-    # Idempotent rerun: byte-identical pointer, single commit.
+    # Idempotent rerun: byte-identical pointer, no new retained commit.
+    commits_before = {p.name for p in (dataset_dir / "commits").iterdir()}
     second = main(["--descriptor", str(DESCRIPTOR), "--data-root", str(DATA_ROOT)])
     assert second == 0
     assert pointer_path.read_bytes() == first_pointer
-    commits = [p for p in (dataset_dir / "commits").iterdir()]
-    assert len(commits) == 1
+    commits_after = {p.name for p in (dataset_dir / "commits").iterdir()}
+    assert commits_after == commits_before
 
     # Parent immutability across both invocations.
     assert _tree_digest(parent) == baseline

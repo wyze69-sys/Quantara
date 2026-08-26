@@ -74,6 +74,8 @@ tests/test_derive_pipeline.py # modified: v1/v2 parent-fingerprint regression
 tests/test_recovery.py        # modified: additive second-archive corruption cases
 tests/test_integration_q1.py  # marked integration, serial, networked
 tests/test_validation_pipeline.py # modified: make recovery regression xdist-independent
+tests/test_integration.py     # modified: assert retained-commit stability on rerun
+tests/test_integration_research.py # modified: assert retained-commit stability on rerun
 README.md                     # modified: one appended short section "## Q1 2024 expansion status"
 ```
 
@@ -107,6 +109,15 @@ published `current.json` on the same worker. Default xdist scheduling provides n
 The narrowly approved repair adds `tests/test_validation_pipeline.py` to §5.1 and makes only that
 recovery regression self-contained by publishing its prerequisite before simulating pointer loss.
 Production behavior, scheduling policy, and acceptance semantics remain unchanged.
+
+### 5.5 Scope amendment — evolved-store integration assertions (2026-08-27)
+
+The final serial integration gate exposed two pre-existing tests that equated idempotency with a
+fresh-store history of exactly one commit. Slice 004 legitimately retained superseded immutable
+January commits, so those assertions reject a healthy evolved store. The narrowly approved repair
+adds `tests/test_integration.py` and `tests/test_integration_research.py` to §5.1 and changes only
+their rerun checks to compare the retained commit-name set before and after the no-op invocation.
+Pointer and current-commit byte stability checks remain intact; production code is unchanged.
 
 ## 6. Tasks (each red→green with raw gate output pasted before its commit)
 
