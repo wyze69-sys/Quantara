@@ -25,6 +25,7 @@ __all__ = [
     "RESEARCH_COLUMNS",
     "RESEARCH_CONTENT_HASH_DOMAIN",
     "RESEARCH_SCHEMA_VERSION",
+    "RANGE_SCHEMA_FINGERPRINT_DOMAIN",
     "VALIDATION_CONTENT_HASH_DOMAIN",
     "VALIDATION_SCHEMA_VERSION",
     "canonical_content_hash",
@@ -44,6 +45,7 @@ __all__ = [
 HASH_CONTRACT_VERSION = "hash_contract_v1"
 CONTENT_HASH_DOMAIN = "quantara-canonical-content-v1"
 SCHEMA_VERSION = "binance_usdm_kline_1m_v1"
+RANGE_SCHEMA_FINGERPRINT_DOMAIN = "quantara-range-schema-fingerprint-v1"
 
 # Data slice 003b: research-table identity domain and schema version.
 RESEARCH_CONTENT_HASH_DOMAIN = "quantara-research-content-v1"
@@ -99,7 +101,10 @@ def descriptor_hash(canonical_semantics: str) -> str:
     return sha256_hex(canonical_semantics.encode("utf-8"))
 
 
-def schema_fingerprint(schema_version: str = SCHEMA_VERSION) -> str:
+def schema_fingerprint(
+    schema_version: str = SCHEMA_VERSION,
+    months: Sequence[str] | None = None,
+) -> str:
     """SHA-256 over JCS of the complete ordered logical schema + nullability.
 
     The payload's schema_version field is the parameter; the column list is
@@ -113,7 +118,17 @@ def schema_fingerprint(schema_version: str = SCHEMA_VERSION) -> str:
             for index, (name, ctype) in enumerate(CANONICAL_COLUMNS)
         ],
     }
-    return sha256_hex(canonicalize(payload).encode("utf-8"))
+    encoded = canonicalize(payload).encode("utf-8")
+    if months is None:
+        return sha256_hex(encoded)
+    range_payload = canonicalize(
+        {"months": list(months), "schema_fingerprint_payload": payload}
+    ).encode("utf-8")
+    return sha256_hex(
+        RANGE_SCHEMA_FINGERPRINT_DOMAIN.encode("ascii")
+        + b"\x00"
+        + range_payload
+    )
 
 
 def quality_identity(checks: Sequence[dict]) -> str:
