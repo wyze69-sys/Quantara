@@ -11,12 +11,20 @@ from every payload.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from collections.abc import Iterable, Sequence
 from decimal import MAX_EMAX, MIN_EMIN, ROUND_HALF_EVEN, Context, Decimal
 
+try:
+    import quantara_kernel as _quantara_kernel
+except ImportError:
+    _quantara_kernel = None
+
 from quantara.errors import QuantaraError
 from quantara.jcs import canonicalize
+
+_KERNEL_AVAILABLE = _quantara_kernel is not None
 
 __all__ = [
     "CANONICAL_COLUMNS",
@@ -30,6 +38,7 @@ __all__ = [
     "RANGE_SCHEMA_FINGERPRINT_DOMAIN",
     "VALIDATION_CONTENT_HASH_DOMAIN",
     "VALIDATION_SCHEMA_VERSION",
+    "active_hash_kernel",
     "canonical_content_hash",
     "canonical_row_array",
     "descriptor_hash",
@@ -98,6 +107,32 @@ CANONICAL_COLUMNS: tuple[tuple[str, str], ...] = (
 
 class HashPayloadError(QuantaraError):
     error_id = "manifest_inconsistency"
+
+
+def _kernel_mode() -> str:
+    mode = os.environ.get("QUANTARA_HASH_KERNEL", "auto")
+    return mode if mode in {"auto", "python", "rust"} else "auto"
+
+
+def active_hash_kernel() -> str:
+    """Report the content-hash implementation selected at call time."""
+    mode = _kernel_mode()
+    if mode == "python":
+        return "python"
+    if mode == "rust" or _KERNEL_AVAILABLE:
+        return "rust"
+    return "python"
+
+
+def _use_rust_kernel() -> bool:
+    mode = _kernel_mode()
+    if mode == "python":
+        return False
+    if mode == "rust" and not _KERNEL_AVAILABLE:
+        raise RuntimeError(
+            "QUANTARA_HASH_KERNEL=rust requested but quantara_kernel is unavailable"
+        )
+    return _KERNEL_AVAILABLE
 
 
 def sha256_hex(data: bytes) -> str:
@@ -197,7 +232,9 @@ def canonical_row_array(values: Sequence[object]) -> list[object]:
     return list(values)
 
 
-def canonical_content_hash(fingerprint: str, rows: Iterable[Sequence[object]]) -> str:
+def _canonical_content_hash_python(
+    fingerprint: str, rows: Iterable[Sequence[object]]
+) -> str:
     """SHA-256(domain NUL fingerprint NL row-JCS NL ...) per spec §12.1."""
     digest = hashlib.sha256()
     digest.update(CONTENT_HASH_DOMAIN.encode("ascii"))
@@ -208,6 +245,16 @@ def canonical_content_hash(fingerprint: str, rows: Iterable[Sequence[object]]) -
         digest.update(canonicalize(canonical_row_array(row)).encode("utf-8"))
         digest.update(b"\n")
     return digest.hexdigest()
+
+
+def canonical_content_hash(fingerprint: str, rows: Iterable[Sequence[object]]) -> str:
+    """Dispatch canonical row hashing to Rust or the retained Python oracle."""
+    if not _use_rust_kernel():
+        return _canonical_content_hash_python(fingerprint, rows)
+    try:
+        return _quantara_kernel.hash_canonical_rows(fingerprint, rows)
+    except _quantara_kernel.KernelHashPayloadError as exc:
+        raise HashPayloadError(str(exc)) from exc
 
 
 # --- Data slice 003b: research-table identity ---------------------------------
@@ -294,7 +341,7 @@ def research_row_array(values: Sequence[object]) -> list[object]:
     return list(values)
 
 
-def research_content_hash(
+def _research_content_hash_python(
     fingerprint: str,
     rows: Iterable[Sequence[object]],
 ) -> str:
@@ -313,6 +360,19 @@ def research_content_hash(
         digest.update(canonicalize(research_row_array(row)).encode("utf-8"))
         digest.update(b"\n")
     return digest.hexdigest()
+
+
+def research_content_hash(
+    fingerprint: str,
+    rows: Iterable[Sequence[object]],
+) -> str:
+    """Dispatch research row hashing to Rust or the retained Python oracle."""
+    if not _use_rust_kernel():
+        return _research_content_hash_python(fingerprint, rows)
+    try:
+        return _quantara_kernel.hash_research_rows(fingerprint, rows)
+    except _quantara_kernel.KernelHashPayloadError as exc:
+        raise HashPayloadError(str(exc)) from exc
 
 
 # --- Data slice 004: validation-folds identity -------------------------------
