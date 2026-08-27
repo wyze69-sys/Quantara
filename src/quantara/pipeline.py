@@ -24,8 +24,7 @@ from quantara.acquisition import Acquirer, ChecksumMismatch
 from quantara.archive import inspect_zip, read_member_bytes
 from quantara.canonical import (
     assemble_canonical_rows,
-    read_canonical_rows,
-    reconcile_rows,
+    reconcile_parquet,
     write_canonical_parquet,
 )
 from quantara.descriptor import (
@@ -390,8 +389,7 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         staging = data / "staging" / attempt_id
         parquet_path = staging / "canonical.parquet"
         write_canonical_parquet(assembled, parquet_path)
-        persisted_rows = read_canonical_rows(parquet_path)
-        reconcile_rows(assembled, persisted_rows)
+        reconcile_parquet(assembled, parquet_path)
     except MultiMonthInvariantViolation as exc:
         print(f"range invariant blocks publication: {exc}", file=sys.stderr)
         _write_attempt(

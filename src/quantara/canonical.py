@@ -155,6 +155,7 @@ __all__ += [
     "PARQUET_SCHEMA",
     "WRITER_CONFIG",
     "read_canonical_rows",
+    "reconcile_parquet",
     "reconcile_rows",
     "write_canonical_parquet",
 ]
@@ -292,3 +293,69 @@ def reconcile_rows(
                 f"{[expected[i] for i in differing]} != "
                 f"{[rendered[i] for i in differing]}"
             )
+
+
+def reconcile_parquet(
+    source_rows: list[CanonicalRow],
+    parquet_path: Path,
+    *,
+    batch_size: int = 8192,
+) -> None:
+    """Reconcile an approved Parquet file one bounded record batch at a time."""
+    try:
+        parquet_file = pq.ParquetFile(Path(parquet_path))
+    except Exception as exc:
+        raise ParquetFailure(
+            f"Parquet read-back failed for {parquet_path}: {exc}"
+        ) from exc
+
+    if parquet_file.schema_arrow != PARQUET_SCHEMA:
+        raise ParquetFailure("read-back schema differs from approved canonical schema")
+
+    total_rows = 0
+    try:
+        for batch in parquet_file.iter_batches(batch_size=batch_size):
+            columns = []
+            for index in range(len(CANONICAL_COLUMNS)):
+                column = batch.column(index)
+                if PARQUET_SCHEMA.field(index).type == pa.timestamp("ms", tz="UTC"):
+                    values = column.cast(pa.int64()).to_pylist()
+                else:
+                    values = column.to_pylist()
+                columns.append(values)
+
+            for persisted in zip(*columns, strict=True):
+                if total_rows < len(source_rows):
+                    expected = source_rows[total_rows].to_content_array()
+                    rendered = [
+                        render_decimal_18(value)
+                        if isinstance(value, Decimal)
+                        else value
+                        for value in persisted
+                    ]
+                    if expected != rendered:
+                        differing = [
+                            index
+                            for index, (expected_value, actual_value) in enumerate(
+                                zip(expected, rendered, strict=True)
+                            )
+                            if expected_value != actual_value
+                        ]
+                        raise ReconciliationMismatch(
+                            f"row {total_rows} differs at columns {differing}: "
+                            f"{[expected[i] for i in differing]} != "
+                            f"{[rendered[i] for i in differing]}"
+                        )
+                total_rows += 1
+    except (ParquetFailure, ReconciliationMismatch):
+        raise
+    except Exception as exc:
+        raise ParquetFailure(
+            f"Parquet decode failed for {parquet_path}: {exc}"
+        ) from exc
+
+    if total_rows != len(source_rows):
+        raise ReconciliationMismatch(
+            f"row count mismatch: {len(source_rows)} source vs "
+            f"{total_rows} parquet"
+        )
