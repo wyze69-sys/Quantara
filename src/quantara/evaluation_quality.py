@@ -404,17 +404,28 @@ def evaluate_evaluation_quality(
     if not matrix_ok or not fold_ranges_ok:
         metric_recomp_ok = False
     else:
+        auth_folds = {
+            f["fold_id"]: [f["test_range"][0], f["test_range"][1]]
+            for f in folds
+        }
         for r in records:
             fold_id = r["fold_id"]
+            if fold_id not in auth_folds:
+                metric_recomp_ok = False
+                break
+            auth_range = auth_folds[fold_id]
+            rec_range = r.get("test_range")
+            if rec_range != auth_range:
+                metric_recomp_ok = False
+                break
             feat = r["feature"]
             f_idx = FEATURE_COLUMN_INDICES[feat]
-            test_range = r["test_range"]
-            fold_rows = research_rows[test_range[0] : test_range[1]]
+            fold_rows = research_rows[auth_range[0] : auth_range[1]]
             rec_fresh = evaluate_fold_feature(
                 fold_id=fold_id,
                 feature=feat,
                 target=APPROVED_TARGET,
-                test_range=test_range,
+                test_range=(auth_range[0], auth_range[1]),
                 test_rows=fold_rows,
                 feature_idx=f_idx,
                 target_idx=TARGET_COLUMN_INDEX,
@@ -477,9 +488,81 @@ def evaluate_evaluation_quality(
     schema_ok = artifact.get("schema") == EVALUATION_ARTIFACT_SCHEMA
     disclaimer_ok = artifact.get("disclaimer") == DISCLAIMER
     contract_ok = artifact.get("decimal_contract") == DECIMAL_CONTRACT
+    val_parent_ok = isinstance(artifact.get("validation_parent"), dict) and set(
+        artifact["validation_parent"].keys()
+    ) == {
+        "dataset_id",
+        "commit_address",
+        "canonical_content_hash",
+        "artifact_sha256",
+        "artifact_size",
+    }
+    res_parent_ok = isinstance(artifact.get("research_parent"), dict) and set(
+        artifact["research_parent"].keys()
+    ) == {
+        "dataset_id",
+        "commit_address",
+        "canonical_content_hash",
+        "parquet_sha256",
+        "parquet_size",
+    }
+    period_ok = isinstance(artifact.get("period"), dict) and set(
+        artifact["period"].keys()
+    ) == {"start", "end"}
+    eval_set_ok = isinstance(artifact.get("evaluation_set"), dict) and set(
+        artifact["evaluation_set"].keys()
+    ) == {"name", "version"}
+    rec_keys = {
+        "fold_id",
+        "feature",
+        "target",
+        "test_range",
+        "test_row_count",
+        "valid_pair_count",
+        "excluded_pair_count",
+        "feature_null_count",
+        "target_null_count",
+        "pearson_ic",
+        "spearman_ic",
+    }
+    records_structure_ok = (
+        isinstance(artifact.get("records"), list)
+        and len(artifact["records"]) == len(records)
+        and all(isinstance(r, dict) and set(r.keys()) == rec_keys for r in artifact["records"])
+    )
+    sum_keys = {
+        "feature",
+        "metric",
+        "fold_count",
+        "total_valid_pair_count",
+        "positive_fold_count",
+        "negative_fold_count",
+        "zero_fold_count",
+        "minimum",
+        "maximum",
+        "median",
+        "equal_weight_mean",
+    }
+    summaries_structure_ok = (
+        isinstance(artifact.get("summaries"), list)
+        and len(artifact["summaries"]) == len(summaries)
+        and all(isinstance(s, dict) and set(s.keys()) == sum_keys for s in artifact["summaries"])
+    )
     expected_bytes = canonicalize(artifact).encode("utf-8") + b"\n"
     bytes_ok = artifact_bytes == expected_bytes
-    canonical_ok = keys_ok and schema_ok and disclaimer_ok and contract_ok and bytes_ok
+    canonical_ok = (
+        keys_ok
+        and schema_ok
+        and disclaimer_ok
+        and contract_ok
+        and val_parent_ok
+        and res_parent_ok
+        and period_ok
+        and eval_set_ok
+        and records_structure_ok
+        and summaries_structure_ok
+        and bytes_ok
+    )
     record("canonical_structure", canonical_ok, count=0 if canonical_ok else 1)
 
     # 13. identity_contract

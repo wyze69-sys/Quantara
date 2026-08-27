@@ -445,7 +445,7 @@ def evaluation_schema_fingerprint(
 
 def evaluation_content_hash(
     fingerprint: str,
-    artifact: bytes | str | dict,
+    artifact: bytes | bytearray,
 ) -> str:
     """SHA-256 over domain-separated evaluation artifact bytes (design §9.3).
 
@@ -461,19 +461,9 @@ def evaluation_content_hash(
             "fingerprint must be a 64-character lowercase hex digest"
         )
 
-    if isinstance(artifact, dict):
-        payload_bytes = canonicalize(artifact).encode("utf-8") + b"\n"
-    elif isinstance(artifact, str):
-        payload_bytes = artifact.encode("utf-8")
-        if not payload_bytes.endswith(b"\n"):
-            payload_bytes += b"\n"
-    elif isinstance(artifact, (bytes, bytearray)):
-        payload_bytes = bytes(artifact)
-        if not payload_bytes.endswith(b"\n"):
-            payload_bytes += b"\n"
-    else:
+    if not isinstance(artifact, (bytes, bytearray)):
         raise HashPayloadError(
-            f"evaluation artifact must be dict, str, or bytes, got {type(artifact)!r}"
+            f"evaluation artifact must be bytes or bytearray, got {type(artifact)!r}"
         )
 
     parts: list[bytes] = [
@@ -481,8 +471,7 @@ def evaluation_content_hash(
         b"\x00",
         fingerprint.encode("ascii"),
         b"\n",
-        payload_bytes,
+        bytes(artifact),
         b"\n",
     ]
     return sha256_hex(b"".join(parts))
-

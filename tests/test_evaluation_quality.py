@@ -328,3 +328,25 @@ def test_identity_contract_failure(tmp_path: Path) -> None:
     report = evaluate_evaluation_quality(**inputs)
     assert report.state == "FAIL"
     assert "identity_contract" in report.failing_checks()
+
+
+def test_metric_recomputation_range_tamper_rejected(tmp_path: Path) -> None:
+    inputs = _build_clean_inputs(tmp_path)
+    bad_records = copy.deepcopy(inputs["artifact"]["records"])
+    # Tamper with record test_range so it differs from validation fold
+    bad_records[0]["test_range"] = [360, 431]
+    inputs["artifact"] = dict(inputs["artifact"], records=bad_records)
+    report = evaluate_evaluation_quality(**inputs)
+    assert report.state == "FAIL"
+    assert "metric_recomputation" in report.failing_checks()
+
+
+def test_canonical_structure_missing_or_extra_subkeys(tmp_path: Path) -> None:
+    inputs = _build_clean_inputs(tmp_path)
+    # Tamper with validation_parent subkeys
+    bad_artifact = copy.deepcopy(inputs["artifact"])
+    bad_artifact["validation_parent"].pop("artifact_size")
+    inputs["artifact"] = bad_artifact
+    report = evaluate_evaluation_quality(**inputs)
+    assert report.state == "FAIL"
+    assert "canonical_structure" in report.failing_checks()

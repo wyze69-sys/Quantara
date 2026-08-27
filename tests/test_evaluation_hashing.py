@@ -102,14 +102,9 @@ def test_evaluation_content_hash_determinism_and_types() -> None:
         "dataset_id": "test_evaluation_dataset",
         "records": [],
     }
-    h1 = evaluation_content_hash(fp, artifact)
-    assert len(h1) == 64
-    assert h1 == evaluation_content_hash(fp, artifact)
-
-    # String and bytes forms match
     canonical_bytes = canonicalize(artifact).encode("utf-8") + b"\n"
-    canonical_str = canonical_bytes.decode("utf-8")
-    assert h1 == evaluation_content_hash(fp, canonical_str)
+    h1 = evaluation_content_hash(fp, canonical_bytes)
+    assert len(h1) == 64
     assert h1 == evaluation_content_hash(fp, canonical_bytes)
 
     # Domain separation from validation content hash
@@ -117,18 +112,30 @@ def test_evaluation_content_hash_determinism_and_types() -> None:
 
     # Sensitivity to content
     artifact_diff = dict(artifact, dataset_id="different_id")
-    assert h1 != evaluation_content_hash(fp, artifact_diff)
+    diff_bytes = canonicalize(artifact_diff).encode("utf-8") + b"\n"
+    assert h1 != evaluation_content_hash(fp, diff_bytes)
 
     # Sensitivity to fingerprint
-    assert h1 != evaluation_content_hash("0" * 64, artifact)
+    assert h1 != evaluation_content_hash("0" * 64, canonical_bytes)
 
     # Rejection of uppercase fingerprint
     with pytest.raises(HashPayloadError):
-        evaluation_content_hash(fp.upper(), artifact)
+        evaluation_content_hash(fp.upper(), canonical_bytes)
 
-    # Rejection of unsupported type
+    # Rejection of non-bytes types
+    with pytest.raises(HashPayloadError):
+        evaluation_content_hash(fp, artifact)  # type: ignore[arg-type]
+    with pytest.raises(HashPayloadError):
+        evaluation_content_hash(fp, canonical_bytes.decode("utf-8"))  # type: ignore[arg-type]
     with pytest.raises(HashPayloadError):
         evaluation_content_hash(fp, 12345)  # type: ignore[arg-type]
+
+
+def test_evaluation_content_hash_exact_bytes_no_silent_normalization() -> None:
+    fp = evaluation_schema_fingerprint()
+    h_no_lf = evaluation_content_hash(fp, b"{}")
+    h_lf = evaluation_content_hash(fp, b"{}\n")
+    assert h_no_lf != h_lf
 
 
 def test_evaluation_commit_identity() -> None:

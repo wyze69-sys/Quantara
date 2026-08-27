@@ -21,6 +21,7 @@ Covers every loader rule with rejection fixtures:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -228,3 +229,202 @@ def test_canonical_semantics_stability(tmp_path: Path) -> None:
     left = load_evaluation_descriptor(first)
     right = load_evaluation_descriptor(reordered)
     assert left.canonical_semantics() == right.canonical_semantics()
+
+
+def test_cli_evaluation_dry_run_success(tmp_path: Path) -> None:
+    from quantara.cli import main
+    from test_evaluation_pipeline import setup_offline_q1_parents
+
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(eval_desc),
+            "--data-root",
+            str(data_root),
+            "--dry-run",
+        ]
+    )
+    assert exit_code == 0
+    attempts_dir = data_root / "attempts" / "evaluation"
+    assert not attempts_dir.exists() or not any(attempts_dir.iterdir())
+
+
+def test_cli_evaluation_missing_descriptor(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code != 0
+
+
+def test_cli_unapproved_dataset_type(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    exit_code = main(
+        [
+            "--dataset-type",
+            "arbitrary_model_signal",
+            "--descriptor",
+            "nonexistent.yaml",
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code != 0
+
+
+def test_cli_nonexistent_descriptor_file(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(tmp_path / "does_not_exist.yaml"),
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code != 0
+
+
+def test_cli_malformed_yaml_exit_3(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    bad_desc = tmp_path / "bad.yaml"
+    bad_desc.write_text(":\n- invalid: [", encoding="utf-8")
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(bad_desc),
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code == 3
+    assert not (data_root / "attempts" / "evaluation").exists()
+
+
+def test_cli_non_object_root_exit_3(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    bad_desc = tmp_path / "list_root.yaml"
+    bad_desc.write_text("- item1\n- item2\n", encoding="utf-8")
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(bad_desc),
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code == 3
+    assert not (data_root / "attempts" / "evaluation").exists()
+
+
+def test_cli_missing_schema_exit_3(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    bad_desc = tmp_path / "no_schema.yaml"
+    bad_desc.write_text("dataset_id: test\n", encoding="utf-8")
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(bad_desc),
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code == 3
+    assert not (data_root / "attempts" / "evaluation").exists()
+
+
+def test_cli_unknown_schema_exit_3(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    bad_desc = tmp_path / "unknown_schema.yaml"
+    bad_desc.write_text("schema: quantara.unknown/v1\n", encoding="utf-8")
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(bad_desc),
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code == 3
+    assert not (data_root / "attempts" / "evaluation").exists()
+
+
+def test_cli_unknown_schema_with_dataset_type_exit_3(tmp_path: Path) -> None:
+    """Audit reproduction 3: unknown schema through --dataset-type returns exit code 3."""
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    bad_desc = tmp_path / "foreign_schema.yaml"
+    bad_desc.write_text("schema: quantara.foreign/v99\n", encoding="utf-8")
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(bad_desc),
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code == 3
+    assert not (data_root / "attempts" / "evaluation").exists()
+
+
+def test_cli_recognized_schema_invalid_fields_exit_2_with_attempt(tmp_path: Path) -> None:
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    bad_desc = tmp_path / "invalid_fields.yaml"
+    bad_desc.write_text(
+        "schema: quantara.evaluation-descriptor/v1\ninvalid: true\n", encoding="utf-8"
+    )
+    exit_code = main(
+        [
+            "--dataset-type",
+            "feature_evaluation",
+            "--descriptor",
+            str(bad_desc),
+            "--data-root",
+            str(data_root),
+        ]
+    )
+    assert exit_code == 2
+    attempts_dir = data_root / "attempts" / "evaluation"
+    assert attempts_dir.exists()
+    manifests = list(attempts_dir.glob("*.json"))
+    assert len(manifests) == 1
+    doc = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert doc["terminal_result"] == "BLOCKED"
+    assert "invalid_descriptor" in doc["diagnostics"]

@@ -569,4 +569,3 @@ def evaluation_cfg_tree(tmp_path: Path) -> Path:
     write_validation_descriptor(root, "1h")
     write_validation_descriptor(root, "1d")
     return root
-

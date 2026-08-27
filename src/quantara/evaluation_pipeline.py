@@ -27,6 +27,7 @@ from quantara.evaluation_metrics import (
     build_evaluation_summaries,
 )
 from quantara.evaluation_quality import (
+    CHECK_IDS,
     QUALITY_POLICY_VERSION,
     evaluate_evaluation_quality,
 )
@@ -35,7 +36,11 @@ from quantara.hashing import (
     evaluation_content_hash,
     evaluation_schema_fingerprint,
     quality_identity,
+    research_content_hash,
+    research_schema_fingerprint,
     sha256_hex,
+    validation_content_hash,
+    validation_schema_fingerprint,
 )
 from quantara.jcs import canonicalize
 from quantara.manifests import (
@@ -45,6 +50,7 @@ from quantara.manifests import (
     write_json,
 )
 from quantara.publication import (
+    existing_commit_matches,
     publish_commit,
     stage_commit,
     store_object,
@@ -53,9 +59,14 @@ from quantara.publication import (
 )
 from quantara.research_pipeline import (
     read_research_rows,
+    render_content_rows,
+    research_commit_identity,
     verify_research_current_graph,
 )
-from quantara.validation_pipeline import verify_validation_current_graph
+from quantara.validation_pipeline import (
+    validation_commit_identity,
+    verify_validation_current_graph,
+)
 
 __all__ = [
     "DISCLAIMER",
@@ -89,6 +100,47 @@ EVALUATION_EVIDENCE_KEYS: tuple[str, ...] = (
     "object_refs",
     "evaluation_from",
     "evaluation_commit_identity",
+)
+
+EXPECTED_ARTIFACT_KEYS: frozenset[str] = frozenset(
+    {
+        "schema",
+        "dataset_id",
+        "provider",
+        "instrument_id",
+        "period",
+        "evaluation_set",
+        "validation_parent",
+        "research_parent",
+        "features",
+        "target",
+        "metrics",
+        "decimal_contract",
+        "records",
+        "summaries",
+        "disclaimer",
+    }
+)
+
+EXPECTED_EVALUATION_FROM_KEYS: frozenset[str] = frozenset(
+    {
+        "validation_dataset_id",
+        "validation_commit_address",
+        "validation_canonical_content_hash",
+        "validation_artifact_sha256",
+        "validation_artifact_size",
+        "research_dataset_id",
+        "research_commit_address",
+        "research_canonical_content_hash",
+        "research_parquet_sha256",
+        "research_parquet_size",
+        "evaluation_set_name",
+        "evaluation_set_version",
+        "features",
+        "target",
+        "metrics",
+        "decimal_contract",
+    }
 )
 
 
@@ -252,6 +304,7 @@ def run_evaluation_pipeline(
                     "evaluation_artifact": "not_written",
                     "lock_acquired": False,
                     "lock_released": False,
+                    "lock_cleanup": "none",
                     "attempt_staged": False,
                     "object_written": False,
                     "commit_renamed": False,
@@ -337,10 +390,11 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "corrupt_validation_manifest")
         return EXIT_BLOCKED
 
-    # 8. Require Q1 dataset, period, 2,184 rows, 25 folds, approved fold set, PASS
+    # 8. Require Q1 dataset, 2,184 rows, 25 folds, approved fold set, PASS
+    val_parent_rows = val_manifest.get("parent_row_count", val_manifest.get("parent_rows"))
     if (
         val_manifest.get("dataset_id") != descriptor.parent_descriptor.dataset_id
-        or val_manifest.get("parent_rows") != 2184
+        or val_parent_rows != 2184
         or val_manifest.get("quality_state") != "PASS"
         or val_manifest.get("fold_set") != {"name": "btcusdt_core_v1_wf72_v1", "version": "1"}
     ):
@@ -363,6 +417,46 @@ def run_evaluation_pipeline(
         print("validation artifact size mismatch", file=sys.stderr)
         _pre_attempt("BLOCKED", "validation_artifact_size_mismatch")
         return EXIT_BLOCKED
+
+    # Freshly recompute validation schema fingerprint, content hash, commit identity
+    try:
+        expected_val_fp = validation_schema_fingerprint(
+            parent_fingerprint=research_schema_fingerprint(
+                descriptor.parent_descriptor.parent_descriptor.schema_version
+            ),
+            schema_id=descriptor.parent_descriptor.schema_version,
+            scheme=descriptor.parent_descriptor.scheme,
+            parameters=dict(
+                descriptor.parent_descriptor.parameters,
+                embargo=descriptor.parent_descriptor.embargo,
+            ),
+            fold_set_name=descriptor.parent_descriptor.fold_set["name"],
+            fold_set_version=descriptor.parent_descriptor.fold_set["version"],
+        )
+    except Exception as exc:
+        print(f"failed to recompute validation schema fingerprint: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_schema_fingerprint_recomputation_failed")
+        return EXIT_BLOCKED
+
+    if expected_val_fp != val_graph["schema_fingerprint"]:
+        print("validation schema fingerprint mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_schema_fingerprint_mismatch")
+        return EXIT_BLOCKED
+
+    recomputed_val_cch = validation_content_hash(expected_val_fp, val_artifact_bytes)
+    if recomputed_val_cch != val_graph["canonical_content_hash"]:
+        print("validation canonical content hash mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_content_hash_mismatch")
+        return EXIT_BLOCKED
+
+    recomputed_val_commit = validation_commit_identity(
+        recomputed_val_cch, val_graph["validation_from"]
+    )
+    if recomputed_val_commit != val_commit:
+        print("validation commit identity mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_commit_identity_mismatch")
+        return EXIT_BLOCKED
+
     try:
         val_artifact = json.loads(val_artifact_bytes.decode("utf-8"))
     except ValueError as exc:
@@ -492,6 +586,38 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "research_row_count_mismatch")
         return EXIT_BLOCKED
 
+    # Freshly recompute research parent schema fingerprint, content hash, commit identity
+    expected_res_fp = research_schema_fingerprint(res_manifest.get("schema_version"))
+    if expected_res_fp != res_graph["schema_fingerprint"]:
+        print("research schema fingerprint mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_schema_fingerprint_mismatch")
+        return EXIT_BLOCKED
+
+    recomputed_res_cch = research_content_hash(expected_res_fp, render_content_rows(research_rows))
+    if recomputed_res_cch != res_graph["canonical_content_hash"]:
+        print("research canonical content hash mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_content_hash_mismatch")
+        return EXIT_BLOCKED
+
+    recomputed_res_commit = research_commit_identity(
+        recomputed_res_cch, res_manifest.get("research_from")
+    )
+    if recomputed_res_commit != res_commit:
+        print("research commit identity mismatch", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_commit_identity_mismatch")
+        return EXIT_BLOCKED
+
+    # Exact Q1 period and research timestamp endpoints
+    if research_rows[0][0] != 1704067200000 or research_rows[-1][0] != 1711926000000:
+        print("research timestamp endpoints do not match Q1 2024", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_endpoints_mismatch")
+        return EXIT_BLOCKED
+
+    if not all(research_rows[i + 1][0] - research_rows[i][0] == 3600000 for i in range(2183)):
+        print("research rows hourly cadence broken", file=sys.stderr)
+        _pre_attempt("BLOCKED", "research_cadence_mismatch")
+        return EXIT_BLOCKED
+
     # 16. Build records, summaries, artifact, prospective identities, quality
     try:
         records = build_evaluation_records(val_artifact["folds"], research_rows)
@@ -614,20 +740,43 @@ def run_evaluation_pipeline(
     def _dispositions(extra: dict | None = None) -> dict:
         dispositions = {
             "evaluation_artifact": artifact_state,
-            **milestones,
+            "lock_acquired": milestones["lock_acquired"],
+            "lock_released": milestones["lock_released"],
+            "lock_cleanup": cleanup_state["lock_cleanup"],
+            "attempt_staged": milestones["attempt_staged"],
+            "object_written": milestones["object_written"],
+            "commit_renamed": milestones["commit_renamed"],
+            "pointer_replaced": milestones["pointer_replaced"],
+            "discovery_verified": milestones["discovery_verified"],
             "attempt_staging": cleanup_state["staging"],
         }
         if extra:
             dispositions.update(extra)
         return dispositions
 
+    lock_path = eval_dir / "evaluation.lock"
+
     def _release_lock() -> None:
         if milestones.get("lock_acquired") and not milestones.get("lock_released"):
             try:
                 if lock_path.exists():
-                    lock_path.unlink()
-                milestones["lock_released"] = True
-                cleanup_state["lock_cleanup"] = "cleaned"
+                    lock_content = lock_path.read_text(encoding="utf-8")
+                    try:
+                        lock_data = json.loads(lock_content)
+                        if (
+                            isinstance(lock_data, dict)
+                            and lock_data.get("attempt_id") == attempt_id
+                        ):
+                            lock_path.unlink()
+                            milestones["lock_released"] = True
+                            cleanup_state["lock_cleanup"] = "cleaned"
+                        else:
+                            cleanup_state["lock_cleanup"] = "cleanup_failed"
+                    except ValueError:
+                        cleanup_state["lock_cleanup"] = "cleanup_failed"
+                else:
+                    milestones["lock_released"] = True
+                    cleanup_state["lock_cleanup"] = "cleaned"
             except Exception:
                 cleanup_state["lock_cleanup"] = "cleanup_failed"
 
@@ -647,15 +796,18 @@ def run_evaluation_pipeline(
             diagnostics=diagnostics,
         )
 
-    # 18. Lock acquisition
-    lock_path = eval_dir / "evaluation.lock"
+    # 18. Lock acquisition (atomic, fsynced owner evidence)
     try:
         fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(json.dumps({"attempt_id": attempt_id, "pid": os.getpid()}))
+            f.write(json.dumps({"attempt_id": attempt_id, "pid": os.getpid()}) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
         milestones["lock_acquired"] = True
     except OSError:
         print(f"lock contested: {lock_path}", file=sys.stderr)
+        cleanup_state["lock_cleanup"] = "none"
+        cleanup_state["staging"] = "not_staged"
         _write_terminal_attempt("BLOCKED", None, ["lock_contested"])
         return EXIT_BLOCKED
 
@@ -679,40 +831,82 @@ def run_evaluation_pipeline(
         pointer_file = eval_dir / "current.json"
         candidate_commit_dir = commits_dir / prospective_commit
 
+        val_ptr_doc = json.loads(val_pointer_bytes_initial.decode("utf-8"))
+        res_ptr_doc = json.loads(res_pointer_bytes_initial.decode("utf-8"))
+
+        content_evidence = {
+            "descriptor_sha256": sha256_hex(descriptor_file.read_bytes()),
+            "schema_fingerprint": schema_fp,
+            "parser_version": "1.0.0",
+            "canonical_content_hash": content_hash,
+            "quality_identity": quality_report.identity(),
+            "object_refs": [{"kind": "normalized", "sha256": sha256_hex(artifact_bytes)}],
+            "evaluation_from": evaluation_from,
+            "evaluation_commit_identity": prospective_commit,
+        }
+
         if pointer_file.exists():
             try:
                 parsed_pointer = json.loads(pointer_file.read_text(encoding="utf-8"))
                 if parsed_pointer.get("commit") == prospective_commit:
-                    verify_evaluation_current_graph(eval_dir, data)
-                    milestones["discovery_verified"] = True
-                    _write_terminal_attempt(
-                        "VERIFIED_NO_OP",
-                        prospective_commit,
-                        [],
-                        {"evaluation_artifact": "already_published"},
-                    )
-                    return EXIT_OK
+                    if candidate_commit_dir.exists() and existing_commit_matches(
+                        data, candidate_commit_dir, content_evidence, keys=EVALUATION_EVIDENCE_KEYS
+                    ):
+                        verify_evaluation_current_graph(eval_dir, data)
+                        milestones["discovery_verified"] = True
+                        _cleanup_staging()
+                        _write_terminal_attempt(
+                            "VERIFIED_NO_OP",
+                            prospective_commit,
+                            [],
+                            {"evaluation_artifact": "already_published"},
+                        )
+                        return EXIT_OK
             except Exception:
                 pass
 
-        # Step 21: Lost-pointer recovery check
+        # Step 21: Safe lost-pointer recovery check
         if candidate_commit_dir.exists() and (candidate_commit_dir / "COMMITTED").is_file():
             try:
                 verify_commit_graph(data, candidate_commit_dir)
-                cand_manifest_bytes = (candidate_commit_dir / "manifest.json").read_bytes()
-                write_current(eval_dir, prospective_commit, sha256_hex(cand_manifest_bytes))
-                milestones["pointer_replaced"] = True
-                verify_evaluation_current_graph(eval_dir, data)
-                milestones["discovery_verified"] = True
-                _write_terminal_attempt(
-                    "PUBLISHED",
-                    prospective_commit,
-                    [],
-                    {"evaluation_artifact": "already_published", "lost_pointer_recovered": True},
-                )
-                return EXIT_OK
+                if existing_commit_matches(
+                    data, candidate_commit_dir, content_evidence, keys=EVALUATION_EVIDENCE_KEYS
+                ):
+                    cand_manifest_bytes = (candidate_commit_dir / "manifest.json").read_bytes()
+                    cand_manifest = json.loads(cand_manifest_bytes.decode("utf-8"))
+                    if cand_manifest.get(
+                        "commit_identity"
+                    ) == prospective_commit and cand_manifest.get("artifact_sha256") == sha256_hex(
+                        artifact_bytes
+                    ):
+                        # Ensure CAS object exists
+                        cas_file = (
+                            data
+                            / "objects"
+                            / "normalized"
+                            / "sha256"
+                            / cand_manifest["artifact_sha256"]
+                        )
+                        if cas_file.exists() and cas_file.read_bytes() == artifact_bytes:
+                            write_current(
+                                eval_dir, prospective_commit, sha256_hex(cand_manifest_bytes)
+                            )
+                            milestones["pointer_replaced"] = True
+                            verify_evaluation_current_graph(eval_dir, data)
+                            milestones["discovery_verified"] = True
+                            _cleanup_staging()
+                            _write_terminal_attempt(
+                                "PUBLISHED",
+                                prospective_commit,
+                                [],
+                                {
+                                    "evaluation_artifact": "already_published",
+                                    "lost_pointer_recovered": True,
+                                },
+                            )
+                            return EXIT_OK
             except Exception as exc:
-                print(f"candidate commit unverified: {exc}", file=sys.stderr)
+                print(f"candidate commit unverified for recovery: {exc}", file=sys.stderr)
 
         # Step 22: Fresh publication
         stored_obj = store_object(data, "normalized", artifact_bytes)
@@ -737,6 +931,10 @@ def run_evaluation_pipeline(
             "artifact_size": len(artifact_bytes),
             "object_refs": [{"kind": "normalized", "sha256": stored_obj.sha256}],
             "evaluation_from": evaluation_from,
+            "parent_discovery": {
+                "validation_pointer_manifest_sha256": val_ptr_doc["manifest_sha256"],
+                "research_pointer_manifest_sha256": res_ptr_doc["manifest_sha256"],
+            },
             "period": {
                 "start": descriptor.start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "end": descriptor.end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -749,16 +947,6 @@ def run_evaluation_pipeline(
             "legal_record_id": rights_record.record_id,
             "legal_states": {name: entry.state for name, entry in rights_record.operations.items()},
             "environment": env_ev,
-        }
-        content_evidence = {
-            "descriptor_sha256": sha256_hex(descriptor_file.read_bytes()),
-            "schema_fingerprint": schema_fp,
-            "parser_version": "1.0.0",
-            "canonical_content_hash": content_hash,
-            "quality_identity": quality_report.identity(),
-            "object_refs": [{"kind": "normalized", "sha256": stored_obj.sha256}],
-            "evaluation_from": evaluation_from,
-            "evaluation_commit_identity": prospective_commit,
         }
         quality_payload = {
             "state": quality_report.state,
@@ -787,19 +975,24 @@ def run_evaluation_pipeline(
             ),
         }
         staged_commit = stage_commit(eval_dir, attempt_id, files)
-        try:
-            publish_commit(staged_commit, commits_dir, prospective_commit)
-            milestones["commit_renamed"] = True
-        except QuantaraError:
-            if not candidate_commit_dir.is_dir():
-                raise
-            milestones["commit_renamed"] = True
+        publish_commit(staged_commit, commits_dir, prospective_commit)
+        milestones["commit_renamed"] = True
 
         write_current(eval_dir, prospective_commit, sha256_hex(manifest_bytes))
         milestones["pointer_replaced"] = True
 
-        verify_evaluation_current_graph(eval_dir, data)
-        milestones["discovery_verified"] = True
+        try:
+            verify_evaluation_current_graph(eval_dir, data)
+            milestones["discovery_verified"] = True
+        except Exception as exc:
+            _cleanup_staging()
+            print(f"post-pointer verification failed: {exc}", file=sys.stderr)
+            _write_terminal_attempt(
+                "FAILED",
+                prospective_commit,
+                ["post_pointer_verification_failed"],
+            )
+            return EXIT_FAILED
 
         _cleanup_staging()
         _write_terminal_attempt(
@@ -812,8 +1005,9 @@ def run_evaluation_pipeline(
     except Exception as exc:
         _cleanup_staging()
         diagnostic = getattr(exc, "error_id", None) or "evaluation_publication_failed"
+        ref_commit = prospective_commit if milestones.get("pointer_replaced") else None
         print(f"evaluation publication failed: {exc}", file=sys.stderr)
-        _write_terminal_attempt("FAILED", None, [diagnostic])
+        _write_terminal_attempt("FAILED", ref_commit, [diagnostic])
         return EXIT_FAILED
     finally:
         _release_lock()
@@ -853,6 +1047,13 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
     commit_dir = dataset_dir / "commits" / address
     content = verify_commit_graph(Path(data_root), commit_dir)
 
+    # 1. Exact eight content.json keys
+    if set(content.keys()) != set(EVALUATION_EVIDENCE_KEYS):
+        expected_keys = sorted(EVALUATION_EVIDENCE_KEYS)
+        raise QuantaraError(
+            f"content.json keys must be exactly {expected_keys}, got {sorted(content)}"
+        )
+
     try:
         manifest_bytes = (commit_dir / "manifest.json").read_bytes()
     except OSError as exc:
@@ -872,6 +1073,10 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
     recorded_address = content.get("evaluation_commit_identity")
     if lineage is None or content_hash is None or recorded_address is None:
         raise QuantaraError("content.json lacks evaluation identity evidence")
+
+    # Complete evaluation_from shape and commit equation
+    if not isinstance(lineage, dict) or set(lineage.keys()) != EXPECTED_EVALUATION_FROM_KEYS:
+        raise QuantaraError("evaluation_from keys mismatch")
 
     recomputed_address = evaluation_commit_identity(content_hash, lineage)
     if recomputed_address != address or recorded_address != address:
@@ -899,7 +1104,7 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
     if len(normalized_refs) != 1 or manifest.get("artifact_sha256") != normalized_refs[0]["sha256"]:
         raise QuantaraError("manifest artifact SHA-256 disagrees with object ref")
 
-    # Authenticate artifact object from CAS
+    # 2. Authenticate artifact object from CAS
     art_sha = normalized_refs[0]["sha256"]
     art_path = Path(data_root) / "objects" / "normalized" / "sha256" / art_sha
     if not art_path.exists():
@@ -910,7 +1115,121 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
     if len(art_bytes) != manifest.get("artifact_size"):
         raise QuantaraError("artifact byte size disagrees with manifest artifact_size")
 
-    # Recompute content hash from artifact bytes
+    # 3. Canonical JCS artifact bytes plus exactly one LF
+    try:
+        art_doc = json.loads(art_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"artifact object is not valid JSON: {exc}") from exc
+    if not isinstance(art_doc, dict):
+        raise QuantaraError("artifact root must be a JSON object")
+
+    expected_art_bytes = canonicalize(art_doc).encode("utf-8") + b"\n"
+    if art_bytes != expected_art_bytes:
+        raise QuantaraError("artifact bytes are not canonical JCS plus exactly one LF")
+
+    # 4. Exact artifact root, record, summary, parent, decimal, schema, and disclaimer structure
+    if set(art_doc.keys()) != EXPECTED_ARTIFACT_KEYS:
+        expected_art_keys = sorted(EXPECTED_ARTIFACT_KEYS)
+        raise QuantaraError(
+            f"artifact root keys must be exactly {expected_art_keys}, got {sorted(art_doc)}"
+        )
+    if art_doc.get("schema") != EVALUATION_ARTIFACT_SCHEMA:
+        raise QuantaraError("artifact schema invalid")
+    if art_doc.get("disclaimer") != DISCLAIMER:
+        raise QuantaraError("artifact disclaimer invalid")
+    if art_doc.get("decimal_contract") != DECIMAL_CONTRACT:
+        raise QuantaraError("artifact decimal_contract invalid")
+
+    val_parent = art_doc.get("validation_parent")
+    if not isinstance(val_parent, dict) or set(val_parent.keys()) != {
+        "dataset_id",
+        "commit_address",
+        "canonical_content_hash",
+        "artifact_sha256",
+        "artifact_size",
+    }:
+        raise QuantaraError("artifact validation_parent structure invalid")
+
+    res_parent = art_doc.get("research_parent")
+    if not isinstance(res_parent, dict) or set(res_parent.keys()) != {
+        "dataset_id",
+        "commit_address",
+        "canonical_content_hash",
+        "parquet_sha256",
+        "parquet_size",
+    }:
+        raise QuantaraError("artifact research_parent structure invalid")
+
+    period = art_doc.get("period")
+    if not isinstance(period, dict) or set(period.keys()) != {"start", "end"}:
+        raise QuantaraError("artifact period structure invalid")
+
+    eval_set = art_doc.get("evaluation_set")
+    if not isinstance(eval_set, dict) or set(eval_set.keys()) != {"name", "version"}:
+        raise QuantaraError("artifact evaluation_set structure invalid")
+
+    records = art_doc.get("records")
+    rec_keys = {
+        "fold_id",
+        "feature",
+        "target",
+        "test_range",
+        "test_row_count",
+        "valid_pair_count",
+        "excluded_pair_count",
+        "feature_null_count",
+        "target_null_count",
+        "pearson_ic",
+        "spearman_ic",
+    }
+    if (
+        not isinstance(records, list)
+        or len(records) == 0
+        or not all(isinstance(r, dict) and set(r.keys()) == rec_keys for r in records)
+    ):
+        raise QuantaraError("artifact records structure invalid")
+
+    summaries = art_doc.get("summaries")
+    sum_keys = {
+        "feature",
+        "metric",
+        "fold_count",
+        "total_valid_pair_count",
+        "positive_fold_count",
+        "negative_fold_count",
+        "zero_fold_count",
+        "minimum",
+        "maximum",
+        "median",
+        "equal_weight_mean",
+    }
+    if (
+        not isinstance(summaries, list)
+        or len(summaries) == 0
+        or not all(isinstance(s, dict) and set(s.keys()) == sum_keys for s in summaries)
+    ):
+        raise QuantaraError("artifact summaries structure invalid")
+
+    # 5. Evaluation schema fingerprint recomputed from authenticated validation fingerprint
+    val_commit = lineage["validation_commit_address"]
+    symbol = "BTCUSDT"
+    interval = "1h"
+    start_dt = datetime.fromisoformat(period["start"].replace("Z", "+00:00"))
+    val_dir = _validation_dataset_dir(Path(data_root), symbol, interval, start_dt)
+    val_commit_dir = val_dir / "commits" / val_commit
+    if not val_commit_dir.is_dir():
+        raise QuantaraError(f"validation commit directory missing: {val_commit_dir}")
+    val_content = verify_commit_graph(Path(data_root), val_commit_dir)
+    val_fp = val_content["schema_fingerprint"]
+
+    expected_schema_fp = evaluation_schema_fingerprint(parent_validation_fingerprint=val_fp)
+    if content["schema_fingerprint"] != expected_schema_fp:
+        raise QuantaraError(
+            f"evaluation schema fingerprint mismatch: recorded {content['schema_fingerprint']!r} "
+            f"vs recomputed {expected_schema_fp!r}"
+        )
+
+    # 6. Canonical content hash over exact artifact bytes
     recomputed_cch = evaluation_content_hash(content["schema_fingerprint"], art_bytes)
     if recomputed_cch != content_hash:
         raise QuantaraError(
@@ -918,7 +1237,7 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
             f"vs recorded {content_hash!r}"
         )
 
-    # Authenticate quality document
+    # 7. Exact quality.json keys, policy version, and 13 ordered hard/pass findings
     quality_path = commit_dir / "quality.json"
     if not quality_path.exists():
         raise QuantaraError("quality.json missing in commit directory")
@@ -929,17 +1248,58 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
     if not isinstance(quality_doc, dict):
         raise QuantaraError("quality.json must be a JSON object")
 
+    expected_quality_keys = {"state", "policy_version", "identity", "findings"}
+    if set(quality_doc.keys()) != expected_quality_keys:
+        expected_q_keys = sorted(expected_quality_keys)
+        raise QuantaraError(
+            f"quality.json keys must be exactly {expected_q_keys}, got {sorted(quality_doc)}"
+        )
+    if str(quality_doc.get("policy_version")) != str(QUALITY_POLICY_VERSION):
+        raise QuantaraError("quality.json policy_version mismatch")
+    if str(manifest.get("quality_policy_version")) != str(QUALITY_POLICY_VERSION):
+        raise QuantaraError("manifest quality_policy_version mismatch")
+
     if quality_doc.get("state") != "PASS" or manifest.get("quality_state") != "PASS":
         raise QuantaraError(
             "evaluation quality state is not PASS; unverified graph cannot be honored"
         )
 
     committed_findings = quality_doc.get("findings", [])
+    if len(committed_findings) != 13:
+        raise QuantaraError(f"expected exactly 13 quality findings, got {len(committed_findings)}")
+    if [f.get("check_id") for f in committed_findings] != list(CHECK_IDS):
+        raise QuantaraError("quality findings check_id order mismatch")
+    if any(f.get("outcome") != "pass" or f.get("severity") != "hard" for f in committed_findings):
+        raise QuantaraError("quality findings not all pass/hard")
+
     expected_qid = quality_identity(committed_findings)
     if (
         quality_doc.get("identity") != expected_qid
         or manifest.get("quality_identity") != expected_qid
+        or content.get("quality_identity") != expected_qid
     ):
         raise QuantaraError("quality identity disagrees with findings")
+
+    # 8. Complete manifest/content/artifact/quality agreement
+    if manifest.get("dataset_id") != art_doc.get("dataset_id"):
+        raise QuantaraError("manifest/artifact dataset_id disagreement")
+    if manifest.get("schema_version") != "quantara_feature_evaluation_v1":
+        raise QuantaraError("manifest schema_version invalid")
+
+    parent_disc = manifest.get("parent_discovery")
+    if not isinstance(parent_disc, dict) or set(parent_disc.keys()) != {
+        "validation_pointer_manifest_sha256",
+        "research_pointer_manifest_sha256",
+    }:
+        raise QuantaraError("manifest parent_discovery block missing or invalid")
+    for key in ("validation_pointer_manifest_sha256", "research_pointer_manifest_sha256"):
+        val = str(parent_disc[key]).lower()
+        if len(val) != 64 or any(c not in "0123456789abcdef" for c in val):
+            raise QuantaraError(f"parent_discovery {key} is not a valid sha256 hex digest")
+
+    if val_parent["commit_address"] != lineage["validation_commit_address"]:
+        raise QuantaraError("artifact validation_parent commit disagrees with evaluation_from")
+    if res_parent["commit_address"] != lineage["research_commit_address"]:
+        raise QuantaraError("artifact research_parent commit disagrees with evaluation_from")
 
     return {**content, "commit": address}

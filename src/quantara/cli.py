@@ -25,65 +25,51 @@ DERIVED_SCHEMA = "quantara.derived-dataset-descriptor/v1"
 RESEARCH_SCHEMA = "quantara.research-descriptor/v1"
 VALIDATION_SCHEMA = "quantara.validation-descriptor/v1"
 EVALUATION_SCHEMA = "quantara.evaluation-descriptor/v1"
-
-APPROVED_DATASET_TYPES = frozenset({"feature_evaluation"})
+APPROVED_DATASET_TYPES = ("feature_evaluation",)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse arguments and dispatch on dataset-type or descriptor schema."""
+    """Parse arguments and dispatch on the descriptor's schema field."""
     parser = argparse.ArgumentParser(prog="quantara")
-    parser.add_argument("--dataset-type", choices=None, help="Approved dataset type")
-    parser.add_argument("--descriptor", help="Path to descriptor YAML file")
-    parser.add_argument("--data-root", default="data", help="Root data directory")
-    parser.add_argument("--dry-run", action="store_true", help="Run without publishing")
-
+    parser.add_argument("--descriptor", required=True)
+    parser.add_argument("--data-root", default="data")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--dataset-type",
+        required=False,
+        default=None,
+        help="Optional explicit dataset type check",
+    )
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 2
 
-    # Handle explicit --dataset-type flag
-    if args.dataset_type is not None:
-        if args.dataset_type not in APPROVED_DATASET_TYPES:
-            print(
-                f"unapproved_dataset_type: {args.dataset_type!r} is not an approved dataset type",
-                file=sys.stderr,
-            )
-            return 2
-        if not args.descriptor:
-            print("--descriptor is required when --dataset-type is provided", file=sys.stderr)
-            return 2
-        descriptor_path = Path(args.descriptor)
-        if not descriptor_path.is_file():
-            print(f"descriptor file not found: {descriptor_path}", file=sys.stderr)
-            return 2
-
-        from quantara.evaluation_pipeline import run_evaluation_pipeline
-
-        return run_evaluation_pipeline(
-            descriptor_path=args.descriptor,
-            data_root=args.data_root,
-            dry_run=args.dry_run,
+    if args.dataset_type is not None and args.dataset_type not in APPROVED_DATASET_TYPES:
+        print(
+            f"unapproved_dataset_type: {args.dataset_type!r} is not an approved dataset type",
+            file=sys.stderr,
         )
-
-    if not args.descriptor:
-        print("--descriptor is required", file=sys.stderr)
-        return 2
-
-    descriptor_path = Path(args.descriptor)
-    if not descriptor_path.is_file():
-        print(f"descriptor file not found: {descriptor_path}", file=sys.stderr)
         return 2
 
     schema = None
     try:
         import yaml
 
+        descriptor_path = Path(args.descriptor)
         document = yaml.safe_load(descriptor_path.read_text(encoding="utf-8"))
         if isinstance(document, dict):
             schema = document.get("schema")
     except (OSError, yaml.YAMLError):
         schema = None
+
+    if args.dataset_type == "feature_evaluation" and schema != EVALUATION_SCHEMA:
+        print(
+            f"invalid_descriptor: unrecognized descriptor schema {schema!r} "
+            "for dataset-type feature_evaluation",
+            file=sys.stderr,
+        )
+        return 3
 
     if schema in (BASE_SCHEMA, BASE_SCHEMA_V2):
         from quantara.pipeline import run_pipeline

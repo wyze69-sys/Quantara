@@ -234,3 +234,29 @@ These Q1 artifacts are strictly for private internal analysis under the
 owner-approved-pending-counsel operations in provider-rights record v2. They
 are not approved for model training, commercial production, customer display,
 or redistribution.
+
+## Feature evaluation status
+
+Dual-IC feature evaluation (Slice 006, `btcusdt_core_v1_dual_ic_v1`: Pearson and
+Spearman rank information coefficients across out-of-sample walk-forward folds)
+is implemented and verified end to end:
+
+- **Record counts and coverage:**
+  - Evaluates 4 causal features (`f_ret_1`, `f_roc_60`, `f_rvol_20`, `f_volratio_20`)
+    against forward label `l_fwdret_24` across 25 anchored walk-forward folds.
+  - Exactly 100 fold-feature records (200 IC values), 72 valid pairs per record,
+    and 7,200 total valid evaluation pairs.
+  - 8 cross-fold summary statistics computed directly from stored `Q18` record values.
+- **Immutable lineage and authentication:**
+  - Fully bound to the verified Q1 validation parent (`3f8a776b...`) and research parent
+    (`ca878557...`) through canonical content addresses and lock-free graph verification.
+  - Published under exclusive atomic lock ownership with PASS-only quality gating.
+- **Legal posture and scope bounds:**
+  - Strictly internal descriptive analysis under provider-rights record v2 (`analyze_internal`).
+  - No model training, signal generation, backtesting, alpha claims, or commercial eligibility.
+  - No model weights, forecasts, or trading recommendations exist in this repository.
+- **Running integration acceptance:**
+
+  ```bash
+  uv run pytest -m integration tests/test_integration_evaluation.py
+  ```
