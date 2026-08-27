@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import random
 import re
-from decimal import ROUND_DOWN, Decimal, getcontext, setcontext
+from decimal import ROUND_DOWN, Decimal, InvalidOperation, getcontext, setcontext
 
 import pytest
 import quantara_kernel
@@ -260,3 +260,95 @@ def test_render_kernel_is_ambient_context_immune(
     finally:
         setcontext(saved)
 
+
+OVER_EIGHTEEN_CASES = (
+    (
+        "0.1234567890123456789",
+        "decimal 0.1234567890123456789 exceeds 18 fractional digits; rounding is forbidden",
+    ),
+    (
+        "1e-19",
+        "decimal 1E-19 exceeds 18 fractional digits; rounding is forbidden",
+    ),
+    (
+        Decimal("1E-19"),
+        "decimal 1E-19 exceeds 18 fractional digits; rounding is forbidden",
+    ),
+    (
+        "0.12345678901234567890",
+        "decimal 0.12345678901234567890 exceeds 18 fractional digits; rounding is forbidden",
+    ),
+    (
+        "-1.2345678901234567891",
+        "decimal -1.2345678901234567891 exceeds 18 fractional digits; rounding is forbidden",
+    ),
+)
+
+SPECIAL_CASES = (
+    (Decimal("Infinity"), OverflowError, "cannot convert Infinity to integer"),
+    (Decimal("-Infinity"), OverflowError, "cannot convert Infinity to integer"),
+    (
+        Decimal("NaN"),
+        HashPayloadError,
+        "decimal NaN exceeds 18 fractional digits; rounding is forbidden",
+    ),
+    (
+        Decimal("-NaN"),
+        HashPayloadError,
+        "decimal -NaN exceeds 18 fractional digits; rounding is forbidden",
+    ),
+    (
+        Decimal("sNaN"),
+        HashPayloadError,
+        "decimal sNaN exceeds 18 fractional digits; rounding is forbidden",
+    ),
+)
+
+MALFORMED_REJECTS = ("abc", "", "1e", "1.2.3", "--1")
+MALFORMED_ACCEPTS = (
+    ("1_000", "1000.000000000000000000"),
+    (" 1.5 ", "1.500000000000000000"),
+    (".5", "0.500000000000000000"),
+    ("5.", "5.000000000000000000"),
+    ("+5", "5.000000000000000000"),
+)
+
+
+def test_render_rejects_over_18_fractional_digits_identically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for given, message in OVER_EIGHTEEN_CASES:
+        for mode in ("python", "rust"):
+            monkeypatch.setenv("QUANTARA_HASH_KERNEL", mode)
+            with pytest.raises(HashPayloadError) as caught:
+                render_decimal_18(given)
+            assert type(caught.value) is HashPayloadError
+            assert str(caught.value) == message
+            assert caught.value.error_id == "manifest_inconsistency"
+
+
+def test_render_special_values_raise_identically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for given, expected_type, expected_message in SPECIAL_CASES:
+        for mode in ("python", "rust"):
+            monkeypatch.setenv("QUANTARA_HASH_KERNEL", mode)
+            with pytest.raises(expected_type) as caught:
+                render_decimal_18(given)
+            assert type(caught.value) is expected_type
+            assert str(caught.value) == expected_message
+
+
+def test_render_malformed_strings_raise_identically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for given in MALFORMED_REJECTS:
+        for mode in ("python", "rust"):
+            monkeypatch.setenv("QUANTARA_HASH_KERNEL", mode)
+            with pytest.raises(InvalidOperation) as caught:
+                render_decimal_18(given)
+            assert type(caught.value) is InvalidOperation
+            assert str(caught.value) == "[<class 'decimal.ConversionSyntax'>]"
+    for given, expected in MALFORMED_ACCEPTS:
+        rust_output, python_output = _outputs(monkeypatch, given)
+        assert rust_output == python_output == expected
