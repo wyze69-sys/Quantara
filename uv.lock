@@ -2,6 +2,12 @@ version = 1
 revision = 3
 requires-python = "==3.11.*"
 
+[manifest]
+members = [
+    "quantara",
+    "quantara-kernel",
+]
+
 [[package]]
 name = "anyio"
 version = "4.14.2"
@@ -248,6 +254,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pyarrow" },
     { name = "pyyaml" },
+    { name = "quantara-kernel" },
 ]
 
 [package.dev-dependencies]
@@ -263,6 +270,7 @@ requires-dist = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "pyarrow", specifier = "==25.0.1" },
     { name = "pyyaml", specifier = "==6.0.2" },
+    { name = "quantara-kernel", editable = "kernel" },
 ]
 
 [package.metadata.requires-dev]
@@ -272,6 +280,11 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.8" },
 ]
+
+[[package]]
+name = "quantara-kernel"
+version = "0.1.0"
+source = { editable = "kernel" }
 
 [[package]]
 name = "ruff"
