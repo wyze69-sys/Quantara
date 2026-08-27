@@ -373,7 +373,7 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
     decoded_rows = rows_from_persisted(read_canonical_rows(object_path))
     fingerprint = schema_fingerprint(base.schema_version)
     recomputed_cch = canonical_content_hash(
-        fingerprint, [row.to_content_array() for row in decoded_rows]
+        fingerprint, (row.to_content_array() for row in decoded_rows)
     )
     if recomputed_cch != manifest.get("canonical_content_hash"):
         raise QuantaraError(

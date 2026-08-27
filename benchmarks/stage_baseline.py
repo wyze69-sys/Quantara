@@ -222,7 +222,7 @@ def run_baseline(
         def content_hash_stage():
             return hashing.canonical_content_hash(
                 fingerprint,
-                [row.to_content_array() for row in assembled],
+                (row.to_content_array() for row in assembled),
             )
 
         stages["content_hash"], _ = _measure(content_hash_stage, repeats)

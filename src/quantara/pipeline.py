@@ -427,7 +427,7 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     )
     descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
     content_hash = canonical_content_hash(
-        fingerprint, [row.to_content_array() for row in assembled]
+        fingerprint, (row.to_content_array() for row in assembled)
     )
     parquet_bytes = parquet_path.read_bytes()
     parquet_sha = sha256_hex(parquet_bytes)

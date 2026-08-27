@@ -408,7 +408,7 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
     decoded_rows = rows_from_persisted(read_canonical_rows(object_path))
     recomputed_cch = canonical_content_hash(
         expected_fingerprint,
-        [row.to_content_array() for row in decoded_rows],
+        (row.to_content_array() for row in decoded_rows),
     )
     if recomputed_cch != commit_hash:
         raise QuantaraError(
@@ -853,7 +853,7 @@ def run_derivation_pipeline(
         fingerprint = schema_fingerprint(descriptor.schema_version)
         descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
         content_hash = canonical_content_hash(
-            fingerprint, [row.to_content_array() for row in bars]
+            fingerprint, (row.to_content_array() for row in bars)
         )
         parquet_bytes = parquet_path.read_bytes()
         parquet_sha = sha256_hex(parquet_bytes)

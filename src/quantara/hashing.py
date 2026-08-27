@@ -199,16 +199,15 @@ def canonical_row_array(values: Sequence[object]) -> list[object]:
 
 def canonical_content_hash(fingerprint: str, rows: Iterable[Sequence[object]]) -> str:
     """SHA-256(domain NUL fingerprint NL row-JCS NL ...) per spec §12.1."""
-    parts: list[bytes] = [
-        CONTENT_HASH_DOMAIN.encode("ascii"),
-        b"\x00",
-        fingerprint.lower().encode("ascii"),
-        b"\n",
-    ]
+    digest = hashlib.sha256()
+    digest.update(CONTENT_HASH_DOMAIN.encode("ascii"))
+    digest.update(b"\x00")
+    digest.update(fingerprint.lower().encode("ascii"))
+    digest.update(b"\n")
     for row in rows:
-        parts.append(canonicalize(canonical_row_array(row)).encode("utf-8"))
-        parts.append(b"\n")
-    return sha256_hex(b"".join(parts))
+        digest.update(canonicalize(canonical_row_array(row)).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 # --- Data slice 003b: research-table identity ---------------------------------
@@ -305,16 +304,15 @@ def research_content_hash(
     ``quantara-research-content-v1`` domain — kline framing can never collide
     with research-table identity.
     """
-    parts: list[bytes] = [
-        RESEARCH_CONTENT_HASH_DOMAIN.encode("ascii"),
-        b"\x00",
-        fingerprint.lower().encode("ascii"),
-        b"\n",
-    ]
+    digest = hashlib.sha256()
+    digest.update(RESEARCH_CONTENT_HASH_DOMAIN.encode("ascii"))
+    digest.update(b"\x00")
+    digest.update(fingerprint.lower().encode("ascii"))
+    digest.update(b"\n")
     for row in rows:
-        parts.append(canonicalize(research_row_array(row)).encode("utf-8"))
-        parts.append(b"\n")
-    return sha256_hex(b"".join(parts))
+        digest.update(canonicalize(research_row_array(row)).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 # --- Data slice 004: validation-folds identity -------------------------------
