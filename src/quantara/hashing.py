@@ -184,7 +184,7 @@ def quality_identity(checks: Sequence[dict]) -> str:
     return canonicalize({"checks": list(normalized)})
 
 
-def render_decimal_18(value: Decimal | str) -> str:
+def _render_decimal_18_python(value: Decimal | str) -> str:
     """Render an exact decimal with exactly 18 fractional digits, no exponent.
 
     Trailing fractional zeros are insignificant for representability; any
@@ -214,6 +214,16 @@ def render_decimal_18(value: Decimal | str) -> str:
     sign = "-" if magnitude < 0 else ""
     digits = str(abs(magnitude)).rjust(19, "0")
     return f"{sign}{digits[:-18]}.{digits[-18:]}"
+
+
+def render_decimal_18(value: Decimal | str) -> str:
+    """Dispatch Q18 rendering to Rust or the retained Python oracle."""
+    if isinstance(value, (Decimal, str)) and _use_rust_kernel():
+        try:
+            return _quantara_kernel.render_decimal_18(value)
+        except _quantara_kernel.KernelHashPayloadError as exc:
+            raise HashPayloadError(str(exc)) from exc
+    return _render_decimal_18_python(value)
 
 
 def canonical_row_array(values: Sequence[object]) -> list[object]:
