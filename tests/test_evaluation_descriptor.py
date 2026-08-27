@@ -256,15 +256,41 @@ def test_cli_evaluation_missing_descriptor(tmp_path: Path) -> None:
     from quantara.cli import main
 
     data_root = tmp_path / "data"
-    exit_code = main(
-        [
-            "--dataset-type",
-            "feature_evaluation",
-            "--data-root",
-            str(data_root),
-        ]
-    )
-    assert exit_code != 0
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "--dataset-type",
+                "feature_evaluation",
+                "--data-root",
+                str(data_root),
+            ]
+        )
+    # argparse native parse error (pre-Slice-006 contract).
+    assert exc_info.value.code in (1, 2)
+
+
+def test_cli_missing_required_data_root_raises_system_exit(tmp_path: Path) -> None:
+    """Predecessor CLI contract: --data-root is REQUIRED and a missing value
+    surfaces argparse SystemExit (never a silent default)."""
+    from quantara.cli import main
+
+    data_root = tmp_path / "data"
+    fields = tmp_path / "descriptor.yaml"
+    fields.write_text("schema: quantara.dataset-descriptor/v1\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "--dataset-type",
+                "feature_evaluation",
+                "--descriptor",
+                str(fields),
+                "--data-root",
+            ]
+        )
+    assert exc_info.value.code != 0
+    # No attempt evidence is ever written for a pre-dispatch parse failure.
+    assert not (data_root / "attempts").exists()
 
 
 def test_cli_unapproved_dataset_type(tmp_path: Path) -> None:

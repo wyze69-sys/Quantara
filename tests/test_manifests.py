@@ -92,3 +92,32 @@ def test_attempt_manifest_records_dispositions_and_result(tmp_path: Path) -> Non
     assert loaded["artifact_dispositions"]["zip"] == "reused"
     assert loaded["referenced_commit"] == "ab" * 32
     assert "secrets" not in json.dumps(loaded).lower()
+
+
+def test_new_attempt_manifest_accepts_explicit_invocation_identity(tmp_path: Path) -> None:
+    """Regression (defect 3): the owning pipeline's invocation identity must be
+    propagated verbatim; omission keeps generating a fresh ID for other callers."""
+    explicit = new_attempt_manifest(
+        terminal_result="PUBLISHED",
+        artifact_dispositions={},
+        retry_evidence=[],
+        http_statuses=[],
+        referenced_commit="cd" * 32,
+        diagnostics=[],
+        repo_root=tmp_path,
+        attempt_id="20260101T000000Z-fixed-invocation-id",
+    )
+    assert explicit["attempt_id"] == "20260101T000000Z-fixed-invocation-id"
+
+    generated = new_attempt_manifest(
+        terminal_result="PUBLISHED",
+        artifact_dispositions={},
+        retry_evidence=[],
+        http_statuses=[],
+        referenced_commit=None,
+        diagnostics=[],
+        repo_root=tmp_path,
+    )
+    date_part, _, uuid_part = generated["attempt_id"].partition("-")
+    assert len(date_part) == 16 and date_part.endswith("Z")
+    assert len(uuid_part) == 36

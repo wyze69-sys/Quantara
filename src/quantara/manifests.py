@@ -92,11 +92,19 @@ def new_attempt_manifest(
     referenced_commit: str | None,
     diagnostics: list[str],
     repo_root: Path,
+    attempt_id: str | None = None,
 ) -> dict:
+    """Build one immutable attempt manifest.
+
+    ``attempt_id`` lets an owning pipeline propagate its single invocation
+    identity (the same ID that names staging paths and lock ownership) into
+    the written manifest. When omitted, a fresh ID is generated for backward
+    compatibility with other pipeline callers.
+    """
     if terminal_result not in TERMINAL_RESULTS:
         raise ValueError(f"unknown terminal result {terminal_result!r}")
     return {
-        "attempt_id": attempt_id_now(),
+        "attempt_id": attempt_id if attempt_id is not None else attempt_id_now(),
         "started_at_utc": _utc_now(),
         "finished_at_utc": _utc_now(),
         "terminal_result": terminal_result,

@@ -20,6 +20,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -193,7 +194,7 @@ def test_lock_contention_blocks_without_theft(tmp_path: Path) -> None:
         / "month=01"
     )
     eval_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = eval_dir / "evaluation.lock"
+    lock_path = _eval_dir(data_root) / "evaluation.lock"
     external_owner = {"attempt_id": "other_attempt_id", "pid": 99999}
     lock_path.write_text(json.dumps(external_owner) + "\n", encoding="utf-8")
 
@@ -215,22 +216,11 @@ def test_lock_contention_blocks_without_theft(tmp_path: Path) -> None:
 
 def test_owner_safe_lock_release_behavior(tmp_path: Path) -> None:
     repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
-    eval_dir = (
-        data_root
-        / "datasets"
-        / "binance"
-        / "usdm"
-        / "evaluation"
-        / "BTCUSDT"
-        / "1h"
-        / "year=2024"
-        / "month=01"
-    )
 
     # When publication succeeds, lock is created and cleaned
     code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
     assert code == 0
-    lock_path = eval_dir / "evaluation.lock"
+    lock_path = _eval_dir(data_root) / "evaluation.lock"
     assert not lock_path.exists()
 
 
@@ -472,3 +462,379 @@ def test_cli_evaluation_integration_e2e(tmp_path: Path) -> None:
     assert len(attempts) == 2
     assert attempts[1]["terminal_result"] == "VERIFIED_NO_OP"
     assert attempts[1]["artifact_dispositions"]["evaluation_artifact"] == "already_published"
+
+
+# --- Defect 4: owner-safe lock setup failure ---------------------------------
+
+
+def _eval_dir(data_root: Path) -> Path:
+    return (
+        data_root
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "evaluation"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+
+
+def _inject_lock_owner_write_failure(monkeypatch, stage: str) -> None:
+    """Patch ``os.fdopen`` so the evaluation.lock owner-evidence write fails at
+    the given stage: 'write', 'flush', or 'close'."""
+    import os as _os
+
+    from quantara import evaluation_pipeline as ep_module
+
+    real_fdopen = _os.fdopen
+
+    class FailingHandle:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            if stage == "close":
+                # Release the real resource first (mimicking an OS-level error
+                # surfaced by an internal close syscall), then report failure.
+                self._handle.__exit__(None, None, None)
+                raise OSError(9, "injected close failure")
+            return self._handle.__exit__(*exc)
+
+        def write(self, data):
+            if stage == "write":
+                raise OSError(5, "injected owner write failure")
+            return self._handle.write(data)
+
+        def flush(self):
+            if stage == "flush":
+                raise OSError(5, "injected owner flush/fsync failure")
+            return self._handle.flush()
+
+        def fileno(self):
+            return self._handle.fileno()
+
+    def patched(fd, *args, **kwargs):
+        return FailingHandle(real_fdopen(fd, *args, **kwargs))
+
+    monkeypatch.setattr(ep_module.os, "fdopen", patched)
+
+
+def test_lock_owner_evidence_write_failure_cleans_only_own_lock(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    lock_path = _eval_dir(data_root) / "evaluation.lock"
+    _inject_lock_owner_write_failure(monkeypatch, "write")
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 3
+
+    # Only this invocation's freshly created lock may be removed.
+    assert not lock_path.exists()
+    assert not (_eval_dir(data_root) / "current.json").exists()
+
+    manifests = list((data_root / "attempts" / "evaluation").glob("*.json"))
+    assert len(manifests) == 1
+    doc = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert doc["terminal_result"] == "FAILED"
+    assert doc["diagnostics"] == ["lock_owner_evidence_failed"]
+    disps = doc["artifact_dispositions"]
+    # Truthful: ownership was never durably established and no staging occurred.
+    assert disps["lock_acquired"] is False
+    assert disps["lock_cleanup"] == "cleaned"
+    assert disps["attempt_staged"] is False
+
+
+@pytest.mark.parametrize("stage", ["flush", "close"])
+def test_lock_owner_evidence_flush_and_close_failures_are_owner_safe(
+    tmp_path: Path, monkeypatch, stage: str
+) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    lock_path = _eval_dir(data_root) / "evaluation.lock"
+    _inject_lock_owner_write_failure(monkeypatch, stage)
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 3
+    assert not lock_path.exists()
+    assert not (_eval_dir(data_root) / "current.json").exists()
+
+    manifests = list((data_root / "attempts" / "evaluation").glob("*.json"))
+    assert len(manifests) == 1
+    doc = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert doc["terminal_result"] == "FAILED"
+    assert doc["diagnostics"] == ["lock_owner_evidence_failed"]
+    assert doc["artifact_dispositions"]["lock_acquired"] is False
+
+
+def test_lock_owner_evidence_cleanup_failure_is_truthful(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    lock_path = _eval_dir(data_root) / "evaluation.lock"
+    _inject_lock_owner_write_failure(monkeypatch, "write")
+
+    real_unlink = type(lock_path).unlink
+
+    def failing_unlink(self, *args, **kwargs):
+        if self.name == "evaluation.lock":
+            raise OSError(5, "injected unlink failure")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(lock_path), "unlink", failing_unlink)
+
+    try:
+        code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    finally:
+        monkeypatch.undo()
+        if lock_path.exists():
+            lock_path.unlink(missing_ok=True)
+
+    assert code == 3
+    manifests = list((data_root / "attempts" / "evaluation").glob("*.json"))
+    assert len(manifests) == 1
+    doc = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert doc["terminal_result"] == "FAILED"
+    assert doc["diagnostics"] == ["lock_owner_evidence_failed"]
+    # The unremovable own lock must be reported truthfully as failed cleanup.
+    assert doc["artifact_dispositions"]["lock_acquired"] is False
+    assert doc["artifact_dispositions"]["lock_cleanup"] == "cleanup_failed"
+
+
+def test_preexisting_malformed_lock_is_contested_and_never_removed(
+    tmp_path: Path,
+) -> None:
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    lock_path = _eval_dir(data_root) / "evaluation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    malformed_bytes = b"{ this is definitely not json \x00\xff\n"
+    lock_path.write_bytes(malformed_bytes)
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 2
+
+    # A pre-existing malformed/replaced lock must survive byte-identical.
+    assert lock_path.read_bytes() == malformed_bytes
+
+
+def test_lock_owner_evidence_contains_exactly_the_attempt_id(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Regression: the undocumented pid field must not exist in lock evidence."""
+    import os as _os
+
+    from quantara import evaluation_pipeline as ep_module
+
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    captured_writes: list[str] = []
+    real_fdopen = _os.fdopen
+
+    class RecordingHandle:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def __enter__(self):
+            self._handle.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._handle.__exit__(*exc)
+
+        def write(self, data):
+            captured_writes.append(data)
+            return self._handle.write(data)
+
+        def flush(self):
+            return self._handle.flush()
+
+        def fileno(self):
+            return self._handle.fileno()
+
+    def patched(fd, *args, **kwargs):
+        return RecordingHandle(real_fdopen(fd, *args, **kwargs))
+
+    monkeypatch.setattr(ep_module.os, "fdopen", patched)
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 0
+
+    attempts = list((data_root / "attempts" / "evaluation").glob("*.json"))
+    assert len(attempts) == 1
+    invocation_id = attempts[0].stem
+    lock_payloads = [
+        w for w in captured_writes if w.strip().startswith("{") and "attempt_id" in w
+    ]
+    assert len(lock_payloads) == 1
+    owner_doc = json.loads(lock_payloads[0])
+    # Exactly the attempt ID: no undocumented pid or any other field.
+    assert owner_doc == {"attempt_id": invocation_id}
+
+# --- Defect 5: stable dual-parent reconciliation ------------------------------
+
+
+def _published_eval_dir(tmp_path: Path):
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 0
+    return repo_root, data_root, _eval_dir(data_root)
+
+
+def _reseal_with_mutated_lineage(eval_dir: Path, data_root: Path, mutation) -> str:
+    """Build a SELF-CONSISTENT re-addressed evaluation graph: mutate one
+    evaluation_from field, recompute the commit equation, re-pin manifest and
+    pointer. Only cross-lane parent evidence can detect the inconsistency."""
+    from quantara.evaluation_pipeline import evaluation_commit_identity
+
+    ptr = json.loads((eval_dir / "current.json").read_text(encoding="utf-8"))
+    commit_dir = eval_dir / "commits" / ptr["commit"]
+    content = json.loads((commit_dir / "content.json").read_text(encoding="utf-8"))
+    manifest = json.loads((commit_dir / "manifest.json").read_text(encoding="utf-8"))
+    mutation(content["evaluation_from"])
+    manifest["evaluation_from"] = content["evaluation_from"]
+    new_addr = evaluation_commit_identity(
+        content["canonical_content_hash"], content["evaluation_from"]
+    )
+    manifest["commit_identity"] = new_addr
+    content["evaluation_commit_identity"] = new_addr
+
+    new_dir = eval_dir / "commits" / new_addr
+    new_dir.mkdir(parents=True)
+    (new_dir / "content.json").write_bytes(
+        (json.dumps(content, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    )
+    manifest_bytes = (
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    (new_dir / "manifest.json").write_bytes(manifest_bytes)
+    shutil.copyfile(commit_dir / "quality.json", new_dir / "quality.json")
+    shutil.copyfile(commit_dir / "COMMITTED", new_dir / "COMMITTED")
+
+    new_ptr = {
+        "publication_protocol_version": "v1",
+        "commit": new_addr,
+        "manifest_sha256": sha256_hex(manifest_bytes),
+    }
+    (eval_dir / "current.json").write_text(
+        json.dumps(new_ptr, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return new_addr
+
+
+def _mutate_lineage_field(field: str, value) -> callable:
+    def _apply(lineage_doc: dict) -> None:
+        lineage_doc[field] = value
+
+    return _apply
+
+
+_LINEARITY_MUTATIONS = {
+    "validation_dataset_id": _mutate_lineage_field(
+        "validation_dataset_id", "binance_usdm_btcusdt_klines_1h_2024_q1_other_v9"
+    ),
+    "validation_canonical_content_hash": _mutate_lineage_field(
+        "validation_canonical_content_hash", "e" * 64
+    ),
+    "validation_artifact_sha256": _mutate_lineage_field("validation_artifact_sha256", "f" * 64),
+    "validation_artifact_size": _mutate_lineage_field("validation_artifact_size", 123456789),
+    "research_dataset_id": _mutate_lineage_field(
+        "research_dataset_id", "binance_usdm_btcusdt_klines_1h_2024_q1_other_r9"
+    ),
+    "research_canonical_content_hash": _mutate_lineage_field(
+        "research_canonical_content_hash", "d" * 64
+    ),
+    "research_parquet_sha256": _mutate_lineage_field("research_parquet_sha256", "c" * 64),
+    "research_parquet_size": _mutate_lineage_field("research_parquet_size", 424242),
+}
+
+
+@pytest.mark.parametrize("field", sorted(_LINEARITY_MUTATIONS))
+def test_readdressed_graph_with_inconsistent_parent_field_is_rejected(
+    tmp_path: Path, field: str
+) -> None:
+    _, data_root, eval_dir = _published_eval_dir(tmp_path)
+    _reseal_with_mutated_lineage(eval_dir, data_root, _LINEARITY_MUTATIONS[field])
+    with pytest.raises(QuantaraError):
+        verify_evaluation_current_graph(eval_dir, data_root)
+
+# --- Defect 2: safe lost-pointer recovery -------------------------------------
+
+
+def _mutate_retained_quality(eval_dir: Path, mode: str) -> None:
+    ptr = json.loads((eval_dir / "current.json").read_text(encoding="utf-8"))
+    commit_dir = eval_dir / "commits" / ptr["commit"]
+    qpath = commit_dir / "quality.json"
+    if mode == "missing":
+        qpath.unlink()
+        return
+    if mode == "malformed":
+        qpath.write_bytes(b"{definitely not json\x00")
+        return
+    doc = json.loads(qpath.read_text(encoding="utf-8"))
+    if mode == "non_pass":
+        doc["state"] = "FAIL"
+    elif mode == "wrong_identity":
+        doc["identity"] = "ab" * 32
+    elif mode == "wrong_order":
+        doc["findings"] = list(reversed(doc["findings"]))
+    elif mode == "wrong_count":
+        doc["findings"] = doc["findings"][:-1]
+    else:
+        raise AssertionError(mode)
+    qpath.write_bytes((json.dumps(doc, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
+@pytest.mark.parametrize(
+    "mode", ["missing", "malformed", "non_pass", "wrong_identity", "wrong_order", "wrong_count"]
+)
+def test_recovery_never_installs_current_before_full_authentication(
+    tmp_path: Path, monkeypatch, mode: str
+) -> None:
+    """A retained evaluation commit must be FULLY authenticated (including
+    quality.json) before write_current() is ever called."""
+    from quantara import evaluation_pipeline as ep_module
+
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    eval_dir = _eval_dir(data_root)
+    assert run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root) == 0
+
+    ptr_before = (eval_dir / "current.json").read_bytes()
+    _mutate_retained_quality(eval_dir, mode)
+
+    # Lost-pointer scenario.
+    (eval_dir / "current.json").unlink()
+
+    calls: list[str] = []
+    real_write_current = ep_module.write_current
+
+    def spy_write_current(dataset_dir, commit_hash, manifest_digest):
+        calls.append(commit_hash)
+        return real_write_current(dataset_dir, commit_hash, manifest_digest)
+
+    monkeypatch.setattr(ep_module, "write_current", spy_write_current)
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+
+    # The poisoned pointer bytes were NEVER installed.
+    if (eval_dir / "current.json").exists():
+        current_ptr = json.loads((eval_dir / "current.json").read_text(encoding="utf-8"))
+        mutated_addr = json.loads(ptr_before.decode("utf-8"))["commit"]
+        assert current_ptr["commit"] != mutated_addr or calls == []
+        # The installed pointer must describe a fully verifying graph.
+        verify_evaluation_current_graph(eval_dir, data_root)
+    else:
+        # Failed recovery: absent before, absent after.
+        assert code != 0
+        manifests = [
+            json.loads(p.read_text(encoding="utf-8"))
+            for p in (data_root / "attempts" / "evaluation").glob("*.json")
+        ]
+        last = sorted(manifests, key=lambda m: m["started_at_utc"])[-1]
+        assert last["terminal_result"] == "FAILED"
+        assert last["artifact_dispositions"]["pointer_replaced"] is False
+        # And write_current was never reached.
+        assert calls == [], f"write_current called for {calls}"

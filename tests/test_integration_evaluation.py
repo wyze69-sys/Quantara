@@ -37,18 +37,8 @@ from quantara.evaluation_descriptor import (
     APPROVED_FEATURES,
     load_evaluation_descriptor,
 )
-from quantara.evaluation_pipeline import (
-    build_evaluation_artifact,
-    evaluation_commit_identity,
-    verify_evaluation_current_graph,
-)
+from quantara.evaluation_pipeline import verify_evaluation_current_graph
 from quantara.evaluation_quality import evaluate_evaluation_quality
-from quantara.hashing import (
-    evaluation_content_hash,
-    evaluation_schema_fingerprint,
-    sha256_hex,
-)
-from quantara.jcs import canonicalize
 from quantara.research_pipeline import read_research_rows
 
 pytestmark = pytest.mark.integration
@@ -69,6 +59,173 @@ EVALUATION_CONFIG = CONFIG_ROOT / "binance-usdm-btcusdt-1h-2024-q1-evaluation-du
 RESEARCH_CONFIG = CONFIG_ROOT / "binance-usdm-btcusdt-1h-2024-q1-research-core-v1.yaml"
 VALIDATION_CONFIG = CONFIG_ROOT / "binance-usdm-btcusdt-1h-2024-q1-validation-wf-v1.yaml"
 
+# Local independent framing: RFC-8785-equivalent canonicalizer and the exact
+# evaluation schema fingerprint / content hash / commit identity equations,
+# implemented ONLY with stdlib hashlib (never production hashing helpers).
+_ESCAPES = {
+    '"': '\\"',
+    "\\": "\\\\",
+    "\b": "\\b",
+    "\f": "\\f",
+    "\n": "\\n",
+    "\r": "\\r",
+    "\t": "\\t",
+}
+
+
+def _jcs_str(value: str, out: list[str]) -> None:
+    pieces = ['"']
+    for ch in value:
+        esc = _ESCAPES.get(ch)
+        if esc is not None:
+            pieces.append(esc)
+        elif ch < "\u0020":
+            pieces.append(f"\\u{ord(ch):04x}")
+        else:
+            pieces.append(ch)
+    pieces.append('"')
+    out.append("".join(pieces))
+
+
+def _local_jcs(value) -> str:
+    out: list[str] = []
+
+    def ser(v) -> None:
+        if v is True:
+            out.append("true")
+        elif v is False:
+            out.append("false")
+        elif v is None:
+            out.append("null")
+        elif isinstance(v, int):
+            out.append(str(v))
+        elif isinstance(v, str):
+            _jcs_str(v, out)
+        elif isinstance(v, list):
+            out.append("[")
+            for i, item in enumerate(v):
+                if i:
+                    out.append(",")
+                ser(item)
+            out.append("]")
+        elif isinstance(v, dict):
+            out.append("{")
+            for i, key in enumerate(sorted(v, key=lambda k: k.encode("utf-16-be"))):
+                if i:
+                    out.append(",")
+                _jcs_str(key, out)
+                out.append(":")
+                ser(v[key])
+            out.append("}")
+        else:
+            raise TypeError(f"not JCS-serializable under local subset: {type(v)!r}")
+
+    ser(value)
+    return "".join(out)
+
+
+def _local_sha256(blob: bytes) -> str:
+    return hashlib.sha256(blob).hexdigest()
+
+
+_LOCAL_DECIMAL_CONTRACT = {
+    "precision": 50,
+    "rounding": "ROUND_HALF_EVEN",
+    "emin": -999999,
+    "emax": 999999,
+    "capitals": 1,
+    "clamp": 0,
+    "enabled_traps": ["InvalidOperation", "DivisionByZero", "Overflow"],
+    "storage_quantum": "0.000000000000000001",
+}
+
+
+def _local_schema_fingerprint(parent_validation_fingerprint: str) -> str:
+    payload = {
+        "domain": "quantara-evaluation-schema-v1",
+        "schema_id": "quantara_feature_evaluation_v1",
+        "evaluation_set": {"name": "btcusdt_core_v1_dual_ic_v1", "version": "1"},
+        "features": list(APPROVED_FEATURES),
+        "target": "l_fwdret_24",
+        "metrics": ["pearson_ic", "spearman_ic"],
+        "decimal_contract": _LOCAL_DECIMAL_CONTRACT,
+        "parent_validation_fingerprint": parent_validation_fingerprint,
+    }
+    return _local_sha256(_local_jcs(payload).encode("utf-8"))
+
+
+def _local_content_hash(fingerprint: str, artifact_bytes: bytes) -> str:
+    parts = [
+        b"quantara-evaluation-content-v1",
+        b"\x00",
+        fingerprint.encode("ascii"),
+        b"\n",
+        bytes(artifact_bytes),
+        b"\n",
+    ]
+    return _local_sha256(b"".join(parts))
+
+
+def _local_commit_identity(content_hash: str, evaluation_from: dict) -> str:
+    payload = {
+        "domain": "quantara-evaluation-commit-identity-v1",
+        "canonical_content_hash": content_hash,
+        "evaluation_from": evaluation_from,
+    }
+    return _local_sha256(_local_jcs(payload).encode("utf-8"))
+
+
+def _build_artifact_locally(
+    descriptor,
+    validation_parent_info: dict,
+    research_parent_info: dict,
+    records,
+    summaries,
+) -> dict:
+    return {
+        "schema": "quantara.feature_evaluation/v1",
+        "dataset_id": descriptor.dataset_id,
+        "provider": descriptor.provider,
+        "instrument_id": descriptor.instrument_id,
+        "period": {
+            "start": descriptor.start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": descriptor.end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+        "evaluation_set": dict(descriptor.evaluation_set),
+        "validation_parent": {
+            "dataset_id": validation_parent_info["dataset_id"],
+            "commit_address": validation_parent_info["commit_address"],
+            "canonical_content_hash": validation_parent_info["canonical_content_hash"],
+            "artifact_sha256": validation_parent_info["artifact_sha256"],
+            "artifact_size": validation_parent_info["artifact_size"],
+        },
+        "research_parent": {
+            "dataset_id": research_parent_info["dataset_id"],
+            "commit_address": research_parent_info["commit_address"],
+            "canonical_content_hash": research_parent_info["canonical_content_hash"],
+            "parquet_sha256": research_parent_info["parquet_sha256"],
+            "parquet_size": research_parent_info["parquet_size"],
+        },
+        "features": list(descriptor.features),
+        "target": descriptor.target,
+        "metrics": list(descriptor.metrics),
+        "decimal_contract": _LOCAL_DECIMAL_CONTRACT,
+        "records": records,
+        "summaries": summaries,
+        "disclaimer": (
+            "internal descriptive analysis only; no model, signal, backtest, "
+            "significance, or performance claim"
+        ),
+    }
+
+
+def _dir_tree_digest(directory: Path) -> str:
+    """Digest of EVERY file under a directory tree (all immutable commits)."""
+    hasher = hashlib.sha256()
+    for path in sorted(item for item in directory.rglob("*") if item.is_file()):
+        hasher.update(path.relative_to(directory).as_posix().encode("utf-8"))
+        hasher.update(path.read_bytes())
+    return hasher.hexdigest()
 
 def _tree_digest(directory: Path) -> str:
     hasher = hashlib.sha256()
@@ -266,19 +423,19 @@ def test_real_q1_identity_oracle_freeze() -> None:
         "parquet_size": res_manifest["parquet_size"],
     }
 
-    artifact = build_evaluation_artifact(
+    artifact = _build_artifact_locally(
         descriptor, val_parent_info, res_parent_info, records, summaries
     )
-    artifact_bytes = canonicalize(artifact).encode("utf-8") + b"\n"
+    artifact_bytes = _local_jcs(artifact).encode("utf-8") + b"\n"
     assert len(artifact_bytes) == FROZEN_Q1_ARTIFACT_SIZE
-    assert sha256_hex(artifact_bytes) == FROZEN_Q1_ARTIFACT_SHA256
+    assert _local_sha256(artifact_bytes) == FROZEN_Q1_ARTIFACT_SHA256
 
-    schema_fp = evaluation_schema_fingerprint(
-        parent_validation_fingerprint=val_content["schema_fingerprint"]
+    schema_fp = _local_schema_fingerprint(
+        val_content["schema_fingerprint"]
     )
     assert schema_fp == FROZEN_Q1_SCHEMA_FINGERPRINT
 
-    content_hash = evaluation_content_hash(schema_fp, artifact_bytes)
+    content_hash = _local_content_hash(schema_fp, artifact_bytes)
     assert content_hash == FROZEN_Q1_CANONICAL_CONTENT_HASH
 
     evaluation_from = {
@@ -299,7 +456,7 @@ def test_real_q1_identity_oracle_freeze() -> None:
         "metrics": list(descriptor.metrics),
         "decimal_contract": artifact["decimal_contract"],
     }
-    commit_id = evaluation_commit_identity(content_hash, evaluation_from)
+    commit_id = _local_commit_identity(content_hash, evaluation_from)
     assert commit_id == FROZEN_Q1_COMMIT_IDENTITY
 
     quality_report = evaluate_evaluation_quality(
@@ -343,21 +500,26 @@ def test_real_q1_evaluation_serial_acceptance_and_idempotency() -> None:
         pointers.append(eval_ptr)
     snapshots = {p: p.read_bytes() for p in pointers}
 
-    # 2. Snapshot predecessor immutable commit trees
-    january_commit_dirs = {
-        "k1m": k1m_dir / "commits" / json.loads(snapshots[k1m_ptr])["commit"],
-        "k1h": k1h_dir / "commits" / json.loads(snapshots[k1h_ptr])["commit"],
-        "res": res_dir / "commits" / json.loads(snapshots[res_ptr])["commit"],
-        "val": val_dir / "commits" / json.loads(snapshots[val_ptr])["commit"],
+    # 2. Snapshot EVERY pre-existing immutable commit tree (all commits, not
+    #    only each lane's current commit) plus optional evaluation lane.
+    lane_commits_dirs = {
+        "k1m": k1m_dir / "commits",
+        "k1h": k1h_dir / "commits",
+        "res": res_dir / "commits",
+        "val": val_dir / "commits",
     }
-    baseline_digests = {name: _tree_digest(d) for name, d in january_commit_dirs.items()}
+    if eval_dir.exists():
+        lane_commits_dirs["eval"] = eval_dir / "commits"
+    baseline_digests = {
+        name: _dir_tree_digest(d) for name, d in lane_commits_dirs.items()
+    }
 
     attempts_dir = DATA_ROOT / "attempts" / "evaluation"
 
     try:
         # 3. Establish and authenticate Q1 research and validation chain through real CLI routes
         k1m_q1_commit = "8549fac77830c50a61fbe943568d85482bcee9469a82add2af1a84655538ce04"
-        k1m_q1_man = sha256_hex(
+        k1m_q1_man = _local_sha256(
             (k1m_dir / "commits" / k1m_q1_commit / "manifest.json").read_bytes()
         )
         k1m_ptr.write_text(
@@ -373,7 +535,7 @@ def test_real_q1_evaluation_serial_acceptance_and_idempotency() -> None:
         )
 
         k1h_q1_commit = "59faf446d6957360a59e0969903bb0e11980ab984e3959b4d8bdf17f4de4e22f"
-        k1h_q1_man = sha256_hex(
+        k1h_q1_man = _local_sha256(
             (k1h_dir / "commits" / k1h_q1_commit / "manifest.json").read_bytes()
         )
         k1h_ptr.write_text(
@@ -410,6 +572,103 @@ def test_real_q1_evaluation_serial_acceptance_and_idempotency() -> None:
 
         records = eval_artifact["records"]
         summaries = eval_artifact["summaries"]
+
+        # 5b. Independently recompute ALL 200 IC values and ALL 8 summaries
+        # from authenticated retained parent bytes (independent local math).
+        val_c = "3f8a776bbdb195bb80fe1d7e19e978b0492d7e95ed30307a32b131fe57f901ca"
+        val_m = json.loads(
+            (
+                DATA_ROOT
+                / "datasets/binance/usdm/validation/BTCUSDT/1h/year=2024/month=01/commits"
+                / val_c
+                / "manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        val_art = json.loads(
+            (
+                DATA_ROOT
+                / "objects/normalized/sha256"
+                / val_m["artifact_sha256"]
+            ).read_bytes()
+        )
+        res_m = json.loads(
+            (
+                DATA_ROOT
+                / "datasets/binance/usdm/research/BTCUSDT/1h/year=2024/month=01/commits"
+                / "ca878557b82c63d5265a307c2b4b39bb1f4e11ca171bef65a573b51f4c970ce3"
+                / "manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        res_rows = read_research_rows(
+            DATA_ROOT / "objects" / "normalized" / "sha256" / res_m["parquet_sha256"]
+        )
+        expected_records = []
+        for fold in val_art["folds"]:
+            start_idx, end_idx = fold["test_range"]
+            test_rows = res_rows[start_idx:end_idx]
+            for feat_name in APPROVED_FEATURES:
+                idx = {"f_ret_1": 1, "f_roc_60": 2, "f_rvol_20": 3, "f_volratio_20": 4}[feat_name]
+                pairs = [
+                    (Decimal(str(r[idx])), Decimal(str(r[5])))
+                    for r in test_rows
+                    if r[5] is not None
+                ]
+                xs = [p[0] for p in pairs]
+                ys = [p[1] for p in pairs]
+                expected_records.append(
+                    {
+                        "fold_id": fold["fold_id"],
+                        "feature": feat_name,
+                        "pearson_ic": _fmt18(_independent_pearson(xs, ys)),
+                        "spearman_ic": _fmt18(_independent_spearman(xs, ys)),
+                    }
+                )
+        assert len(expected_records) == 100
+        for er, pr in zip(expected_records, records, strict=True):
+            assert er["fold_id"] == pr["fold_id"] and er["feature"] == pr["feature"]
+            assert er["pearson_ic"] == pr["pearson_ic"], (
+                f"pearson mismatch {er['feature']} fold {er['fold_id']}: "
+                f"expected {er['pearson_ic']} published {pr['pearson_ic']}"
+            )
+            assert er["spearman_ic"] == pr["spearman_ic"], (
+                f"spearman mismatch {er['feature']} fold {er['fold_id']}"
+            )
+
+        expected_summary_map = {}
+        for feat_name in APPROVED_FEATURES:
+            feat_recs = [r for r in records if r["feature"] == feat_name]
+            for metric_name in ("pearson_ic", "spearman_ic"):
+                values = [Decimal(r[metric_name]) for r in feat_recs]
+                sorted_vals = sorted(values)
+                expected_summary_map[(feat_name, metric_name)] = {
+                    "fold_count": len(values),
+                    "total_valid_pair_count": sum(r["valid_pair_count"] for r in feat_recs),
+                    "positive_fold_count": sum(1 for v in values if v > 0),
+                    "negative_fold_count": sum(1 for v in values if v < 0),
+                    "zero_fold_count": sum(1 for v in values if v == 0),
+                    "minimum": _fmt18(sorted_vals[0]),
+                    "maximum": _fmt18(sorted_vals[-1]),
+                    "median": _fmt18(_independent_median(sorted_vals)),
+                    "equal_weight_mean": _fmt18(sum(values) / Decimal(len(values))),
+                }
+        assert len(expected_summary_map) == 8
+        for s in summaries:
+            exp = expected_summary_map[(s["feature"], s["metric"])]
+            for field in (
+                "fold_count",
+                "total_valid_pair_count",
+                "positive_fold_count",
+                "negative_fold_count",
+                "zero_fold_count",
+                "minimum",
+                "maximum",
+                "median",
+                "equal_weight_mean",
+            ):
+                assert exp[field] == s[field], (
+                    f"summary mismatch {s['feature']}/{s['metric']}/{field}: "
+                    f"expected {exp[field]} published {s[field]}"
+                )
 
         # Assert record counts
         assert len(eval_artifact["records"]) == 100
@@ -519,6 +778,8 @@ def test_real_q1_evaluation_serial_acceptance_and_idempotency() -> None:
             temp.write_bytes(b)
             os.replace(temp, p)
 
-        # 10. Prove predecessor immutable trees remained byte-identical
-        for name, d in january_commit_dirs.items():
-            assert _tree_digest(d) == baseline_digests[name], f"predecessor {name} tree modified"
+        # 10. Prove EVERY pre-existing immutable commit tree remained byte-identical
+        for name, d in lane_commits_dirs.items():
+            assert (
+                _dir_tree_digest(d) == baseline_digests[name]
+            ), f"lane {name} immutable commit tree modified"

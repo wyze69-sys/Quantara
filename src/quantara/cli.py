@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch on the descriptor's schema field."""
     parser = argparse.ArgumentParser(prog="quantara")
     parser.add_argument("--descriptor", required=True)
-    parser.add_argument("--data-root", default="data")
+    parser.add_argument("--data-root", required=True)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--dataset-type",
@@ -40,10 +40,10 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Optional explicit dataset type check",
     )
-    try:
-        args = parser.parse_args(argv)
-    except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else 2
+    # Pre-Slice-006 parse contract: argparse raises SystemExit on missing
+    # required arguments or otherwise unparseable input. We deliberately do
+    # NOT swallow SystemExit here.
+    args = parser.parse_args(argv)
 
     if args.dataset_type is not None and args.dataset_type not in APPROVED_DATASET_TYPES:
         print(

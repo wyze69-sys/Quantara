@@ -12,7 +12,8 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from quantara.descriptor import load_rights_record
@@ -84,6 +85,108 @@ __all__ = [
 EXIT_OK = 0
 EXIT_BLOCKED = 2
 EXIT_FAILED = 3
+
+# --- Exact Q1 half-open validation-period contract (requirement 6) ------------
+
+APPROVED_Q1_PERIOD: dict[str, str] = {
+    "start": "2024-01-01T00:00:00Z",
+    "end": "2024-04-01T00:00:00Z",
+}
+Q1_START_EPOCH_MS = 1704067200000  # 2024-01-01T00:00:00Z inclusive
+Q1_END_EXCLUSIVE_EPOCH_MS = 1711929600000  # 2024-04-01T00:00:00Z exclusive
+HOUR_MS = 3_600_000
+_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _epoch_ms(moment: datetime) -> int:
+    """Exact integer epoch milliseconds (no binary float arithmetic)."""
+    return (moment.astimezone(UTC) - _EPOCH_UTC) // timedelta(milliseconds=1)
+
+
+def verify_validation_parent_q1_period(
+    *,
+    descriptor_start_utc: datetime,
+    descriptor_end_utc: datetime,
+    val_manifest: dict,
+    val_artifact: dict,
+    research_rows: Sequence[Sequence],
+) -> None:
+    """Authenticate the validation parent's exact Q1 half-open period and its
+    required timestamp/cadence endpoints against authenticated research rows.
+
+    Raises QuantaraError on any mismatch; returns silently on full agreement.
+    """
+    start_ms = _epoch_ms(descriptor_start_utc)
+    end_ms = _epoch_ms(descriptor_end_utc)
+    if start_ms != Q1_START_EPOCH_MS or end_ms != Q1_END_EXCLUSIVE_EPOCH_MS:
+        raise QuantaraError(
+            "validation parent period is not the exact half-open Q1 2024 window"
+        )
+    if start_ms >= end_ms:
+        raise QuantaraError("half-open period must satisfy start < end")
+
+    manifest_period = val_manifest.get("period")
+    if manifest_period is not None and manifest_period != APPROVED_Q1_PERIOD:
+        raise QuantaraError(
+            f"validation parent manifest period {manifest_period!r} is not "
+            f"the approved half-open window {APPROVED_Q1_PERIOD!r}"
+        )
+
+    excluded_head_rows = val_artifact.get("excluded_head_rows")
+    folds = val_artifact.get("folds")
+    if not isinstance(excluded_head_rows, int) or isinstance(excluded_head_rows, bool):
+        raise QuantaraError("validation artifact lacks integer excluded_head_rows")
+    if not isinstance(folds, list) or len(folds) != 25:
+        raise QuantaraError("validation artifact must contain exactly 25 folds")
+
+    row_count = len(research_rows)
+    ordered_ranges = []
+    for fold in sorted(folds, key=lambda item: item["test_range"][0]):
+        fold_range = fold.get("test_range")
+        if (
+            not isinstance(fold_range, list)
+            or len(fold_range) != 2
+            or any(isinstance(x, bool) or not isinstance(x, int) for x in fold_range)
+            or fold_range[0] >= fold_range[1]
+        ):
+            raise QuantaraError(f"invalid fold test_range {fold_range!r}")
+        ordered_ranges.append((fold_range[0], fold_range[1]))
+
+    cursor = excluded_head_rows
+    for begin, end in ordered_ranges:
+        if begin != cursor:
+            raise QuantaraError(
+                f"fold test ranges do not tile contiguously from excluded head "
+                f"(expected start {cursor}, found {begin})"
+            )
+        cursor = end
+    if cursor != row_count:
+        raise QuantaraError(
+            f"fold test ranges stop at row {cursor}, expected {row_count}"
+        )
+
+    first_index = ordered_ranges[0][0]
+    last_index = ordered_ranges[-1][1] - 1
+
+    # Hourly cadence across the entire tested span.
+    for index in range(first_index, last_index):
+        if research_rows[index + 1][0] - research_rows[index][0] != HOUR_MS:
+            raise QuantaraError(
+                f"hourly cadence broken at tested row {index}"
+            )
+
+    expected_first_ts = start_ms + excluded_head_rows * HOUR_MS
+    expected_last_ts = end_ms - HOUR_MS
+    if research_rows[first_index][0] != expected_first_ts:
+        raise QuantaraError(
+            f"tested-window start timestamp {research_rows[first_index][0]} "
+            f"!= required {expected_first_ts}"
+        )
+    if research_rows[last_index][0] != expected_last_ts:
+        raise QuantaraError(
+            f"tested-window end timestamp {research_rows[last_index][0]} "
+            f"!= half-open exclusive-end predecessor {expected_last_ts}"
+        )
 
 DISCLAIMER = (
     "internal descriptive analysis only; no model, signal, backtest, "
@@ -190,12 +293,14 @@ def _write_attempt(
     data_root: Path,
     repo_root: Path,
     *,
+    attempt_id: str,
     terminal_result: str,
     dispositions: dict[str, str | bool | None],
     referenced_commit: str | None,
     diagnostics: list[str],
 ) -> None:
     attempt = new_attempt_manifest(
+        attempt_id=attempt_id,
         terminal_result=terminal_result,
         artifact_dispositions=dispositions,
         retry_evidence=[],
@@ -289,6 +394,10 @@ def run_evaluation_pipeline(
     data = Path(data_root)
     descriptor_file = Path(descriptor_path)
 
+    # One invocation identity for the whole non-dry-run invocation: lock
+    # ownership, staging paths, cleanup ownership, and every attempt manifest.
+    attempt_id = attempt_id_now()
+
     def _pre_attempt(
         terminal_result: str,
         diagnostic: str | list[str],
@@ -299,6 +408,7 @@ def run_evaluation_pipeline(
             _write_attempt(
                 data,
                 root,
+                attempt_id=attempt_id,
                 terminal_result=terminal_result,
                 dispositions={
                     "evaluation_artifact": "not_written",
@@ -618,6 +728,20 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "research_cadence_mismatch")
         return EXIT_BLOCKED
 
+    # Exact Q1 half-open validation-period, timestamp, and cadence endpoints
+    try:
+        verify_validation_parent_q1_period(
+            descriptor_start_utc=descriptor.start_utc,
+            descriptor_end_utc=descriptor.end_utc,
+            val_manifest=val_manifest,
+            val_artifact=val_artifact,
+            research_rows=research_rows,
+        )
+    except QuantaraError as exc:
+        print(f"validation parent Q1 period authentication failed: {exc}", file=sys.stderr)
+        _pre_attempt("BLOCKED", "validation_period_authentication_failed")
+        return EXIT_BLOCKED
+
     # 16. Build records, summaries, artifact, prospective identities, quality
     try:
         records = build_evaluation_records(val_artifact["folds"], research_rows)
@@ -710,7 +834,6 @@ def run_evaluation_pipeline(
     commits_dir = eval_dir / "commits"
     commits_dir.mkdir(parents=True, exist_ok=True)
 
-    attempt_id = attempt_id_now()
     staging_dir = eval_dir / "commits" / f".staging-{attempt_id}"
     staging_root = data / "staging" / f"attempt-{attempt_id}"
 
@@ -790,26 +913,51 @@ def run_evaluation_pipeline(
         _write_attempt(
             data,
             root,
+            attempt_id=attempt_id,
             terminal_result=terminal_result,
             dispositions=_dispositions(extra),
             referenced_commit=referenced_commit,
             diagnostics=diagnostics,
         )
 
-    # 18. Lock acquisition (atomic, fsynced owner evidence)
+    # 18. Lock acquisition (atomic create-if-absent, exact owner evidence)
     try:
-        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(json.dumps({"attempt_id": attempt_id, "pid": os.getpid()}) + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        milestones["lock_acquired"] = True
-    except OSError:
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
         print(f"lock contested: {lock_path}", file=sys.stderr)
         cleanup_state["lock_cleanup"] = "none"
         cleanup_state["staging"] = "not_staged"
         _write_terminal_attempt("BLOCKED", None, ["lock_contested"])
         return EXIT_BLOCKED
+    except OSError as exc:
+        print(f"lock unavailable: {exc}", file=sys.stderr)
+        cleanup_state["lock_cleanup"] = "none"
+        cleanup_state["staging"] = "not_staged"
+        _write_terminal_attempt("BLOCKED", None, ["lock_unavailable"])
+        return EXIT_BLOCKED
+
+    # The O_EXCL create succeeded: this lock file was created by THIS
+    # invocation and no one else. Durable owner evidence must be established
+    # before ownership counts; on failure only this freshly created lock file
+    # is removed -- never any pre-existing or replaced lock.
+    try:
+        with os.fdopen(lock_fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"attempt_id": attempt_id}) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        milestones["lock_acquired"] = True
+    except OSError as exc:
+        print(f"lock owner evidence failed: {exc}", file=sys.stderr)
+        cleanup_state["staging"] = "not_staged"
+        try:
+            lock_path.unlink(missing_ok=True)
+        except OSError as unlink_exc:
+            print(f"own-lock cleanup failed: {unlink_exc}", file=sys.stderr)
+        cleanup_state["lock_cleanup"] = (
+            "cleaned" if not lock_path.exists() else "cleanup_failed"
+        )
+        _write_terminal_attempt("FAILED", None, ["lock_owner_evidence_failed"])
+        return EXIT_FAILED
 
     try:
         # Step 19: Immediately before publication, re-read both parent pointers
@@ -865,46 +1013,43 @@ def run_evaluation_pipeline(
             except Exception:
                 pass
 
-        # Step 21: Safe lost-pointer recovery check
+        # Step 21: Safe lost-pointer recovery check.
+        # The retained candidate must be FULLY authenticated -- including
+        # quality.json structure/identity/exact PASS, canonical artifact bytes,
+        # commit equations, complete dual-parent lineage reconciliation against
+        # retained parent evidence, and agreement with this invocation's fresh
+        # evidence -- via the same explicit verifier used for current-pointer
+        # verification. Only then may write_current() be called.
         if candidate_commit_dir.exists() and (candidate_commit_dir / "COMMITTED").is_file():
             try:
-                verify_commit_graph(data, candidate_commit_dir)
-                if existing_commit_matches(
+                verified_candidate = _authenticate_retained_evaluation_commit(
+                    candidate_commit_dir, prospective_commit, data
+                )
+                if not existing_commit_matches(
                     data, candidate_commit_dir, content_evidence, keys=EVALUATION_EVIDENCE_KEYS
                 ):
-                    cand_manifest_bytes = (candidate_commit_dir / "manifest.json").read_bytes()
-                    cand_manifest = json.loads(cand_manifest_bytes.decode("utf-8"))
-                    if cand_manifest.get(
-                        "commit_identity"
-                    ) == prospective_commit and cand_manifest.get("artifact_sha256") == sha256_hex(
-                        artifact_bytes
-                    ):
-                        # Ensure CAS object exists
-                        cas_file = (
-                            data
-                            / "objects"
-                            / "normalized"
-                            / "sha256"
-                            / cand_manifest["artifact_sha256"]
-                        )
-                        if cas_file.exists() and cas_file.read_bytes() == artifact_bytes:
-                            write_current(
-                                eval_dir, prospective_commit, sha256_hex(cand_manifest_bytes)
-                            )
-                            milestones["pointer_replaced"] = True
-                            verify_evaluation_current_graph(eval_dir, data)
-                            milestones["discovery_verified"] = True
-                            _cleanup_staging()
-                            _write_terminal_attempt(
-                                "PUBLISHED",
-                                prospective_commit,
-                                [],
-                                {
-                                    "evaluation_artifact": "already_published",
-                                    "lost_pointer_recovered": True,
-                                },
-                            )
-                            return EXIT_OK
+                    raise QuantaraError(
+                        "retained candidate evidence disagrees with this invocation"
+                    )
+                write_current(
+                    eval_dir,
+                    prospective_commit,
+                    verified_candidate["manifest_sha256"],
+                )
+                milestones["pointer_replaced"] = True
+                verify_evaluation_current_graph(eval_dir, data)
+                milestones["discovery_verified"] = True
+                _cleanup_staging()
+                _write_terminal_attempt(
+                    "PUBLISHED",
+                    prospective_commit,
+                    [],
+                    {
+                        "evaluation_artifact": "already_published",
+                        "lost_pointer_recovered": True,
+                    },
+                )
+                return EXIT_OK
             except Exception as exc:
                 print(f"candidate commit unverified for recovery: {exc}", file=sys.stderr)
 
@@ -1013,38 +1158,19 @@ def run_evaluation_pipeline(
         _release_lock()
 
 
-def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
-    """Full lock-free authentication of an evaluation current graph (spec §11, §13)."""
-    pointer_path = dataset_dir / "current.json"
-    if not pointer_path.exists():
-        raise QuantaraError(f"no current.json under {dataset_dir}")
-    try:
-        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
-    except ValueError as exc:
-        raise QuantaraError(f"invalid current.json: {exc}") from exc
-    if not isinstance(pointer, dict):
-        raise QuantaraError("current.json must be a JSON object")
+def _authenticate_retained_evaluation_commit(
+    commit_dir: Path, address: str, data_root: Path
+) -> dict:
+    """Explicit retained-commit verifier (requirements 2 and 5).
 
-    expected_pointer_keys = {
-        "publication_protocol_version",
-        "commit",
-        "manifest_sha256",
-    }
-    if set(pointer) != expected_pointer_keys:
-        raise QuantaraError(
-            f"current.json keys must be exactly {sorted(expected_pointer_keys)}, "
-            f"got {sorted(pointer)}"
-        )
-    if pointer["publication_protocol_version"] != "v1":
-        raise QuantaraError("unsupported publication protocol version")
-
-    for label in ("commit", "manifest_sha256"):
-        val = str(pointer[label]).lower()
-        if len(val) != 64 or any(c not in "0123456789abcdef" for c in val):
-            raise QuantaraError(f"pointer {label} is not a sha256 hex digest")
-
-    address = str(pointer["commit"]).lower()
-    commit_dir = dataset_dir / "commits" / address
+    Fully authenticates one retained evaluation commit directory BEFORE any
+    pointer write may reference it: manifest/content/CAS bytes, canonical JCS
+    artifact bytes, exact structure, schema fingerprint, canonical content
+    hash, quality.json envelope with exact PASS and identity agreement, plus
+    complete stable dual-parent reconciliation against freshly authenticated
+    retained validation/research parent evidence and the recorded discovery
+    digests. Returns ``{"commit", "manifest_sha256", **content}``.
+    """
     content = verify_commit_graph(Path(data_root), commit_dir)
 
     # 1. Exact eight content.json keys
@@ -1058,8 +1184,6 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
         manifest_bytes = (commit_dir / "manifest.json").read_bytes()
     except OSError as exc:
         raise QuantaraError(f"manifest.json unreadable: {exc}") from exc
-    if sha256_hex(manifest_bytes) != str(pointer["manifest_sha256"]).lower():
-        raise QuantaraError("manifest bytes disagree with current.json manifest_sha256")
 
     try:
         manifest = json.loads(manifest_bytes.decode("utf-8"))
@@ -1297,9 +1421,178 @@ def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
         if len(val) != 64 or any(c not in "0123456789abcdef" for c in val):
             raise QuantaraError(f"parent_discovery {key} is not a valid sha256 hex digest")
 
-    if val_parent["commit_address"] != lineage["validation_commit_address"]:
-        raise QuantaraError("artifact validation_parent commit disagrees with evaluation_from")
-    if res_parent["commit_address"] != lineage["research_commit_address"]:
-        raise QuantaraError("artifact research_parent commit disagrees with evaluation_from")
+    # --- Requirement 5: complete duplicated parent-field reconciliation ------
+    _DUPLICATED_PARENT_FIELDS = (
+        # (artifact field, lineage field, label)
+        ("dataset_id", "validation_dataset_id", "validation dataset_id"),
+        ("commit_address", "validation_commit_address", "validation commit address"),
+        (
+            "canonical_content_hash",
+            "validation_canonical_content_hash",
+            "validation canonical content hash",
+        ),
+        ("artifact_sha256", "validation_artifact_sha256", "validation artifact sha256"),
+        ("artifact_size", "validation_artifact_size", "validation artifact size"),
+        ("dataset_id", "research_dataset_id", "research dataset_id"),
+        ("commit_address", "research_commit_address", "research commit address"),
+        (
+            "canonical_content_hash",
+            "research_canonical_content_hash",
+            "research canonical content hash",
+        ),
+        ("parquet_sha256", "research_parquet_sha256", "research parquet sha256"),
+        ("parquet_size", "research_parquet_size", "research parquet size"),
+    )
+    for artifact_field, lineage_field, label in _DUPLICATED_PARENT_FIELDS:
+        source = val_parent if label.startswith("validation") else res_parent
+        left = str(source[artifact_field]).lower()
+        right = str(lineage[lineage_field]).lower()
+        try:
+            numeric_equal = int(left) == int(right)
+        except ValueError:
+            numeric_equal = False
+        if left != right and not (numeric_equal and "." not in left):
+            raise QuantaraError(
+                f"reconciliation failure: {label} differs between artifact "
+                f"parent ({source[artifact_field]!r}) and evaluation_from "
+                f"({lineage[lineage_field]!r})"
+            )
 
-    return {**content, "commit": address}
+    # --- Requirement 5: freshly authenticated retained parent evidence -------
+    # Reconcile evaluation_from against the ACTUAL retained validation and
+    # research parent commits (dataset ids, canonical content hashes, artifact/
+    # parquet sha256+size), and authenticate the recorded discovery digests
+    # against those exact retained manifest bytes.
+    start_dt = datetime.fromisoformat(period["start"].replace("Z", "+00:00"))
+    val_dir = _validation_dataset_dir(
+        Path(data_root), "BTCUSDT", "1h", start_dt
+    )
+    res_dir = _research_dataset_dir(Path(data_root), "BTCUSDT", "1h", start_dt)
+
+    val_parent_commit_dir = (
+        val_dir / "commits" / str(lineage["validation_commit_address"]).lower()
+    )
+    if not val_parent_commit_dir.is_dir():
+        raise QuantaraError(f"retained validation commit missing: {val_parent_commit_dir}")
+    val_parent_content = verify_commit_graph(Path(data_root), val_parent_commit_dir)
+    try:
+        val_parent_manifest_bytes = (val_parent_commit_dir / "manifest.json").read_bytes()
+    except OSError as exc:
+        raise QuantaraError(f"retained validation manifest unreadable: {exc}") from exc
+    if sha256_hex(val_parent_manifest_bytes) != str(
+        parent_disc["validation_pointer_manifest_sha256"]
+    ).lower():
+        raise QuantaraError(
+            "parent_discovery validation digest disagrees with actual retained "
+            "validation manifest bytes"
+        )
+    try:
+        val_manifest_doc = json.loads(val_parent_manifest_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"retained validation manifest not valid JSON: {exc}") from exc
+
+    res_parent_commit_dir = (
+        res_dir / "commits" / str(lineage["research_commit_address"]).lower()
+    )
+    if not res_parent_commit_dir.is_dir():
+        raise QuantaraError(f"retained research commit missing: {res_parent_commit_dir}")
+    res_parent_content = verify_commit_graph(Path(data_root), res_parent_commit_dir)
+    try:
+        res_parent_manifest_bytes = (res_parent_commit_dir / "manifest.json").read_bytes()
+    except OSError as exc:
+        raise QuantaraError(f"retained research manifest unreadable: {exc}") from exc
+    if sha256_hex(res_parent_manifest_bytes) != str(
+        parent_disc["research_pointer_manifest_sha256"]
+    ).lower():
+        raise QuantaraError(
+            "parent_discovery research digest disagrees with actual retained "
+            "research manifest bytes"
+        )
+    try:
+        res_manifest_doc = json.loads(res_parent_manifest_bytes.decode("utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"retained research manifest not valid JSON: {exc}") from exc
+
+    _FRESH_PARENT_BINDINGS = (
+        ("validation_dataset_id", val_manifest_doc.get("dataset_id")),
+        ("validation_canonical_content_hash", val_manifest_doc.get("canonical_content_hash")),
+        ("validation_artifact_sha256", val_manifest_doc.get("artifact_sha256")),
+        ("validation_artifact_size", val_manifest_doc.get("artifact_size")),
+        ("validation_canonical_content_hash", val_parent_content.get("canonical_content_hash")),
+        ("research_dataset_id", res_manifest_doc.get("dataset_id")),
+        ("research_canonical_content_hash", res_manifest_doc.get("canonical_content_hash")),
+        ("research_parquet_sha256", res_manifest_doc.get("parquet_sha256")),
+        ("research_parquet_size", res_manifest_doc.get("parquet_size")),
+        ("research_canonical_content_hash", res_parent_content.get("canonical_content_hash")),
+    )
+    for lineage_field, fresh_value in _FRESH_PARENT_BINDINGS:
+        if lineage_field not in lineage:
+            raise QuantaraError(f"evaluation_from lacks {lineage_field!r}")
+        recorded = lineage[lineage_field]
+        if isinstance(recorded, int) or isinstance(fresh_value, int):
+            equal = isinstance(recorded, int) and recorded == fresh_value
+        else:
+            if fresh_value is None:
+                equal = False
+            else:
+                equal = str(recorded).lower() == str(fresh_value).lower()
+        if not equal:
+            raise QuantaraError(
+                f"reconciliation failure: evaluation_from {lineage_field}="
+                f"{recorded!r} disagrees with freshly authenticated retained "
+                f"parent evidence {fresh_value!r}"
+            )
+
+    return {
+        "commit": address,
+        "manifest_sha256": sha256_hex(manifest_bytes),
+        **content,
+    }
+
+
+def verify_evaluation_current_graph(dataset_dir: Path, data_root: Path) -> dict:
+    """Full lock-free authentication of an evaluation current graph (spec §11, §13).
+
+    Parses and pins current.json, then delegates all retained-commit
+    authentication to ``_authenticate_retained_evaluation_commit`` so pointer
+    verification and lost-pointer recovery share one explicit verifier.
+    """
+    pointer_path = dataset_dir / "current.json"
+    if not pointer_path.exists():
+        raise QuantaraError(f"no current.json under {dataset_dir}")
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise QuantaraError(f"invalid current.json: {exc}") from exc
+    if not isinstance(pointer, dict):
+        raise QuantaraError("current.json must be a JSON object")
+
+    expected_pointer_keys = {
+        "publication_protocol_version",
+        "commit",
+        "manifest_sha256",
+    }
+    if set(pointer) != expected_pointer_keys:
+        raise QuantaraError(
+            f"current.json keys must be exactly {sorted(expected_pointer_keys)}, "
+            f"got {sorted(pointer)}"
+        )
+    if pointer["publication_protocol_version"] != "v1":
+        raise QuantaraError("unsupported publication protocol version")
+
+    for label in ("commit", "manifest_sha256"):
+        val = str(pointer[label]).lower()
+        if len(val) != 64 or any(c not in "0123456789abcdef" for c in val):
+            raise QuantaraError(f"pointer {label} is not a sha256 hex digest")
+
+    address = str(pointer["commit"]).lower()
+    commit_dir = dataset_dir / "commits" / address
+
+    verified = _authenticate_retained_evaluation_commit(commit_dir, address, Path(data_root))
+
+    # Pointer-level binding: manifest bytes must match the pinned digest.
+    if verified["manifest_sha256"] != str(pointer["manifest_sha256"]).lower():
+        raise QuantaraError("manifest bytes disagree with current.json manifest_sha256")
+
+    evidence_keys = set(EVALUATION_EVIDENCE_KEYS)
+    return {"commit": address, **{k: v for k, v in verified.items() if k in evidence_keys}}

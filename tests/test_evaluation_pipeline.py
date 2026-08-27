@@ -18,10 +18,13 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from conftest import (
     evaluation_cfg_tree,
     write_evaluation_descriptor,
 )
+from quantara.errors import QuantaraError
 from quantara.evaluation_descriptor import load_evaluation_descriptor
 from quantara.evaluation_pipeline import (
     DISCLAIMER,
@@ -721,6 +724,51 @@ def test_lost_pointer_recovery(tmp_path: Path) -> None:
     assert attempts[1]["artifact_dispositions"].get("lost_pointer_recovered") is True
 
 
+def test_single_invocation_identity_matches_attempt_manifest(tmp_path: Path, monkeypatch) -> None:
+    """Regression (defect 3): exactly ONE attempt ID per non-dry-run invocation.
+    The same sentinel must identify the lock owner, staging paths, cleanup
+    ownership, and the written attempt manifest."""
+    repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
+    from quantara import evaluation_pipeline as ep_module
+
+    sentinel = "20260101T000000Z-00000000-0000-4000-8000-000000000000"
+    monkeypatch.setattr(ep_module, "attempt_id_now", lambda: sentinel)
+
+    code = run_evaluation_pipeline(eval_desc, data_root, repo_root=repo_root)
+    assert code == 0
+
+    eval_dir = (
+        data_root
+
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "evaluation"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+    # No foreign staging directories leaked under another identity
+    assert not any((eval_dir / "commits").glob(".staging-*"))
+
+    attempts_dir = data_root / "attempts" / "evaluation"
+    files = list(attempts_dir.glob("*.json"))
+    assert len(files) == 1
+    # The final attempt manifest filename AND body carry the invocation ID
+    assert files[0].name == f"{sentinel}.json"
+    doc = json.loads(files[0].read_text(encoding="utf-8"))
+    assert doc["attempt_id"] == sentinel
+    # Owner-safe lock release only completes for the true owner attempt ID,
+    # so "cleaned" proves the lock owner was the same invocation identity.
+    disps = doc["artifact_dispositions"]
+    assert disps["lock_acquired"] is True
+    assert disps["lock_released"] is True
+    assert disps["lock_cleanup"] == "cleaned"
+    assert disps["attempt_staged"] is True
+    assert disps["attempt_staging"] == "discarded"
+
+
 def test_lock_contested_blocks(tmp_path: Path) -> None:
     repo_root, data_root, eval_desc = setup_offline_q1_parents(tmp_path)
     eval_dir = (
@@ -789,3 +837,81 @@ def test_parent_pointer_drift_pre_publication_blocks(tmp_path: Path, monkeypatch
     attempt = json.loads(manifests[0].read_text(encoding="utf-8"))
     assert attempt["terminal_result"] == "BLOCKED"
     assert "validation_pointer_drift" in attempt["diagnostics"]
+
+# --- Defect 6: exact Q1 validation-parent period regressions ------------------
+
+
+def _period_rows_with_shift(shift_ms: int) -> list[tuple]:
+    rows = []
+    for i in range(2184):
+        t = 1704067200000 + i * 3600_000 + shift_ms
+        rows.append(
+            (t, Decimal(i % 100 + 1) / Decimal(10000), Decimal(1), Decimal(1), Decimal(1),
+             Decimal((i + 7) % 80 + 1) / Decimal(5000), 1)
+        )
+    return rows
+
+
+def _q1_val_artifact_dict() -> dict:
+    return {"excluded_head_rows": 360, "folds": _build_clean_q1_folds()}
+
+
+def _q1_val_manifest_dict() -> dict:
+    return {"period": {"start": "2024-01-01T00:00:00Z", "end": "2024-04-01T00:00:00Z"}}
+
+
+def test_validation_period_wrong_start_rejected(tmp_path: Path) -> None:
+    """Regression: a validation parent whose tested window starts one hour later
+    than the exact Q1 half-open start must be rejected by the period verifier."""
+    from datetime import UTC, datetime
+
+    from quantara.evaluation_pipeline import verify_validation_parent_q1_period
+
+    with pytest.raises(QuantaraError):
+        verify_validation_parent_q1_period(
+            descriptor_start_utc=datetime(2024, 1, 1, tzinfo=UTC),
+            descriptor_end_utc=datetime(2024, 4, 1, tzinfo=UTC),
+            val_manifest=_q1_val_manifest_dict(),
+            val_artifact=_q1_val_artifact_dict(),
+            # All rows shifted +1h: cadence intact, but the START endpoint moves
+            # one hour later than the required half-open start.
+            research_rows=_period_rows_with_shift(3_600_000),
+        )
+
+
+def test_validation_period_wrong_end_rejected(tmp_path: Path) -> None:
+    """Regression: a validation parent whose tested window extends one hour past
+    the exact Q1 half-open end must be rejected by the period verifier."""
+    from datetime import UTC, datetime
+
+    from quantara.evaluation_pipeline import verify_validation_parent_q1_period
+
+    rows = _period_rows_with_shift(0)
+    # Extend the final tested row one hour beyond the half-open end.
+    rows[2183] = (rows[2183][0] + 3_600_000,) + rows[2183][1:]
+    with pytest.raises(QuantaraError):
+        verify_validation_parent_q1_period(
+            descriptor_start_utc=datetime(2024, 1, 1, tzinfo=UTC),
+            descriptor_end_utc=datetime(2024, 4, 1, tzinfo=UTC),
+            val_manifest=_q1_val_manifest_dict(),
+            val_artifact=_q1_val_artifact_dict(),
+            research_rows=rows,
+        )
+
+
+def test_validation_period_wrong_manifest_period_rejected(tmp_path: Path) -> None:
+    """Regression: a validation manifest period that is not the exact Q1
+    half-open window must be rejected."""
+    from datetime import UTC, datetime
+
+    from quantara.evaluation_pipeline import verify_validation_parent_q1_period
+
+    bad_manifest = {"period": {"start": "2024-01-01T00:00:00Z", "end": "2024-02-01T00:00:00Z"}}
+    with pytest.raises(QuantaraError):
+        verify_validation_parent_q1_period(
+            descriptor_start_utc=datetime(2024, 1, 1, tzinfo=UTC),
+            descriptor_end_utc=datetime(2024, 4, 1, tzinfo=UTC),
+            val_manifest=bad_manifest,
+            val_artifact=_q1_val_artifact_dict(),
+            research_rows=_period_rows_with_shift(0),
+        )

@@ -276,6 +276,88 @@ def test_ambient_context_mutation_isolation() -> None:
         setcontext(saved)
 
 
+Q18_ZERO_STRING = "0.000000000000000000"
+
+
+def test_quantize_q18_direct_zero_isolated_from_hostile_ambient_context() -> None:
+    """Regression: exact-zero metrics must never touch the mutable ambient
+    Decimal context (prec=1, Emax=1, Emin=-1, Inexact/Rounded trapped)."""
+    from quantara.evaluation_metrics import _quantize_q18
+
+    saved = getcontext().copy()
+    try:
+        _hostile_context()
+        result = _quantize_q18(Decimal("0"))
+        # Ambient context must be untouched and never consulted
+        assert getcontext().prec == 1
+        assert getcontext().Emax == 1
+        assert getcontext().Emin == -1
+    finally:
+        setcontext(saved)
+    assert result == Decimal("0")
+    assert format(result, "f") == Q18_ZERO_STRING
+    assert not result.is_signed()
+
+
+def test_genuine_zero_correlation_survives_hostile_ambient_context() -> None:
+    """Regression: an evaluation whose Pearson numerator is exactly zero must
+    survive a hostile ambient context during computation and quantization,
+    including cross-fold summary rebuilds over stored zero values."""
+    # x = [-1, 0, 1], y = [1, 0, 1] => dx*dy sums to exactly 0
+    rows = [
+        (0, Decimal("-1"), 0, 0, 0, Decimal("1"), 0),
+        (1, Decimal("0"), 0, 0, 0, Decimal("0"), 0),
+        (2, Decimal("1"), 0, 0, 0, Decimal("1"), 0),
+    ]
+    zero_record = {
+        "fold_id": 0,
+        "feature": "f_ret_1",
+        "target": "l_fwdret_24",
+        "valid_pair_count": 72,
+        "pearson_ic": Q18_ZERO_STRING,
+        "spearman_ic": Q18_ZERO_STRING,
+    }
+    another_zero_record = {**zero_record, "fold_id": 1}
+
+    saved = getcontext().copy()
+    try:
+        _hostile_context()
+        res = evaluate_fold_feature(0, "f_ret_1", "l_fwdret_24", (0, 3), rows, 1, 5)
+        summaries = build_evaluation_summaries(
+            [zero_record, another_zero_record], features=["f_ret_1"]
+        )
+        assert getcontext().prec == 1
+    finally:
+        setcontext(saved)
+
+    assert res["pearson_ic"] == Q18_ZERO_STRING
+    # Even-count median of two stored zeros exercises quantization of the
+    # midpoint sum; the equal-weight mean of zeros also quantizes to zero.
+    for summary in summaries:
+        assert summary["median"] == Q18_ZERO_STRING
+        assert summary["equal_weight_mean"] == Q18_ZERO_STRING
+        assert summary["zero_fold_count"] == 2
+
+
+def test_value_rounding_to_zero_isolated_from_hostile_ambient_context() -> None:
+    """Regression: a genuinely nonzero raw value that rounds to zero under the
+    storage quantum must take the same private-context path, not the ambient."""
+    from quantara.evaluation_metrics import _quantize_q18
+
+    # Exactly halfway between 0 and +1e-18: ROUND_HALF_EVEN selects zero.
+    halfway_positive = Decimal("5E-19")
+
+    saved = getcontext().copy()
+    try:
+        _hostile_context()
+        result = _quantize_q18(halfway_positive)
+        assert getcontext().prec == 1
+    finally:
+        setcontext(saved)
+    assert result == Decimal("0")
+    assert format(result, "f") == Q18_ZERO_STRING
+    assert not result.is_signed()
+
 @given(st.lists(st.integers(min_value=-1000, max_value=1000), min_size=1, max_size=50))
 def test_hypothesis_average_ranks_properties(values: list[int]) -> None:
     dec_vals = [Decimal(v) for v in values]

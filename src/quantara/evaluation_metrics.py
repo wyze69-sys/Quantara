@@ -99,10 +99,15 @@ def _sqrt(a: Decimal) -> Decimal:
     return DECIMAL_CONTEXT.sqrt(a)
 
 
+_Q18_ZERO = DECIMAL_CONTEXT.quantize(Decimal(0), STORAGE_QUANTUM)
+
+
 def _quantize_q18(a: Decimal) -> Decimal:
     res = DECIMAL_CONTEXT.quantize(a, STORAGE_QUANTUM)
     if res.is_zero():
-        return Decimal("0").quantize(STORAGE_QUANTUM)
+        # Exact zeros (including values rounded to zero) are normalized through
+        # the private DECIMAL_CONTEXT, never the mutable ambient context.
+        return _Q18_ZERO
     return res
 
 
