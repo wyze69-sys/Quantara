@@ -69,6 +69,18 @@ V2_APPROVED_IDENTITIES: dict[str, str] = {
     **COMMON_APPROVED_IDENTITIES,
 }
 
+V2_YEAR_APPROVED_IDENTITIES: dict[str, str] = {
+    "schema": V2_SCHEMA,
+    "dataset_id": "binance_usdm_btcusdt_klines_1m_2024",
+    **COMMON_APPROVED_IDENTITIES,
+}
+
+V2_IDENTITY_TABLES: tuple[dict[str, str], ...] = (
+    V2_APPROVED_IDENTITIES,
+    V2_YEAR_APPROVED_IDENTITIES,
+)
+
+
 DESCRIPTOR_KEYS = frozenset(APPROVED_IDENTITIES) | {
     "period",
     "source",
@@ -160,9 +172,10 @@ class DatasetDescriptor:
 
     def canonical_semantics(self) -> str:
         """JCS serialization of validated semantics (formatting-independent)."""
-        identities = (
-            APPROVED_IDENTITIES if self.schema == V1_SCHEMA else V2_APPROVED_IDENTITIES
-        )
+        if self.schema == V1_SCHEMA:
+            identities: dict[str, str] = APPROVED_IDENTITIES
+        else:
+            identities = _v2_identity_table_for(self.dataset_id)
         semantics: dict[str, Any] = dict(identities)
         source: dict[str, Any]
         if self.schema == V1_SCHEMA:
@@ -296,6 +309,23 @@ def _validate_allowed_hosts(source: dict[str, Any]) -> tuple[str, ...]:
     return tuple(hosts)
 
 
+def _v2_identity_table_for(dataset_id: Any) -> dict[str, str]:
+    """Return the approved v2 identity table whose dataset_id matches.
+
+    A v2 descriptor must match exactly one approved range identity table
+    (Q1 or the full 2024 calendar year); a dataset_id matching none of
+    them is rejected with the same identity-drift message style.
+    """
+    for table in V2_IDENTITY_TABLES:
+        if dataset_id == table["dataset_id"]:
+            return table
+    _reject(
+        "dataset_id must equal one of the approved v2 range identities: "
+        f"{[table['dataset_id'] for table in V2_IDENTITY_TABLES]!r}"
+    )
+    return V2_IDENTITY_TABLES[0]  # unreachable; _reject raises
+
+
 def load_descriptor(path: Path | str) -> DatasetDescriptor:
     document = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(document, dict):
@@ -303,9 +333,10 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:
     schema = document.get("schema")
     if schema not in (V1_SCHEMA, V2_SCHEMA):
         _reject(f"schema must equal {V1_SCHEMA!r} or {V2_SCHEMA!r}")
-    approved_identities = (
-        APPROVED_IDENTITIES if schema == V1_SCHEMA else V2_APPROVED_IDENTITIES
-    )
+    if schema == V1_SCHEMA:
+        approved_identities = APPROVED_IDENTITIES
+    else:
+        approved_identities = _v2_identity_table_for(document.get("dataset_id"))
     descriptor_keys = DESCRIPTOR_KEYS if schema == V1_SCHEMA else V2_DESCRIPTOR_KEYS
     keys = set(document)
     missing = descriptor_keys - keys

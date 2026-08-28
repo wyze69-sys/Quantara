@@ -196,3 +196,60 @@ def test_v2_rejects_unknown_source_and_top_level_keys(tmp_path: Path) -> None:
                 ),
             )
         )
+
+
+# --- Additive: data slice 010 (full-year 2024 v2 range identity) ----------------
+
+
+VALID_V2_YEAR_DESCRIPTOR_YAML = """\
+schema: quantara.dataset-descriptor/v2
+dataset_id: binance_usdm_btcusdt_klines_1m_2024
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1m
+months: ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", \
+"2024-07", "2024-08", "2024-09", "2024-10", "2024-11", "2024-12"]
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2025-01-01T00:00:00Z"
+source:
+  allowed_hosts: [data.binance.vision]
+schema_version: binance_usdm_kline_1m_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+
+def test_valid_v2_year_descriptor_loads_with_12_months(tmp_path: Path) -> None:
+    descriptor = load_descriptor(_write(tmp_path, VALID_V2_YEAR_DESCRIPTOR_YAML))
+    assert descriptor.dataset_id == "binance_usdm_btcusdt_klines_1m_2024"
+    assert descriptor.months == tuple(f"2024-{month:02d}" for month in range(1, 13))
+    assert descriptor.expected_row_count == 527_040  # leap year: 366 * 1440
+    assert descriptor.start_utc.strftime("%Y-%m-%dT%H:%M:%SZ") == "2024-01-01T00:00:00Z"
+    assert descriptor.end_utc.strftime("%Y-%m-%dT%H:%M:%SZ") == "2025-01-01T00:00:00Z"
+    assert len(descriptor.archive_urls) == 12
+    assert descriptor.archive_urls[0].endswith("BTCUSDT-1m-2024-01.zip")
+    assert descriptor.archive_urls[-1].endswith("BTCUSDT-1m-2024-12.zip")
+    assert descriptor.checksum_urls[-1].endswith("BTCUSDT-1m-2024-12.zip.CHECKSUM")
+    assert descriptor.member_patterns[-1] == r"^BTCUSDT-1m-2024-12\.csv$"
+
+
+def test_v2_year_rejects_unknown_range_dataset_id(tmp_path: Path) -> None:
+    for bad_id in (
+        "binance_usdm_btcusdt_klines_1m_2024_h1",
+        "binance_usdm_btcusdt_klines_1m_2025",
+    ):
+        text = VALID_V2_YEAR_DESCRIPTOR_YAML.replace(
+            "dataset_id: binance_usdm_btcusdt_klines_1m_2024\n",
+            f"dataset_id: {bad_id}\n",
+        )
+        with pytest.raises(DescriptorError, match="dataset_id"):
+            load_descriptor(_write(tmp_path / bad_id, text))
