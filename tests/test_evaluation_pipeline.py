@@ -948,7 +948,8 @@ YEAR_1M_BASE_DESCRIPTOR_YAML = (
     "    - data.binance.vision\n"
     "schema_version: binance_usdm_kline_1m_v1\n"
     "timestamp_semantics: closed_interval_v1\n"
-    "quality_policy_version: \"1\"\n"
+    "quality_policy_version: \"2\"\n"
+    "quality_approval: configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml\n"
     "legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml\n"
 )
 

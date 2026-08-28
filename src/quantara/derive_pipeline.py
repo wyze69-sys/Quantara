@@ -58,6 +58,10 @@ from quantara.publication import (
     write_current,
 )
 from quantara.quality import evaluate_quality
+from quantara.quality_approval import (
+    evaluate_effective_quality,
+    parse_approval_dict,
+)
 
 EXIT_OK = 0
 EXIT_BLOCKED = 2
@@ -369,11 +373,89 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
             "parent quality_policy_version does not match the approved base "
             "descriptor"
         )
-    if manifest["quality_state"] != "PASS":
+
+    parent_policy = str(manifest["quality_policy_version"])
+    parent_approval_record = None
+    if parent_policy == "1":
+        if manifest["quality_state"] != "PASS":
+            raise QuantaraError(
+                f"parent quality state is {manifest['quality_state']!r}; a "
+                "less-than-verified parent is never a derivation input"
+            )
+    elif parent_policy == "2":
+        if manifest["quality_state"] not in ("PASS", "WARN_APPROVED"):
+            raise QuantaraError(
+                f"parent quality state is {manifest['quality_state']!r}; a "
+                "less-than-verified parent is never a derivation input"
+            )
+        if manifest["quality_state"] == "WARN_APPROVED":
+            if manifest.get("quality_raw_state") != "WARN_BLOCKED":
+                raise QuantaraError(
+                    "parent manifest quality_raw_state must be 'WARN_BLOCKED'"
+                )
+            approval_id = manifest.get("quality_approval_record_id")
+            approval_sha = manifest.get("quality_approval_record_sha256")
+            if not approval_id or not approval_sha:
+                raise QuantaraError(
+                    "parent manifest missing quality approval record metadata"
+                )
+            approval_json_path = commit_dir / "quality-approval.json"
+            if not approval_json_path.exists():
+                raise QuantaraError("parent commit missing quality-approval.json")
+            try:
+                approval_doc = json.loads(
+                    approval_json_path.read_text(encoding="utf-8")
+                )
+            except Exception as exc:
+                raise QuantaraError(
+                    f"parent quality-approval.json invalid: {exc}"
+                ) from exc
+            computed_app_sha = sha256_hex(
+                canonicalize(approval_doc).encode("utf-8")
+            )
+            if computed_app_sha != approval_sha:
+                raise QuantaraError(
+                    "parent quality-approval.json self-hash mismatch"
+                )
+            approval_dict_with_sha = dict(approval_doc)
+            approval_dict_with_sha["record_sha256"] = approval_sha
+            parent_approval_record = parse_approval_dict(approval_dict_with_sha)
+            if parent_approval_record.record_id != approval_id:
+                raise QuantaraError("parent quality approval record_id mismatch")
+            if parent_approval_record.dataset_id != base.dataset_id:
+                raise QuantaraError("parent quality approval dataset_id mismatch")
+            if parent_approval_record.canonical_content_hash != commit_hash:
+                raise QuantaraError(
+                    "parent quality approval canonical_content_hash mismatch"
+                )
+            if parent_approval_record.schema_fingerprint != expected_fingerprint:
+                raise QuantaraError(
+                    "parent quality approval schema_fingerprint mismatch"
+                )
+            if parent_approval_record.quality_policy_version != "2":
+                raise QuantaraError(
+                    "parent quality approval policy version mismatch"
+                )
+            expected_sources = (
+                tuple(manifest["local_zip_sha256"])
+                if isinstance(manifest.get("local_zip_sha256"), list)
+                else (manifest.get("local_zip_sha256"),)
+            )
+            if parent_approval_record.source_sha256 != expected_sources:
+                raise QuantaraError(
+                    "parent quality approval source_sha256 mismatch"
+                )
+            if parent_approval_record.quality_identity_sha256 != sha256_hex(
+                manifest["quality_identity"].encode("utf-8")
+            ):
+                raise QuantaraError(
+                    "parent quality approval quality_identity_sha256 mismatch"
+                )
+    else:
         raise QuantaraError(
-            f"parent quality state is {manifest['quality_state']!r}; a "
-            "less-than-verified parent is never a derivation input"
+            f"unsupported parent quality policy version: {parent_policy!r}"
         )
+
     if manifest["canonical_content_hash"] != commit_hash:
         raise QuantaraError(
             "parent manifest canonical_content_hash disagrees with the commit "
@@ -432,7 +514,30 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
         raise QuantaraError(f"parent quality.json not valid JSON: {exc}") from exc
     if not isinstance(quality_doc, dict):
         raise QuantaraError("parent quality.json must be a JSON object")
-    expected_quality_keys = {"state", "policy_version", "identity", "findings"}
+
+    if parent_policy == "1":
+        expected_quality_keys = {"state", "policy_version", "identity", "findings"}
+    elif manifest["quality_state"] == "WARN_APPROVED":
+        expected_quality_keys = {
+            "state",
+            "raw_state",
+            "policy_version",
+            "identity",
+            "identity_sha256",
+            "approval_record_id",
+            "approval_record_sha256",
+            "findings",
+        }
+    else:
+        expected_quality_keys = {
+            "state",
+            "raw_state",
+            "policy_version",
+            "identity",
+            "identity_sha256",
+            "findings",
+        }
+
     if set(quality_doc) != expected_quality_keys:
         raise QuantaraError(
             "parent quality.json keys must be exactly "
@@ -487,23 +592,55 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
         source_order_valid=True,
         expected_count=base.expected_row_count,
     )
-    if fresh_report.state != "PASS":
-        raise QuantaraError(
-            f"fresh parent evaluation is {fresh_report.state}; a less-than-"
-            "PASS parent is never a derivation input"
+    if parent_policy == "1":
+        if fresh_report.state != "PASS":
+            raise QuantaraError(
+                f"fresh parent evaluation is {fresh_report.state}; a less-than-"
+                "PASS parent is never a derivation input"
+            )
+    else:
+        fresh_decision = evaluate_effective_quality(
+            raw_report=fresh_report,
+            quality_policy_version="2",
+            approval_record=parent_approval_record,
+            dataset_id=base.dataset_id,
+            canonical_content_hash=commit_hash,
+            schema_fingerprint=expected_fingerprint,
+            source_sha256=(
+                parent_approval_record.source_sha256
+                if parent_approval_record
+                else None
+            ),
         )
+        if fresh_decision.effective_state not in ("PASS", "WARN_APPROVED"):
+            raise QuantaraError(
+                f"fresh parent evaluation is {fresh_decision.effective_state}; "
+                "a less-than-verified parent is never a derivation input"
+            )
+        if fresh_decision.effective_state != manifest["quality_state"]:
+            raise QuantaraError(
+                f"fresh parent decision {fresh_decision.effective_state!r} "
+                f"disagrees with committed {manifest['quality_state']!r}"
+            )
     if fresh_report.identity() != authenticated_identity:
         raise QuantaraError(
             "freshly evaluated parent quality identity drifts from the "
             "authenticated committed quality evidence"
         )
-    return {
+    res = {
         "commit": commit_hash,
         "canonical_content_hash": commit_hash,
         "parquet_sha256": stored_sha,
         "parquet_size": len(parquet_bytes),
         "parquet_path": object_path,
+        "quality_state": manifest["quality_state"],
     }
+    if "quality_raw_state" in manifest:
+        res["quality_raw_state"] = manifest["quality_raw_state"]
+    if "quality_approval_record_id" in manifest:
+        res["quality_approval_record_id"] = manifest["quality_approval_record_id"]
+        res["quality_approval_record_sha256"] = manifest["quality_approval_record_sha256"]
+    return res
 
 
 class DerivedGraphVerificationFailed(QuantaraError):
@@ -876,15 +1013,23 @@ def run_derivation_pipeline(
             "parent_descriptor_sha256": descriptor_hash(
                 base.canonical_semantics()
             ),
-            "parent_schema_fingerprint": schema_fingerprint(
-                base.schema_version
-            ),
+            "parent_schema_fingerprint": _parent_schema_fingerprint(base),
             "transformation": {
                 "name": descriptor.transformation["name"],
                 "version": descriptor.transformation["version"],
                 "timeframe_ms": descriptor.timeframe_ms,
             },
         }
+        if str(base.quality_policy_version) == "2":
+            lineage["parent_quality_state"] = parent.get("quality_state", "WARN_APPROVED")
+            lineage["parent_quality_raw_state"] = parent.get("quality_raw_state", "WARN_BLOCKED")
+            if "quality_approval_record_id" in parent:
+                lineage["parent_quality_approval_record_id"] = parent[
+                    "quality_approval_record_id"
+                ]
+                lineage["parent_quality_approval_record_sha256"] = parent[
+                    "quality_approval_record_sha256"
+                ]
         identity_evidence = {
             # Derivation input bytes stand where the source ZIP stood in 001.
             "source_sha256": parent["parquet_sha256"],

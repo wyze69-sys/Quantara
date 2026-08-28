@@ -222,9 +222,11 @@ def load_derived_descriptor(path: Path | str) -> DerivedDatasetDescriptor:
                 f"identity field {name} must equal the base descriptor's "
                 f"approved value {getattr(base, name)!r}, got {document[name]!r}"
             )
-    for name in ("timestamp_semantics", "quality_policy_version", "legal_record"):
+    for name in ("timestamp_semantics", "legal_record"):
         if str(document[name]) != getattr(base, name):
             _reject(f"{name} must equal the base descriptor's value")
+    if str(document["quality_policy_version"]) != "1":
+        _reject("quality_policy_version must equal '1'")
 
     period = document["period"]
     if not isinstance(period, dict) or set(period) != {"start", "end"}:

@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 
 import httpx
+import pytest
 
 from conftest import (
     HOUR_MS,
@@ -385,3 +386,341 @@ def test_minimal_parent_graph_via_publication_primitives(tmp_path: Path) -> None
     # Idempotent rerun leaves bytes untouched.
     assert run_derivation_pipeline(descriptor, data_root, repo_root=root) == 0
     assert (dataset_dir / "current.json").read_bytes() == pointer
+
+
+_PARENT_CACHE: dict = {}
+
+
+def _get_parent_cache_data(base):
+    key = (base.dataset_id, base.expected_row_count)
+    if key not in _PARENT_CACHE:
+        from decimal import Decimal
+
+        from quantara.canonical import (
+            CanonicalRow,
+            read_canonical_rows,
+            reconcile_rows,
+            write_canonical_parquet,
+        )
+        from quantara.hashing import canonical_content_hash
+        from quantara.quality import evaluate_quality
+
+        identity = (
+            base.provider,
+            base.market_type,
+            base.instrument_id,
+            base.provider_symbol,
+            base.base_asset,
+            base.quote_asset,
+            base.settlement_asset,
+            base.contract_type,
+            base.interval,
+            base.schema_version,
+        )
+        t_start = 1704067200000
+        canonical_rows = []
+        d_zero = Decimal("0")
+        d_ten = Decimal("10")
+        d_open = Decimal("42000")
+        d_high = Decimal("42100")
+        d_low = Decimal("41900")
+        d_close = Decimal("42050")
+        d_qvol = Decimal("420000")
+
+        n_rows = base.expected_row_count
+        for i in range(n_rows):
+            t = t_start + i * 60_000
+            is_zero = (i < 89)
+            canonical_rows.append(
+                CanonicalRow(
+                    identity=identity,
+                    open_time_ms=t,
+                    close_time_ms=t + 59_999,
+                    nominal_available_ms=t + 60_000,
+                    open=d_open,
+                    high=d_high,
+                    low=d_low,
+                    close=d_close,
+                    base_asset_volume=d_zero if is_zero else d_ten,
+                    quote_asset_volume=d_zero if is_zero else d_qvol,
+                    trade_count=0 if is_zero else 100,
+                    taker_buy_base_volume=d_zero if is_zero else d_ten,
+                    taker_buy_quote_volume=d_zero if is_zero else d_qvol,
+                    source_ignore="0",
+                )
+            )
+
+        import tempfile
+        tmp_pq = Path(tempfile.mkdtemp()) / "canonical.parquet"
+        write_canonical_parquet(canonical_rows, tmp_pq)
+        persisted = read_canonical_rows(tmp_pq)
+        reconcile_rows(canonical_rows, persisted)
+        parquet_bytes = tmp_pq.read_bytes()
+        parquet_sha = sha256_hex(parquet_bytes)
+        tmp_pq.unlink()
+
+        from quantara.derive_pipeline import _parent_schema_fingerprint
+
+        fingerprint = _parent_schema_fingerprint(base)
+        parent_cch = canonical_content_hash(
+            fingerprint, [row.to_content_array() for row in canonical_rows]
+        )
+        report = evaluate_quality(
+            canonical_rows,
+            base,
+            source_order_valid=True,
+            expected_count=base.expected_row_count,
+        )
+        identity_str = report.identity()
+        identity_sha = sha256_hex(identity_str.encode("utf-8"))
+        _PARENT_CACHE[key] = (
+            parquet_bytes,
+            parquet_sha,
+            fingerprint,
+            parent_cch,
+            report,
+            identity_str,
+            identity_sha,
+        )
+    return _PARENT_CACHE[key]
+
+
+def _setup_test_parent_commit(
+    tmp_path: Path,
+    *,
+    policy: str = "2",
+    quality_state: str = "WARN_APPROVED",
+    with_approval: bool = True,
+    corrupt_approval: bool = False,
+    stale_approval: bool = False,
+) -> tuple[Path, Path, object]:
+    from quantara.descriptor import load_descriptor
+    from quantara.hashing import descriptor_hash
+    from quantara.jcs import canonicalize
+    from quantara.manifests import PARSER_VERSION
+    from quantara.publication import put_object
+    from quantara.quality_approval import APPROVAL_SCHEMA, canonical_finding_sha256
+
+    root = derived_cfg_tree(tmp_path)
+    data_root = tmp_path / "data"
+
+    if policy == "2":
+        base_src = Path("configs/datasets/binance-usdm-btcusdt-1m-2024.yaml")
+        base_desc_path = root / "configs" / "datasets" / "binance-usdm-btcusdt-1m-2024.yaml"
+    else:
+        base_src = Path("configs/datasets/binance-usdm-btcusdt-1m-2024-01.yaml")
+        base_desc_path = root / "configs" / "datasets" / "binance-usdm-btcusdt-1m-2024-01.yaml"
+    base_desc_path.write_text(base_src.read_text(encoding="utf-8"), encoding="utf-8")
+    base = load_descriptor(base_desc_path)
+
+    legal_dir = root / "configs" / "legal"
+    legal_dir.mkdir(parents=True, exist_ok=True)
+    rights_text = Path("configs/legal/binance-usdm-provider-rights.v2.yaml").read_text(
+        encoding="utf-8"
+    )
+    (legal_dir / "binance-usdm-provider-rights.v2.yaml").write_text(
+        rights_text, encoding="utf-8"
+    )
+    rights_v1_text = Path("configs/legal/binance-usdm-provider-rights.v1.yaml").read_text(
+        encoding="utf-8"
+    )
+    (legal_dir / "binance-usdm-provider-rights.v1.yaml").write_text(
+        rights_v1_text, encoding="utf-8"
+    )
+
+    (
+        parquet_bytes,
+        parquet_sha,
+        fingerprint,
+        parent_cch,
+        report,
+        identity,
+        identity_sha,
+    ) = _get_parent_cache_data(base)
+
+    put_object(data_root, "normalized", parquet_bytes)
+
+    warn_finding = [f for f in report.findings if f.outcome == "warn"][0]
+    finding_sha = canonical_finding_sha256(warn_finding)
+    source_digests = ["a" * 64 for _ in getattr(base, "months", ["2024-01"])]
+
+    approval_payload = {
+        "schema": APPROVAL_SCHEMA,
+        "record_id": "binance-usdm-btcusdt-1m-2024-zero-volume-v1",
+        "dataset_id": base.dataset_id,
+        "canonical_content_hash": "f" * 64 if stale_approval else parent_cch,
+        "schema_fingerprint": fingerprint,
+        "source_sha256": source_digests,
+        "quality_policy_version": "2",
+        "quality_identity_sha256": identity_sha,
+        "approved_findings": [
+            {
+                "check_id": warn_finding.check_id,
+                "count": warn_finding.count,
+                "canonical_finding_sha256": finding_sha,
+            }
+        ],
+        "approver": "258711354+wyze69-sys@users.noreply.github.com",
+        "decision_time_utc": "2026-08-28T07:07:38Z",
+        "rationale": "test fixture",
+        "scope": "test",
+    }
+    app_sha = (
+        "bad" * 21 + "b"
+        if corrupt_approval
+        else sha256_hex(canonicalize(approval_payload).encode("utf-8"))
+    )
+
+    quality_doc = {
+        "state": quality_state,
+        "raw_state": "WARN_BLOCKED",
+        "policy_version": policy,
+        "identity": identity,
+        "identity_sha256": identity_sha,
+        "findings": [
+            {
+                "check_id": f.check_id,
+                "outcome": f.outcome,
+                "severity": f.severity,
+                "count": f.count,
+                "evidence": f.evidence,
+            }
+            for f in report.findings
+        ],
+    }
+    if policy == "2" and quality_state == "WARN_APPROVED":
+        quality_doc["approval_record_id"] = "binance-usdm-btcusdt-1m-2024-zero-volume-v1"
+        quality_doc["approval_record_sha256"] = app_sha
+
+    from quantara.derive_pipeline import _dataset_dir
+
+    parent_dir = _dataset_dir(data_root, base.provider_symbol, "1m", base.start_utc)
+    manifest_dict = {
+        "dataset_id": base.dataset_id,
+        "instrument_id": base.instrument_id,
+        "schema_version": base.schema_version,
+        "schema_fingerprint": fingerprint,
+        "timestamp_semantics": base.timestamp_semantics,
+        "quality_policy_version": policy,
+        "quality_state": quality_state,
+        "quality_identity": identity,
+        "source_row_count": base.expected_row_count,
+        "canonical_row_count": base.expected_row_count,
+        "canonical_content_hash": parent_cch,
+        "local_zip_sha256": source_digests,
+        "parquet_sha256": parquet_sha,
+        "parquet_size": len(parquet_bytes),
+        "object_refs": [{"kind": "normalized", "sha256": parquet_sha}],
+    }
+    if policy == "2":
+        manifest_dict["quality_raw_state"] = "WARN_BLOCKED"
+        manifest_dict["quality_identity_sha256"] = identity_sha
+        if quality_state == "WARN_APPROVED":
+            manifest_dict["quality_approval_record_id"] = (
+                "binance-usdm-btcusdt-1m-2024-zero-volume-v1"
+            )
+            manifest_dict["quality_approval_record_sha256"] = app_sha
+
+    manifest_bytes = (json.dumps(manifest_dict, indent=2, sort_keys=True) + "\n").encode()
+    content = {
+        "descriptor_sha256": descriptor_hash(base.canonical_semantics()),
+        "schema_fingerprint": fingerprint,
+        "parser_version": PARSER_VERSION,
+        "canonical_content_hash": parent_cch,
+        "quality_identity": identity,
+        "quality_state": quality_state,
+        "object_refs": [{"kind": "normalized", "sha256": parquet_sha}],
+    }
+    files = {
+        "content.json": (json.dumps(content) + "\n").encode(),
+        "manifest.json": manifest_bytes,
+        "quality.json": (json.dumps(quality_doc, indent=2, sort_keys=True) + "\n").encode(),
+    }
+    if with_approval and policy == "2":
+        files["quality-approval.json"] = (
+            json.dumps(approval_payload, indent=2, sort_keys=True) + "\n"
+        ).encode()
+
+    staged = stage_commit(parent_dir, f"manual-{policy}-{quality_state}", files)
+    publish_commit(staged, parent_dir / "commits", parent_cch)
+    write_current(parent_dir, parent_cch, sha256_hex(manifest_bytes))
+
+    return parent_dir, data_root, base
+
+
+def test_verify_parent_authenticates_policy_v2_warn_approved(tmp_path: Path) -> None:
+    from quantara.derive_pipeline import _verify_parent
+
+    parent_dir, data_root, base = _setup_test_parent_commit(
+        tmp_path,
+        policy="2",
+        quality_state="WARN_APPROVED",
+        with_approval=True,
+    )
+    parent_info = _verify_parent(parent_dir, data_root, base)
+    assert parent_info["quality_state"] == "WARN_APPROVED"
+    assert parent_info["quality_raw_state"] == "WARN_BLOCKED"
+    assert (
+        parent_info["quality_approval_record_id"]
+        == "binance-usdm-btcusdt-1m-2024-zero-volume-v1"
+    )
+
+
+def test_verify_parent_rejects_unapproved_warn_blocked(tmp_path: Path) -> None:
+    from quantara.derive_pipeline import _verify_parent
+    from quantara.errors import QuantaraError
+
+    parent_dir, data_root, base = _setup_test_parent_commit(
+        tmp_path,
+        policy="2",
+        quality_state="WARN_BLOCKED",
+        with_approval=False,
+    )
+    with pytest.raises(QuantaraError):
+        _verify_parent(parent_dir, data_root, base)
+
+
+def test_verify_parent_rejects_tampered_approval_self_hash(tmp_path: Path) -> None:
+    from quantara.derive_pipeline import _verify_parent
+    from quantara.errors import QuantaraError
+
+    parent_dir, data_root, base = _setup_test_parent_commit(
+        tmp_path,
+        policy="2",
+        quality_state="WARN_APPROVED",
+        with_approval=True,
+        corrupt_approval=True,
+    )
+    with pytest.raises(QuantaraError, match="self-hash mismatch"):
+        _verify_parent(parent_dir, data_root, base)
+
+
+def test_verify_parent_rejects_stale_approval_canonical_hash(tmp_path: Path) -> None:
+    from quantara.derive_pipeline import _verify_parent
+    from quantara.errors import QuantaraError
+
+    parent_dir, data_root, base = _setup_test_parent_commit(
+        tmp_path,
+        policy="2",
+        quality_state="WARN_APPROVED",
+        with_approval=True,
+        stale_approval=True,
+    )
+    with pytest.raises(QuantaraError, match="canonical_content_hash mismatch"):
+        _verify_parent(parent_dir, data_root, base)
+
+
+def test_verify_parent_rejects_policy_v1_warn_state(tmp_path: Path) -> None:
+    from quantara.derive_pipeline import _verify_parent
+    from quantara.errors import QuantaraError
+
+    parent_dir, data_root, base = _setup_test_parent_commit(
+        tmp_path,
+        policy="1",
+        quality_state="WARN_BLOCKED",
+        with_approval=False,
+    )
+    with pytest.raises(QuantaraError, match="less-than-verified parent"):
+        _verify_parent(parent_dir, data_root, base)
+
+
