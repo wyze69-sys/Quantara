@@ -59,7 +59,10 @@ from quantara.publication import (
 )
 from quantara.quality import evaluate_quality
 from quantara.quality_approval import (
+    EffectiveQualityDecision,
+    QualityApprovalRecord,
     evaluate_effective_quality,
+    load_approval_record,
     parse_approval_dict,
 )
 
@@ -192,6 +195,35 @@ def _quality_payload(report) -> dict:
             for f in report.findings
         ],
     }
+
+
+def _quality_payload_v2(
+    report,
+    effective_decision: EffectiveQualityDecision,
+) -> dict:
+    payload = {
+        "state": effective_decision.effective_state,
+        "raw_state": effective_decision.raw_state,
+        "policy_version": "2",
+        "identity": report.identity(),
+        "identity_sha256": effective_decision.raw_identity_sha256,
+        "findings": [
+            {
+                "check_id": f.check_id,
+                "outcome": f.outcome,
+                "severity": f.severity,
+                "count": f.count,
+                "evidence": f.evidence,
+            }
+            for f in report.findings
+        ],
+    }
+    if effective_decision.approval_record_id is not None:
+        payload["approval_record_id"] = effective_decision.approval_record_id
+        payload["approval_record_sha256"] = (
+            effective_decision.approval_record_sha256
+        )
+    return payload
 
 
 def _resolve_rights(descriptor_path: Path, legal_record: str) -> Path:
@@ -651,6 +683,8 @@ def _authenticate_quality_document(
     commit_dir: Path,
     manifest: dict,
     content_evidence: dict | None = None,
+    descriptor=None,
+    repo_root: Path | None = None,
 ) -> dict:
     """Closure 2.2/2.6: load, shape-check, and authenticate a committed
     quality.json against its own findings and every recorded identity."""
@@ -667,7 +701,14 @@ def _authenticate_quality_document(
         raise QuantaraError(f"quality.json not valid JSON: {exc}") from exc
     if not isinstance(quality_doc, dict):
         raise QuantaraError("quality.json must be a JSON object")
+    policy = str(manifest.get("quality_policy_version", "1"))
     expected_keys = {"state", "policy_version", "identity", "findings"}
+    if policy == "2":
+        expected_keys.update({"raw_state", "identity_sha256"})
+        if quality_doc.get("state") == "WARN_APPROVED":
+            expected_keys.update(
+                {"approval_record_id", "approval_record_sha256"}
+            )
     if set(quality_doc) != expected_keys:
         raise QuantaraError(
             f"quality.json keys must be exactly {sorted(expected_keys)}, "
@@ -713,10 +754,91 @@ def _authenticate_quality_document(
                 "content.json quality identity disagrees with the "
                 "authenticated committed quality evidence"
             )
+    if policy == "2":
+        identity_sha = sha256_hex(authenticated_identity.encode("utf-8"))
+        if quality_doc["identity_sha256"] != identity_sha:
+            raise QuantaraError(
+                "quality identity SHA-256 disagrees with its committed findings"
+            )
+        if manifest.get("quality_raw_state") != quality_doc["raw_state"]:
+            raise QuantaraError(
+                "manifest raw quality state disagrees with quality.json"
+            )
+        if manifest.get("quality_identity_sha256") != identity_sha:
+            raise QuantaraError(
+                "manifest quality identity SHA-256 disagrees with quality.json"
+            )
+        if content_evidence is not None:
+            for key in (
+                "quality_state",
+                "quality_raw_state",
+                "quality_identity_sha256",
+            ):
+                if content_evidence.get(key) != manifest.get(key):
+                    raise QuantaraError(
+                        f"manifest/content disagreement on {key!r}"
+                    )
+        if quality_doc["state"] == "WARN_APPROVED":
+            approval_id = quality_doc["approval_record_id"]
+            approval_sha = quality_doc["approval_record_sha256"]
+            if manifest.get("quality_approval_record_id") != approval_id or (
+                manifest.get("quality_approval_record_sha256") != approval_sha
+            ):
+                raise QuantaraError(
+                    "manifest quality approval metadata disagrees with quality.json"
+                )
+            if content_evidence is not None and (
+                content_evidence.get("quality_approval_record_id") != approval_id
+                or content_evidence.get("quality_approval_record_sha256")
+                != approval_sha
+            ):
+                raise QuantaraError(
+                    "content quality approval metadata disagrees with quality.json"
+                )
+            approval_path = commit_dir / "quality-approval.json"
+            try:
+                approval_doc = json.loads(approval_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise QuantaraError(
+                    f"quality-approval.json missing or invalid: {exc}"
+                ) from exc
+            computed_sha = sha256_hex(canonicalize(approval_doc).encode("utf-8"))
+            if computed_sha != approval_sha:
+                raise QuantaraError("quality-approval.json self-hash mismatch")
+            approval_with_sha = dict(approval_doc)
+            approval_with_sha["record_sha256"] = approval_sha
+            committed_record = parse_approval_dict(approval_with_sha)
+            if committed_record.record_id != approval_id:
+                raise QuantaraError("quality approval record_id mismatch")
+            if committed_record.quality_identity_sha256 != identity_sha:
+                raise QuantaraError("quality approval identity binding mismatch")
+            if descriptor is not None:
+                if descriptor.quality_approval is None:
+                    raise QuantaraError(
+                        "policy-v2 WARN_APPROVED descriptor lacks approval path"
+                    )
+                configured_record = load_approval_record(
+                    descriptor.quality_approval,
+                    repo_root=repo_root,
+                )
+                if configured_record.record_sha256 != committed_record.record_sha256:
+                    raise QuantaraError(
+                        "repository quality approval record drifts from committed evidence"
+                    )
+        elif any(
+            key in quality_doc
+            for key in ("approval_record_id", "approval_record_sha256")
+        ):
+            raise QuantaraError("raw PASS quality must not carry approval metadata")
     return quality_doc
 
 
-def verify_derived_current_graph(dataset_dir: Path, data_root: Path) -> dict:
+def verify_derived_current_graph(
+    dataset_dir: Path,
+    data_root: Path,
+    descriptor=None,
+    repo_root: Path | None = None,
+) -> dict:
     """Closure 2.6: full authentication of a derived current graph.
 
     Enforces strict pointer structure and protocol, 64-hex digests, the
@@ -810,19 +932,81 @@ def verify_derived_current_graph(dataset_dir: Path, data_root: Path) -> dict:
         raise QuantaraError(
             "manifest Parquet SHA-256 disagrees with the object ref"
         )
-    quality_doc = _authenticate_quality_document(commit_dir, manifest, content)
-    # PASS-only policy: an authenticated graph whose committed quality state
-    # (or manifest claim) is anything other than exactly PASS is never a
-    # candidate for VERIFIED_NO_OP.
-    if quality_doc["state"] != "PASS":
+    quality_doc = _authenticate_quality_document(
+        commit_dir,
+        manifest,
+        content,
+        descriptor=descriptor,
+        repo_root=repo_root,
+    )
+    policy = str(manifest.get("quality_policy_version", "1"))
+    permitted_states = {"PASS"} if policy == "1" else {"PASS", "WARN_APPROVED"}
+    if quality_doc["state"] not in permitted_states:
         raise DerivedGraphVerificationFailed(
-            f"derived quality state {quality_doc['state']!r} is not PASS; a "
-            "less-than-verified derived graph is never honored"
+            f"derived quality state {quality_doc['state']!r} is not verified "
+            f"under policy {policy!r}"
         )
-    if manifest.get("quality_state") != "PASS":
+    if manifest.get("quality_state") != quality_doc["state"]:
         raise DerivedGraphVerificationFailed(
-            f"manifest quality state {manifest.get('quality_state')!r} is "
-            "not PASS; a less-than-verified derived graph is never honored"
+            "manifest quality state is not the authenticated derived state"
+        )
+
+    normalized_sha = normalized_refs[0]["sha256"]
+    parquet_path = Path(data_root) / "objects" / "normalized" / "sha256" / normalized_sha
+    try:
+        rows = rows_from_persisted(read_canonical_rows(parquet_path))
+    except (OSError, QuantaraError) as exc:
+        raise DerivedGraphVerificationFailed(
+            f"fresh derived Parquet read failed: {exc}"
+        ) from exc
+    if canonical_content_hash(
+        manifest["schema_fingerprint"],
+        (row.to_content_array() for row in rows),
+    ) != content_cch:
+        raise DerivedGraphVerificationFailed(
+            "freshly read derived rows disagree with canonical content hash"
+        )
+    timeframe_ms = int(lineage["transformation"]["timeframe_ms"])
+    start_ms = (
+        epoch_ms(descriptor.start_utc)
+        if descriptor is not None
+        else (rows[0].open_time_ms if rows else 0)
+    )
+    expected_count = (
+        descriptor.expected_row_count
+        if descriptor is not None
+        else int(manifest["canonical_row_count"])
+    )
+    fresh_report = evaluate_derived_quality(
+        rows,
+        _QualityView(timeframe_ms, start_ms),
+        expected_count=expected_count,
+        reconciliation_ok=True,
+    )
+    if fresh_report.identity() != quality_doc["identity"]:
+        raise DerivedGraphVerificationFailed(
+            "freshly evaluated derived quality identity drifts from committed evidence"
+        )
+
+    approval_record: QualityApprovalRecord | None = None
+    if quality_doc["state"] == "WARN_APPROVED":
+        approval_doc = json.loads(
+            (commit_dir / "quality-approval.json").read_text(encoding="utf-8")
+        )
+        approval_doc["record_sha256"] = quality_doc["approval_record_sha256"]
+        approval_record = parse_approval_dict(approval_doc)
+    fresh_decision = evaluate_effective_quality(
+        raw_report=fresh_report,
+        quality_policy_version=policy,
+        approval_record=approval_record,
+        dataset_id=manifest["dataset_id"],
+        canonical_content_hash=content_cch,
+        schema_fingerprint=manifest["schema_fingerprint"],
+        source_sha256=(content["source_sha256"],),
+    )
+    if fresh_decision.effective_state != quality_doc["state"]:
+        raise DerivedGraphVerificationFailed(
+            "fresh derived effective-quality decision disagrees with committed state"
         )
     return {**content, "commit": address}
 
@@ -969,13 +1153,49 @@ def run_derivation_pipeline(
         )
         parquet_state = "staged_not_published"
 
-        # PASS-only policy: exactly PASS publishes.
-        if report.state != "PASS":
+        fingerprint = schema_fingerprint(descriptor.schema_version)
+        descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
+        content_hash = canonical_content_hash(
+            fingerprint, (row.to_content_array() for row in bars)
+        )
+
+        approval_record: QualityApprovalRecord | None = None
+        try:
+            if descriptor.quality_policy_version == "2" and report.state != "PASS":
+                approval_record = load_approval_record(
+                    descriptor.quality_approval,
+                    repo_root=root,
+                )
+            effective_decision = evaluate_effective_quality(
+                raw_report=report,
+                quality_policy_version=descriptor.quality_policy_version,
+                approval_record=approval_record,
+                dataset_id=descriptor.dataset_id,
+                canonical_content_hash=content_hash,
+                schema_fingerprint=fingerprint,
+                source_sha256=(parent["parquet_sha256"],),
+            )
+        except QuantaraError as exc:
+            print(f"quality approval blocks publication: {exc}", file=sys.stderr)
+            _cleanup_attempt()
+            _write_attempt(
+                data,
+                root,
+                terminal_result="BLOCKED",
+                dispositions=_dispositions(),
+                referenced_commit=None,
+                diagnostics=[getattr(exc, "error_id", "quality_approval_rejected")],
+            )
+            return EXIT_BLOCKED
+
+        if effective_decision.effective_state not in ("PASS", "WARN_APPROVED"):
             failing_checks = [
                 f.check_id for f in report.findings if f.outcome != "pass"
-            ] or [f"quality_state_{report.state}"]
-            print(f"quality state {report.state} blocks publication",
-                  file=sys.stderr)
+            ] or [f"quality_state_{effective_decision.effective_state}"]
+            print(
+                f"quality state {effective_decision.effective_state} blocks publication",
+                file=sys.stderr,
+            )
             _cleanup_attempt()
             _write_attempt(
                 data,
@@ -987,11 +1207,6 @@ def run_derivation_pipeline(
             )
             return EXIT_BLOCKED
 
-        fingerprint = schema_fingerprint(descriptor.schema_version)
-        descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
-        content_hash = canonical_content_hash(
-            fingerprint, (row.to_content_array() for row in bars)
-        )
         parquet_bytes = parquet_path.read_bytes()
         parquet_sha = sha256_hex(parquet_bytes)
         stored_normalized = store_object(data, "normalized", parquet_bytes)
@@ -1041,6 +1256,23 @@ def run_derivation_pipeline(
             "object_refs": object_refs,
             "derived_from": lineage,
         }
+        if descriptor.quality_policy_version == "2":
+            identity_evidence.update(
+                {
+                    "quality_state": effective_decision.effective_state,
+                    "quality_raw_state": effective_decision.raw_state,
+                    "quality_identity_sha256": effective_decision.raw_identity_sha256,
+                }
+            )
+            if approval_record is not None:
+                identity_evidence.update(
+                    {
+                        "quality_approval_record_id": approval_record.record_id,
+                        "quality_approval_record_sha256": (
+                            approval_record.record_sha256
+                        ),
+                    }
+                )
         # Closure: the commit address binds canonical content to the
         # authenticated lineage evidence.
         commit_address = derived_commit_identity(content_hash, lineage)
@@ -1078,10 +1310,28 @@ def run_derivation_pipeline(
                     raise DerivedGraphVerificationFailed(str(exc)) from exc
                 current_commit = parsed_pointer["commit"]
                 existing_dir = derived_dir / "commits" / current_commit
-                if existing_commit_matches(
+                evidence_keys = (
+                    tuple(identity_evidence.keys())
+                    if descriptor.quality_policy_version == "2"
+                    else DERIVED_EVIDENCE_KEYS
+                )
+                matches = existing_commit_matches(
                     data, existing_dir, identity_evidence,
-                    keys=DERIVED_EVIDENCE_KEYS,
-                ):
+                    keys=evidence_keys,
+                )
+                if matches and approval_record is not None:
+                    try:
+                        committed_approval = json.loads(
+                            (existing_dir / "quality-approval.json").read_text(
+                                encoding="utf-8"
+                            )
+                        )
+                        matches = sha256_hex(
+                            canonicalize(committed_approval).encode("utf-8")
+                        ) == approval_record.record_sha256
+                    except (OSError, ValueError):
+                        matches = False
+                if matches:
                     # Truthful milestones for THIS invocation: the retained
                     # graph was fully verified, but nothing was renamed or
                     # repointed by this run.
@@ -1099,15 +1349,15 @@ def run_derivation_pipeline(
                     )
                     return EXIT_OK
 
-        manifest = build_dataset_manifest(
+        manifest_kwargs = dict(
             dataset_id=descriptor.dataset_id,
             instrument_id=descriptor.instrument_id,
             schema_version=descriptor.schema_version,
             schema_fingerprint=fingerprint,
             timestamp_semantics=descriptor.timestamp_semantics,
-            quality_policy_version="1",
+            quality_policy_version=descriptor.quality_policy_version,
             quality_identity=report.identity(),
-            quality_state=report.state,
+            quality_state=effective_decision.effective_state,
             source_row_count=len(minutes),
             canonical_row_count=len(bars),
             canonical_content_hash=content_hash,
@@ -1123,19 +1373,45 @@ def run_derivation_pipeline(
             environment=environment_evidence(root),
             derived_from=lineage,
         )
+        if descriptor.quality_policy_version == "2":
+            manifest_kwargs.update(
+                quality_raw_state=effective_decision.raw_state,
+                quality_identity_sha256=effective_decision.raw_identity_sha256,
+            )
+            if approval_record is not None:
+                manifest_kwargs.update(
+                    quality_approval_record_id=approval_record.record_id,
+                    quality_approval_record_sha256=approval_record.record_sha256,
+                )
+        manifest = build_dataset_manifest(**manifest_kwargs)
         manifest_bytes = (
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"
         ).encode()
         files = {
             "manifest.json": manifest_bytes,
             "quality.json": (
-                json.dumps(_quality_payload(report), indent=2, sort_keys=True)
+                json.dumps(
+                    _quality_payload(report)
+                    if descriptor.quality_policy_version == "1"
+                    else _quality_payload_v2(report, effective_decision),
+                    indent=2,
+                    sort_keys=True,
+                )
                 + "\n"
             ).encode(),
             "content.json": (
                 json.dumps(identity_evidence, indent=2, sort_keys=True) + "\n"
             ).encode(),
         }
+        if approval_record is not None:
+            files["quality-approval.json"] = (
+                json.dumps(
+                    approval_record.canonical_semantics(),
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode()
         staged_commit = stage_commit(derived_dir, attempt_id, files)
         try:
             commit_dir = publish_commit(
@@ -1146,13 +1422,31 @@ def run_derivation_pipeline(
             milestones["commit_renamed"] = True
         except QuantaraError:
             candidate = derived_dir / "commits" / commit_address
-            if not (
+            evidence_keys = (
+                tuple(identity_evidence.keys())
+                if descriptor.quality_policy_version == "2"
+                else DERIVED_EVIDENCE_KEYS
+            )
+            matches = (
                 candidate.is_dir()
                 and existing_commit_matches(
                     data, candidate, identity_evidence,
-                    keys=DERIVED_EVIDENCE_KEYS,
+                    keys=evidence_keys,
                 )
-            ):
+            )
+            if matches and approval_record is not None:
+                try:
+                    committed_approval = json.loads(
+                        (candidate / "quality-approval.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    matches = sha256_hex(
+                        canonicalize(committed_approval).encode("utf-8")
+                    ) == approval_record.record_sha256
+                except (OSError, ValueError):
+                    matches = False
+            if not matches:
                 raise QuantaraError(
                     "commit rename failed and no equivalent commit exists"
                 ) from None

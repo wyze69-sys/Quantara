@@ -37,6 +37,7 @@ from quantara.publication import (
 # Holds the short-lived TemporaryDirectory backing _setup_test_parent_commit
 # (Windows MAX_PATH relief under pytest-xdist; see the comment there).
 _FIXTURE_TMP: tempfile.TemporaryDirectory[str] | None = None
+_DERIVED_V2_FIXTURE_TMP: tempfile.TemporaryDirectory[str] | None = None
 
 # --- Task 4: schema fingerprint parameterization ------------------------------
 
@@ -739,5 +740,454 @@ def test_verify_parent_rejects_policy_v1_warn_state(tmp_path: Path) -> None:
     )
     with pytest.raises(QuantaraError, match="less-than-verified parent"):
         _verify_parent(parent_dir, data_root, base)
+
+
+def test_policy_v2_quality_payload_preserves_raw_warning_and_approval() -> None:
+    from quantara.derive_pipeline import _quality_payload_v2
+    from quantara.derive_quality import DerivedQualityReport, Finding
+    from quantara.quality_approval import EffectiveQualityDecision
+
+    report = DerivedQualityReport(
+        [
+            Finding(
+                check_id="derived_zero_volume_bucket",
+                outcome="warn",
+                severity="warning",
+                count=1,
+                evidence={"occurrences": 1},
+            )
+        ]
+    )
+    decision = EffectiveQualityDecision(
+        effective_state="WARN_APPROVED",
+        raw_state="WARN_BLOCKED",
+        policy_version="2",
+        raw_identity=report.identity(),
+        raw_identity_sha256=sha256_hex(report.identity().encode("utf-8")),
+        approval_record_id="derived-zero-volume-v1",
+        approval_record_sha256="a" * 64,
+    )
+
+    assert _quality_payload_v2(report, decision) == {
+        "state": "WARN_APPROVED",
+        "raw_state": "WARN_BLOCKED",
+        "policy_version": "2",
+        "identity": report.identity(),
+        "identity_sha256": decision.raw_identity_sha256,
+        "approval_record_id": "derived-zero-volume-v1",
+        "approval_record_sha256": "a" * 64,
+        "findings": [
+            {
+                "check_id": "derived_zero_volume_bucket",
+                "outcome": "warn",
+                "severity": "warning",
+                "count": 1,
+                "evidence": {"occurrences": 1},
+            }
+        ],
+    }
+
+
+def _run_warn_approved_derived_fixture(tmp_path: Path, monkeypatch):
+    from dataclasses import replace
+    from decimal import Decimal
+
+    import yaml
+
+    from quantara.aggregation import aggregate_timeframe
+    from quantara.canonical import write_canonical_parquet
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.derive_pipeline import run_derivation_pipeline
+    from quantara.derive_quality import evaluate_derived_quality
+    from quantara.jcs import canonicalize
+    from quantara.quality_approval import APPROVAL_SCHEMA, canonical_finding_sha256
+
+    del tmp_path
+    global _DERIVED_V2_FIXTURE_TMP
+    _DERIVED_V2_FIXTURE_TMP = tempfile.TemporaryDirectory(prefix="qdv2-")
+    fixture_root = Path(_DERIVED_V2_FIXTURE_TMP.name)
+    root = derived_cfg_tree(fixture_root)
+    descriptor_path = write_derived_descriptor(root, "1h")
+    descriptor_doc = yaml.safe_load(descriptor_path.read_text(encoding="utf-8"))
+    approval_rel = "configs/quality/approvals/derived-zero-volume-test.v1.yaml"
+    descriptor_doc["quality_policy_version"] = "2"
+    descriptor_doc["quality_approval"] = approval_rel
+    descriptor_path.write_text(yaml.safe_dump(descriptor_doc), encoding="utf-8")
+    descriptor = load_derived_descriptor(descriptor_path)
+
+    zero = Decimal("0")
+    minutes = build_month_minute_rows()
+    minutes[:60] = [
+        replace(
+            row,
+            base_asset_volume=zero,
+            quote_asset_volume=zero,
+            trade_count=0,
+            taker_buy_base_volume=zero,
+            taker_buy_quote_volume=zero,
+        )
+        for row in minutes[:60]
+    ]
+    parent_path = fixture_root / "parent.parquet"
+    write_canonical_parquet(minutes, parent_path)
+    parent_sha = sha256_hex(parent_path.read_bytes())
+    bars = aggregate_timeframe(
+        minutes, descriptor.identity_tuple(), descriptor.timeframe_ms
+    )
+    view = type(
+        "View",
+        (),
+        {
+            "timeframe_ms": descriptor.timeframe_ms,
+            "start_utc_open_ms": MONTH_OPEN_START,
+        },
+    )()
+    report = evaluate_derived_quality(
+        bars,
+        view,
+        expected_count=descriptor.expected_row_count,
+        reconciliation_ok=True,
+    )
+    warning = [finding for finding in report.findings if finding.outcome == "warn"]
+    assert [finding.check_id for finding in warning] == [
+        "derived_zero_volume_bucket"
+    ]
+    fingerprint = schema_fingerprint(descriptor.schema_version)
+    from quantara.hashing import canonical_content_hash
+
+    content_hash = canonical_content_hash(
+        fingerprint, (row.to_content_array() for row in bars)
+    )
+    approval = {
+        "schema": APPROVAL_SCHEMA,
+        "record_id": "derived-zero-volume-test-v1",
+        "dataset_id": descriptor.dataset_id,
+        "canonical_content_hash": content_hash,
+        "schema_fingerprint": fingerprint,
+        "source_sha256": [parent_sha],
+        "quality_policy_version": "2",
+        "quality_identity_sha256": sha256_hex(report.identity().encode("utf-8")),
+        "approved_findings": [
+            {
+                "check_id": warning[0].check_id,
+                "count": warning[0].count,
+                "canonical_finding_sha256": canonical_finding_sha256(warning[0]),
+            }
+        ],
+        "approver": "test@example.com",
+        "decision_time_utc": "2026-08-28T13:03:32Z",
+        "rationale": "exact test maintenance bucket",
+        "scope": "exact test content only",
+    }
+    approval["record_sha256"] = sha256_hex(
+        canonicalize(approval).encode("utf-8")
+    )
+    approval_path = root / approval_rel
+    approval_path.parent.mkdir(parents=True, exist_ok=True)
+    approval_path.write_text(yaml.safe_dump(approval), encoding="utf-8")
+
+    parent = {
+        "commit": "c" * 64,
+        "canonical_content_hash": "c" * 64,
+        "parquet_sha256": parent_sha,
+        "parquet_size": parent_path.stat().st_size,
+        "parquet_path": parent_path,
+        "quality_state": "PASS",
+    }
+    monkeypatch.setattr("quantara.derive_pipeline._verify_parent", lambda *args: parent)
+    data_root = fixture_root / "data"
+    assert run_derivation_pipeline(
+        descriptor_path, data_root, repo_root=root
+    ) == 0
+    derived_dir = _derived_dataset_dir(data_root, "1h")
+    pointer = json.loads((derived_dir / "current.json").read_text(encoding="utf-8"))
+    commit_dir = derived_dir / "commits" / pointer["commit"]
+    return root, data_root, descriptor_path, derived_dir, commit_dir, approval_path
+
+
+def _rewrite_derived_approval_binding(
+    derived_dir: Path,
+    commit_dir: Path,
+    approval_path: Path,
+    mutate,
+) -> None:
+    import yaml
+
+    from quantara.jcs import canonicalize
+
+    approval_doc = json.loads(
+        (commit_dir / "quality-approval.json").read_text(encoding="utf-8")
+    )
+    mutate(approval_doc)
+    approval_sha = sha256_hex(canonicalize(approval_doc).encode("utf-8"))
+    (commit_dir / "quality-approval.json").write_text(
+        json.dumps(approval_doc, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    repository_doc = {**approval_doc, "record_sha256": approval_sha}
+    approval_path.write_text(yaml.safe_dump(repository_doc), encoding="utf-8")
+    for filename in ("manifest.json", "content.json", "quality.json"):
+        path = commit_dir / filename
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["quality_approval_record_sha256"] = approval_sha
+        if filename == "quality.json":
+            document["approval_record_sha256"] = document.pop(
+                "quality_approval_record_sha256"
+            )
+        path.write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    manifest_sha = sha256_hex((commit_dir / "manifest.json").read_bytes())
+    pointer = json.loads((derived_dir / "current.json").read_text(encoding="utf-8"))
+    pointer["manifest_sha256"] = manifest_sha
+    (derived_dir / "current.json").write_text(
+        json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+
+def test_policy_v2_warn_approved_publishes_verifies_and_no_ops(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.derive_pipeline import run_derivation_pipeline, verify_derived_current_graph
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, _ = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    descriptor = load_derived_descriptor(descriptor_path)
+    manifest = json.loads((commit_dir / "manifest.json").read_text(encoding="utf-8"))
+    quality = json.loads((commit_dir / "quality.json").read_text(encoding="utf-8"))
+    content = json.loads((commit_dir / "content.json").read_text(encoding="utf-8"))
+    assert manifest["quality_state"] == quality["state"] == "WARN_APPROVED"
+    assert manifest["quality_raw_state"] == quality["raw_state"] == "WARN_BLOCKED"
+    assert (commit_dir / "quality-approval.json").is_file()
+    for key in (
+        "quality_state",
+        "quality_raw_state",
+        "quality_identity_sha256",
+        "quality_approval_record_id",
+        "quality_approval_record_sha256",
+    ):
+        assert content[key] == manifest[key]
+    assert verify_derived_current_graph(
+        derived_dir, data_root, descriptor=descriptor, repo_root=root
+    )["commit"] == commit_dir.name
+    pointer_before = (derived_dir / "current.json").read_bytes()
+    assert run_derivation_pipeline(descriptor_path, data_root, repo_root=root) == 0
+    assert (derived_dir / "current.json").read_bytes() == pointer_before
+
+
+def test_policy_v2_raw_pass_publishes_without_consuming_approval(
+    tmp_path: Path,
+) -> None:
+    import yaml
+
+    from quantara.derive_pipeline import run_derivation_pipeline
+
+    root, data_root = _publish_parent_via_slice_001(tmp_path)
+    descriptor_path = write_derived_descriptor(root, "1h")
+    descriptor_doc = yaml.safe_load(descriptor_path.read_text(encoding="utf-8"))
+    descriptor_doc["quality_policy_version"] = "2"
+    descriptor_doc["quality_approval"] = "configs/quality/approvals/not-consumed.yaml"
+    descriptor_path.write_text(yaml.safe_dump(descriptor_doc), encoding="utf-8")
+
+    assert run_derivation_pipeline(descriptor_path, data_root, repo_root=root) == 0
+    derived_dir = _derived_dataset_dir(data_root, "1h")
+    commit = json.loads((derived_dir / "current.json").read_text())["commit"]
+    commit_dir = derived_dir / "commits" / commit
+    manifest = json.loads((commit_dir / "manifest.json").read_text())
+    quality = json.loads((commit_dir / "quality.json").read_text())
+    assert manifest["quality_state"] == quality["state"] == "PASS"
+    assert manifest["quality_raw_state"] == quality["raw_state"] == "PASS"
+    assert not (commit_dir / "quality-approval.json").exists()
+
+
+def test_policy_v2_approval_drift_never_verifies_as_no_op(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import yaml
+
+    from quantara.derive_pipeline import run_derivation_pipeline
+    from quantara.jcs import canonicalize
+
+    root, data_root, descriptor_path, _, _, approval_path = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    approval = yaml.safe_load(approval_path.read_text(encoding="utf-8"))
+    approval["rationale"] = "reviewed semantics drift"
+    semantics = {key: value for key, value in approval.items() if key != "record_sha256"}
+    approval["record_sha256"] = sha256_hex(
+        canonicalize(semantics).encode("utf-8")
+    )
+    approval_path.write_text(yaml.safe_dump(approval), encoding="utf-8")
+    assert run_derivation_pipeline(descriptor_path, data_root, repo_root=root) == 3
+    attempts = sorted((data_root / "attempts").glob("*.json"))
+    assert json.loads(attempts[-1].read_text(encoding="utf-8"))[
+        "terminal_result"
+    ] != "VERIFIED_NO_OP"
+
+
+def test_policy_v2_warning_without_approval_record_blocks(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root, data_root, descriptor_path, _, _, approval_path = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    derived_dir = _derived_dataset_dir(data_root, "1h")
+    (derived_dir / "current.json").unlink()
+    approval_path.unlink()
+    from quantara.derive_pipeline import run_derivation_pipeline
+
+    assert run_derivation_pipeline(descriptor_path, data_root, repo_root=root) == 2
+
+
+def test_derived_verifier_rejects_manifest_only_warn_approved_forgery(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.derive_pipeline import verify_derived_current_graph
+    from quantara.errors import QuantaraError
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, _ = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    (commit_dir / "quality-approval.json").unlink()
+    with pytest.raises(QuantaraError, match="quality-approval.json"):
+        verify_derived_current_graph(
+            derived_dir,
+            data_root,
+            descriptor=load_derived_descriptor(descriptor_path),
+            repo_root=root,
+        )
+
+
+def test_derived_verifier_rejects_tampered_committed_approval(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.derive_pipeline import verify_derived_current_graph
+    from quantara.errors import QuantaraError
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, _ = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    approval_file = commit_dir / "quality-approval.json"
+    approval = json.loads(approval_file.read_text(encoding="utf-8"))
+    approval["rationale"] = "tampered committed rationale"
+    approval_file.write_text(
+        json.dumps(approval, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(QuantaraError, match="self-hash mismatch"):
+        verify_derived_current_graph(
+            derived_dir,
+            data_root,
+            descriptor=load_derived_descriptor(descriptor_path),
+            repo_root=root,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("canonical_content_hash", "0" * 64, "canonical_content_hash"),
+        ("schema_fingerprint", "1" * 64, "schema_fingerprint"),
+        ("source_sha256", ["2" * 64], "source_sha256"),
+        ("quality_identity_sha256", "3" * 64, "identity binding"),
+    ],
+)
+def test_derived_verifier_rejects_stale_approval_bindings(
+    tmp_path: Path, monkeypatch, field: str, value, message: str
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.derive_pipeline import verify_derived_current_graph
+    from quantara.errors import QuantaraError
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, approval_path = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    _rewrite_derived_approval_binding(
+        derived_dir,
+        commit_dir,
+        approval_path,
+        lambda document: document.__setitem__(field, value),
+    )
+    with pytest.raises(QuantaraError, match=message):
+        verify_derived_current_graph(
+            derived_dir,
+            data_root,
+            descriptor=load_derived_descriptor(descriptor_path),
+            repo_root=root,
+        )
+
+
+def test_derived_verifier_rejects_fresh_rederivation_mismatch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.derive_pipeline import verify_derived_current_graph
+    from quantara.derive_quality import DerivedQualityReport, Finding
+    from quantara.errors import QuantaraError
+
+    root, data_root, descriptor_path, derived_dir, _, _ = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    monkeypatch.setattr(
+        "quantara.derive_pipeline.evaluate_derived_quality",
+        lambda *args, **kwargs: DerivedQualityReport(
+            [Finding("derived_zero_volume_bucket", "pass", "warning", 0, {})]
+        ),
+    )
+    with pytest.raises(QuantaraError, match="identity drifts"):
+        verify_derived_current_graph(
+            derived_dir,
+            data_root,
+            descriptor=load_derived_descriptor(descriptor_path),
+            repo_root=root,
+        )
+
+
+@pytest.mark.parametrize("mode", ["partial", "extra"])
+def test_derived_verifier_rejects_partial_or_extra_approval(
+    tmp_path: Path, monkeypatch, mode: str
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.derive_pipeline import verify_derived_current_graph
+    from quantara.errors import QuantaraError
+    from quantara.quality_approval import canonical_finding_sha256
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, approval_path = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+
+    def mutate(document):
+        if mode == "partial":
+            document["approved_findings"] = []
+        else:
+            fake = {
+                "check_id": "zero_volume_candle",
+                "outcome": "warn",
+                "severity": "warning",
+                "count": 1,
+                "evidence": {"occurrences": 1},
+            }
+            document["approved_findings"].append(
+                {
+                    "check_id": fake["check_id"],
+                    "count": fake["count"],
+                    "canonical_finding_sha256": canonical_finding_sha256(fake),
+                }
+            )
+
+    _rewrite_derived_approval_binding(
+        derived_dir, commit_dir, approval_path, mutate
+    )
+    with pytest.raises(QuantaraError):
+        verify_derived_current_graph(
+            derived_dir,
+            data_root,
+            descriptor=load_derived_descriptor(descriptor_path),
+            repo_root=root,
+        )
 
 
