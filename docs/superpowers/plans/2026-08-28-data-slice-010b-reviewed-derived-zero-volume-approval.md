@@ -274,7 +274,7 @@ set -o pipefail && uv lock --check \
   && uv run pytest -m integration -q
 ```
 
-4. Also run:
+Also run:
 
 ```bash
 git diff --check
