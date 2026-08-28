@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -35,6 +34,9 @@ V1_RECORD_PATH = (
 V2_RECORD_PATH = (
     REPO_ROOT / "configs" / "legal" / "binance-usdm-provider-rights.v2.yaml"
 )
+V3_RECORD_PATH = (
+    REPO_ROOT / "configs" / "legal" / "binance-usdm-provider-rights.v3.yaml"
+)
 
 
 def test_v2_rights_record_loads_and_authorizes_analytical_use() -> None:
@@ -66,21 +68,16 @@ def test_permit_matrix_v1_versus_v2() -> None:
         assert v2.permits(operation) is False
 
 
-def test_pending_counsel_state_cannot_unlock_model_training() -> None:
-    v1 = load_rights_record(V1_RECORD_PATH)
-    entry = replace(
-        v1.operations["model_train_internal"],
-        state="OWNER_APPROVED_PENDING_COUNSEL",
-    )
-    laundered = replace(
-        v1,
-        operations={**v1.operations, "model_train_internal": entry},
-    )
-    assert (
-        laundered.operations["model_train_internal"].state
-        == "OWNER_APPROVED_PENDING_COUNSEL"
-    )
-    assert laundered.permits("model_train_internal") is False
+def test_v3_permits_exactly_internal_operations_and_v2_still_refuses_training() -> None:
+    v2 = load_rights_record(V2_RECORD_PATH)
+    v3 = load_rights_record(V3_RECORD_PATH)
+    assert v3.record_id == "binance-usdm-provider-rights.v3"
+    assert v2.permits("model_train_internal") is False
+    for operation in APPROVED_INTERNAL_OPERATIONS:
+        assert v3.permits(operation) is True
+    assert v3.permits("customer_display") is False
+    assert v3.permits("commercial_production_eligible") is False
+    assert v3.permits("raw_redistribution") is False
 
 
 def test_bad_periods_are_rejected(valid_path: Path) -> None:
@@ -186,4 +183,5 @@ def test_approved_internal_operation_names() -> None:
         "retain_raw_internal",
         "normalize_internal",
         "analyze_internal",
+        "model_train_internal",
     )

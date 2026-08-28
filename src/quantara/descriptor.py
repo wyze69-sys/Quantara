@@ -141,6 +141,7 @@ APPROVED_INTERNAL_OPERATIONS = (
     "retain_raw_internal",
     "normalize_internal",
     "analyze_internal",
+    "model_train_internal",
 )
 
 

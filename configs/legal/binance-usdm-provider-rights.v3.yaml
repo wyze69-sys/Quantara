@@ -1,0 +1,62 @@
+schema: quantara.provider-rights/v1
+record_id: binance-usdm-provider-rights.v3
+provider: binance
+reviewer: wyze69-sys
+review_date: 2026-08-26
+# Versioned amendment of binance-usdm-provider-rights.v1: authorizes internal
+# analytical computation over retained artifacts (features/labels lane).
+# Owner risk acceptance pending counsel review; never makes any artifact
+# commercially production-eligible, customer-facing, or redistributable.
+operations:
+  acquire_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Owner-approved internal acquisition pending counsel review."
+    review_date: 2026-08-24
+    reviewer: wyze69-sys
+  retain_raw_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Owner-approved internal raw retention pending counsel review."
+    review_date: 2026-08-24
+    reviewer: wyze69-sys
+  normalize_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Owner-approved internal normalization pending counsel review."
+    review_date: 2026-08-24
+    reviewer: wyze69-sys
+  analyze_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: >-
+      Owner-approved internal analytical computation over already-retained,
+      internally acquired artifacts pending counsel review. Outputs remain
+      private research evidence: no customer display, no redistribution, no
+      commercial production use.
+    review_date: 2026-08-26
+    reviewer: wyze69-sys
+  model_train_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Owner-approved internal model training over already-retained, internally acquired artifacts pending counsel review. Outputs remain private research evidence: no customer display, no redistribution, no commercial production use."
+    review_date: 2026-08-29
+    reviewer: wyze69-sys
+  commercial_production_eligible:
+    state: UNKNOWN
+    source_terms: "Requires verified ALLOWED; never inferable from public URLs."
+    rationale: "Ineligible while commercial-use rights remain unresolved."
+    review_date: 2026-08-24
+    reviewer: wyze69-sys
+  customer_display:
+    state: UNKNOWN
+    source_terms: "Requires verified ALLOWED; pending-counsel status is insufficient."
+    rationale: "No artifact is customer-facing while rights remain unresolved."
+    review_date: 2026-08-24
+    reviewer: wyze69-sys
+  raw_redistribution:
+    state: UNKNOWN
+    source_terms: "Redistribution of Binance market data is not permitted here."
+    rationale: "Raw, normalized, derived, and analytical artifacts stay private."
+    review_date: 2026-08-24
+    reviewer: wyze69-sys
