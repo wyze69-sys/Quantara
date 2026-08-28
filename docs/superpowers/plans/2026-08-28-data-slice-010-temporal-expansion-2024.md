@@ -1,9 +1,20 @@
 # Quantara Data Slice 010 — Temporal Expansion 2024 Full-Year Implementation Plan
 
-**Status:** Proposed implementation plan; awaiting owner review before execution
+**Status:** Complete via Slices 010A and 010B under authenticated policy v2
 **Date:** 2026-08-28
 **Project root:** `D:\PROJECT\Quantara`
 **Sequencing:** Follows Slice 009 (Rust Q18 rendering, pushed `ca68589`). Repeats the proven Slice 005 range-expansion pattern: extend the verified window from 2024-Q1 to the full 2024 calendar year through every layer, reusing the existing v2 multi-month mechanism, fold engine, and evaluation machinery. The only structural work is generalizing the Q1-hardcoded acceptance contracts in the evaluation layer into an approved period-contract table (Q1 stays byte-identical).
+
+**Completion amendment:** the full-year chain is complete without altering
+official rows or hiding evidence. The base lane preserves 89 raw
+`zero_volume_candle` warnings and publishes authenticated `WARN_APPROVED`
+under its exact immutable approval. The derived 1h lane preserves one raw
+`derived_zero_volume_bucket` warning for the 2024-10-28 20:00 UTC maintenance
+hour and publishes authenticated `WARN_APPROVED` under a separate exact
+immutable approval. The 1d, research, validation, and evaluation outputs are
+`PASS`. Any future content, source, identity, count, finding, or approval-record
+drift blocks publication and requires a new human review. January and Q1
+descriptors, pointers, and retained commit trees remain byte-identical.
 
 ## 1. Goal
 

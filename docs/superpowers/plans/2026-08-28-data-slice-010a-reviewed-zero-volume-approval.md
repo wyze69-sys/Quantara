@@ -184,7 +184,15 @@ Manifest and content evidence must both bind the raw/effective states, quality i
 
 ### 5.5 Downstream eligibility
 
-Only the base-to-derived parent verifier needs to accept `WARN_APPROVED`, because derived outputs should evaluate to `PASS`; research, validation, and evaluation continue consuming PASS-only parents.
+**Slice 010B supersession note (2026-08-28):** real full-year evidence
+falsified the assumption that every derived output would evaluate to `PASS`.
+The 1h output contains exactly one genuine `derived_zero_volume_bucket`
+warning for the Binance USD-M maintenance hour. Slice 010B therefore extends
+the same authenticated policy-v2 mechanism narrowly to that exact derived
+content and teaches the research parent verifier to accept its independently
+reproduced `WARN_APPROVED` decision. Research, validation, and evaluation
+outputs themselves remain PASS-only. No other derived warning, content, or
+future dataset is approved.
 
 The derived verifier may accept a base parent when:
 

@@ -260,3 +260,26 @@ is implemented and verified end to end:
   ```bash
   uv run pytest -m integration tests/test_integration_evaluation.py
   ```
+
+## 2024 full-year expansion status
+
+The complete BTCUSDT USD-M 2024 chain is published through the immutable,
+content-addressed integrity protocol: 527,040 one-minute rows, 8,784 one-hour
+bars, 366 one-day bars, 8,784 research rows, 117 anchored walk-forward folds,
+and dual-IC evaluation across 468 fold-feature records.
+
+Two exact, immutable policy-v2 approvals preserve rather than suppress the
+real exchange-maintenance evidence:
+
+- The base lane has raw state `WARN_BLOCKED` for exactly 89 official
+  `zero_volume_candle` rows and effective state `WARN_APPROVED`.
+- The derived 1h lane has raw state `WARN_BLOCKED` for exactly one
+  `derived_zero_volume_bucket` at `2024-10-28T20:00:00Z` and effective state
+  `WARN_APPROVED`.
+- The derived 1d, research, validation, and evaluation outputs remain `PASS`.
+
+Both approvals are bound to exact dataset, content, schema, source, raw-quality
+identity, finding count, and finding digest values. Any drift blocks reuse or
+publication and requires a new human decision; neither warning is converted to
+`PASS`. All artifacts remain private internal-analysis-only and are not approved
+for model training, commercial production, customer display, or redistribution.
