@@ -405,6 +405,14 @@ def _write_year_chain_descriptors_q(root: Path) -> Path:
         "provider: binance\n"
         "instrument_id: binance:usd_m_futures:BTCUSDT:perpetual\n"
     )
+    approvals = root / "configs" / "quality" / "approvals"
+    approvals.mkdir(parents=True, exist_ok=True)
+    app_src = Path("configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml")
+    if app_src.exists():
+        (approvals / "binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml").write_text(
+            app_src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
     datasets = root / "configs" / "datasets"
     datasets.mkdir(parents=True, exist_ok=True)
     (datasets / "binance-usdm-btcusdt-1m-2024.yaml").write_text(
@@ -417,7 +425,12 @@ def _write_year_chain_descriptors_q(root: Path) -> Path:
         f"months: {months}\nperiod:\n  start: \"2024-01-01T00:00:00Z\"\n"
         "  end: \"2025-01-01T00:00:00Z\"\nsource:\n  allowed_hosts:\n"
         "    - data.binance.vision\nschema_version: binance_usdm_kline_1m_v1\n"
-        "timestamp_semantics: closed_interval_v1\n" + qpv + "\n" + legal + "\n",
+        "timestamp_semantics: closed_interval_v1\n"
+        "quality_policy_version: \"2\"\n"
+        "quality_approval: "
+        "configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml\n"
+        + legal
+        + "\n",
         encoding="utf-8",
     )
     (datasets / "binance-usdm-btcusdt-1h-2024-derived.yaml").write_text(
