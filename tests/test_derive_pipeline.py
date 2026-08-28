@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -32,6 +33,10 @@ from quantara.publication import (
     stage_commit,
     write_current,
 )
+
+# Holds the short-lived TemporaryDirectory backing _setup_test_parent_commit
+# (Windows MAX_PATH relief under pytest-xdist; see the comment there).
+_FIXTURE_TMP: tempfile.TemporaryDirectory[str] | None = None
 
 # --- Task 4: schema fingerprint parameterization ------------------------------
 
@@ -494,6 +499,18 @@ def _setup_test_parent_commit(
     corrupt_approval: bool = False,
     stale_approval: bool = False,
 ) -> tuple[Path, Path, object]:
+    # The commit graph nests configs/, data/ and a 64-hex commit directory;
+    # under pytest-xdist the default basetemp grows by "popen-gwN" and the
+    # deepest committed file (quality-approval.json) lands exactly on the
+    # 260-character Windows MAX_PATH limit, where Path.exists() reports False
+    # even though the bytes are on disk (LongPathsEnabled=0 here). Build the
+    # fixture under a short TemporaryDirectory kept alive for the test's
+    # duration (module-level holder, replaced on the next call); assertions
+    # unchanged.
+    global _FIXTURE_TMP
+    _FIXTURE_TMP = tempfile.TemporaryDirectory(prefix="qdx-")
+    fixture_root = Path(_FIXTURE_TMP.name)
+
     from quantara.descriptor import load_descriptor
     from quantara.hashing import descriptor_hash
     from quantara.jcs import canonicalize
@@ -501,8 +518,8 @@ def _setup_test_parent_commit(
     from quantara.publication import put_object
     from quantara.quality_approval import APPROVAL_SCHEMA, canonical_finding_sha256
 
-    root = derived_cfg_tree(tmp_path)
-    data_root = tmp_path / "data"
+    root = derived_cfg_tree(fixture_root)
+    data_root = fixture_root / "data"
 
     if policy == "2":
         base_src = Path("configs/datasets/binance-usdm-btcusdt-1m-2024.yaml")
