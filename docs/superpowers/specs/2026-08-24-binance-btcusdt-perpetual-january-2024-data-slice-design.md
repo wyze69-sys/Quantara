@@ -417,7 +417,7 @@ All hashes use SHA-256 and are labeled with `hash_contract_v1`.
 - Member hash: exact uncompressed CSV member bytes, including header and line endings.
 - Descriptor hash: the validated semantic descriptor serialized as UTF-8 RFC 8785 JSON Canonicalization Scheme (JCS), not the original YAML formatting.
 - Schema fingerprint: the complete ordered logical schema and nullability rules serialized as UTF-8 JCS.
-- Quality identity: ordered quality check IDs, policy version, outcomes, counts, and evidence serialized as UTF-8 JCS; operational timestamps and reviewer display names are excluded.
+- Quality identity: ordered raw quality check IDs, outcomes, severities, counts, and evidence serialized as UTF-8 JCS (the policy-independent raw finding identity); operational timestamps and reviewer display names are excluded. Under policy v2, an effective-decision binding additionally authenticates the policy version, raw-identity SHA-256, effective state, approval record ID, and approval record SHA-256.
 - Canonical-content hash: SHA-256 over the ASCII domain prefix `quantara-canonical-content-v1` followed by one NUL byte, then the lowercase ASCII schema fingerprint, a newline, and one UTF-8 JCS JSON array per canonical row in ascending `open_time_utc` order, each terminated by `\n`.
 
 Canonical row arrays use the exact field order in the schema definition. Timestamps are signed epoch-millisecond JSON integers. Decimal values are JSON strings rendered with exactly 18 fractional digits and no exponent. String values are exact validated strings; identity/configuration strings are restricted to printable ASCII in this slice. Nulls cannot occur because every canonical field is non-null. These rules supply unambiguous row framing and prevent Parquet serialization details from changing logical content identity.
@@ -437,7 +437,7 @@ A deterministic content commit and a run attempt are different records:
 ### 12.3 Idempotency and provider republication
 
 - If the raw ZIP exists and matches the currently retrieved official checksum, it is reused.
-- If the discovered content commit's source hash, descriptor hash, schema fingerprint, parser version, canonical-content hash, quality identity, and object references verify, execution writes a no-op attempt manifest and leaves the commit and pointer unchanged.
+- If the discovered content commit's source hash, descriptor hash, schema fingerprint, parser version, canonical-content hash, quality identity, and object references verify (including committed approval record semantics and effective decision identity under policy v2), execution writes a no-op attempt manifest and leaves the commit and pointer unchanged.
 - A same-name artifact with a different hash is never overwritten.
 - A changed official checksum creates a separate quarantined evidence set and a blocking review event.
 - Partial staged files may be discarded under the explicit recovery policy, but they never become canonical.
@@ -461,7 +461,7 @@ Each committed dataset manifest records:
 - Parser version
 - Schema version and schema fingerprint
 - Timestamp-semantics version
-- Quality-policy version and deterministic quality identity
+- Quality-policy version, deterministic raw quality identity, and under policy v2, effective quality state (`WARN_APPROVED`), raw quality state (`WARN_BLOCKED`), approval record ID, and approval record SHA-256, with canonical `quality-approval.json` preserved in the commit directory
 - Source and canonical row counts
 - Source and canonical temporal boundaries
 - Source ordering state
@@ -497,9 +497,9 @@ Dataset quality uses explicit states:
 - `WARN_APPROVED`: every warning is covered by an immutable approval record under the same quality-policy version.
 - `FAIL`: at least one hard quality rule failed; publication is forbidden.
 
-The first golden slice is accepted only with `PASS`. `WARN_APPROVED` may preserve reviewed evidence but does not satisfy this slice's completion gate unless this specification is formally amended.
+The first golden slice (policy v1) is accepted only with `PASS`. `WARN_APPROVED` may preserve reviewed evidence but does not satisfy this slice's completion gate under policy v1. Under formal amendment Slice 010A (policy v2), `WARN_APPROVED` is an authenticated effective state permitted only when every observed warning matches an immutable, content-bound approval record.
 
-A warning approval record includes the dataset/content identity, finding IDs, evidence hashes, approver identity, UTC decision time, rationale, scope, quality-policy version, and record hash. Changing data, findings, or policy invalidates the approval. Review never mutates the original quality report.
+A warning approval record includes the dataset/content identity, canonical content hash, schema fingerprint, ordered source SHA-256 digests, finding IDs, finding counts, canonical finding JCS SHA-256 hashes, approver identity, UTC decision time, rationale, scope, quality-policy version ("2"), quality-identity SHA-256, and canonical self-hash `record_sha256`. Changing data, findings, or policy invalidates the approval. Review never mutates the original quality report or raw quality identity.
 
 ### 13.4 Legal-use states
 
@@ -551,7 +551,7 @@ Potential warnings include:
 - Nonzero `source_ignore`
 - Non-critical transport metadata differences
 
-For the first golden slice, any warning produces `WARN_BLOCKED` and prevents acceptance. A review record may preserve an approval decision as `WARN_APPROVED`, but this slice still requires `PASS` unless the specification is formally amended. Later quality policies may permit narrowly defined reviewed warnings without changing original evidence.
+For the first golden slice (policy v1), any warning produces `WARN_BLOCKED` and prevents acceptance. A review record may preserve an approval decision as `WARN_APPROVED`, but this slice still requires `PASS` under policy v1. Under policy v2 (Slice 010A amendment), narrowly defined reviewed warnings may produce effective `WARN_APPROVED` through immutable, authenticated approval records without mutating raw evidence or relaxing hard invariants.
 
 ### 14.3 Retries
 
@@ -693,7 +693,7 @@ Tests must prove:
 - Every invocation writes exactly one immutable attempt manifest.
 - A verified rerun writes `VERIFIED_NO_OP` while leaving content commit and `current.json` unchanged.
 - `PASS` permits publication when legal gates permit it.
-- `WARN_BLOCKED`, `WARN_APPROVED`, and `FAIL` do not satisfy this golden-slice acceptance gate.
+- `WARN_BLOCKED`, `WARN_APPROVED`, and `FAIL` do not satisfy this golden-slice (policy v1) acceptance gate; policy v2 permits `WARN_APPROVED` solely through exact immutable approval authentication.
 - `UNKNOWN` or `PROHIBITED` internal legal state blocks its corresponding operation.
 - `OWNER_APPROVED_PENDING_COUNSEL` can permit only the explicitly named internal operation and never makes customer or commercial-production states eligible.
 
@@ -708,7 +708,7 @@ The slice is `COMPLETE` only when:
 - Every source row reconciles with its canonical Parquet representation.
 - Structural checks prove expected count, exact boundaries, continuity, uniqueness, and invariants.
 - Manifest references exact verified artifacts and identities.
-- Quality state is exactly `PASS`; `WARN_BLOCKED`, `WARN_APPROVED`, and `FAIL` do not satisfy the golden-slice gate.
+- Quality state is exactly `PASS` for the golden slice (policy v1); under policy v2, effective `WARN_APPROVED` is acceptable only with complete immutable approval authentication while raw state remains visible.
 - The provider-rights record explicitly permits every internal operation performed by the slice under the state rules in Section 13.4.
 - An equivalent rerun demonstrates idempotency and writes a `VERIFIED_NO_OP` attempt manifest without altering the content commit or pointer.
 - Raw and normalized market data are excluded from Git.
