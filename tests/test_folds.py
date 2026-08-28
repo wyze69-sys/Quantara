@@ -190,3 +190,39 @@ def test_property_5_4_boundary_determinism() -> None:
     partition2 = build_walkforward_folds(n)
 
     assert partition1.to_dict() == partition2.to_dict()
+
+
+# --- Additive: data slice 010 (full-year 2024 acceptance numbers, Task T3) -----
+
+
+def test_acceptance_numbers_year_n_8784() -> None:
+    """Slice 010, plan section 3 and 7: N = 8784 full-year 2024 exact numbers.
+
+    117 folds, 8,424 test rows, 360 excluded head; first tested window
+    (360, 432), last tested window (8712, 8784), first train (0, 336). Every
+    test segment is exactly 72 rows because 8,424 divides evenly by 72.
+    """
+    partition = build_walkforward_folds(8784)
+
+    assert partition.parent_rows == 8784
+    assert partition.excluded_head_rows == 360
+    assert len(partition.folds) == 117
+
+    assert partition.folds[0].test_range == (360, 432)
+    assert partition.folds[0].train_range == (0, 336)
+    assert partition.folds[0].embargo_range == (336, 360)
+    assert partition.folds[-1].test_range == (8712, 8784)
+    assert partition.folds[-1].train_range == (0, 8688)
+
+    test_lengths = [f.test_range[1] - f.test_range[0] for f in partition.folds]
+    assert test_lengths == [72] * 117
+
+    for prev, curr in zip(partition.folds, partition.folds[1:], strict=False):
+        assert curr.test_range[0] == prev.test_range[1]
+
+    assert partition.coverage == {
+        "total_rows": 8784,
+        "fold_count": 117,
+        "test_rows": 8424,
+    }
+    assert partition.excluded_head_rows + partition.coverage["test_rows"] == 8784

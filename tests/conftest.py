@@ -569,3 +569,233 @@ def evaluation_cfg_tree(tmp_path: Path) -> Path:
     write_validation_descriptor(root, "1h")
     write_validation_descriptor(root, "1d")
     return root
+
+
+# --- Additive helpers for data slice 010 (2024 full-year range) ---------------
+
+YEAR_1M_BASE_DESCRIPTOR_YAML = """\
+schema: quantara.dataset-descriptor/v2
+dataset_id: binance_usdm_btcusdt_klines_1m_2024
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1m
+months: ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", \
+"2024-07", "2024-08", "2024-09", "2024-10", "2024-11", "2024-12"]
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2025-01-01T00:00:00Z"
+source:
+  allowed_hosts:
+    - data.binance.vision
+schema_version: binance_usdm_kline_1m_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+YEAR_DERIVED_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.derived-dataset-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: {interval}
+base_dataset_id: binance_usdm_btcusdt_klines_1m_2024
+base_descriptor: configs/datasets/binance-usdm-btcusdt-1m-2024.yaml
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2025-01-01T00:00:00Z"
+transformation:
+  name: multi_timeframe_aggregation
+  version: "1"
+schema_version: binance_usdm_kline_{interval}_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+YEAR_BASE_DESCRIPTOR_NAME = "binance-usdm-btcusdt-1m-2024.yaml"
+
+
+def write_year_derived_descriptor(root: Path, interval: str) -> Path:
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-derived.yaml"
+    )
+    target.write_text(
+        YEAR_DERIVED_DESCRIPTOR_TEMPLATE.format(interval=interval),
+        encoding="utf-8",
+    )
+    return target
+
+
+def year_cfg_tree(tmp_path: Path) -> Path:
+    """Repo-shaped tree with the year v2 base descriptor, 1h/1d derived
+    descriptors, and v1/v2 rights records (data slice 010)."""
+    datasets = tmp_path / "configs" / "datasets"
+    legal = tmp_path / "configs" / "legal"
+    datasets.mkdir(parents=True, exist_ok=True)
+    legal.mkdir(parents=True, exist_ok=True)
+    (datasets / YEAR_BASE_DESCRIPTOR_NAME).write_text(
+        YEAR_1M_BASE_DESCRIPTOR_YAML, encoding="utf-8"
+    )
+    write_year_derived_descriptor(tmp_path, "1h")
+    write_year_derived_descriptor(tmp_path, "1d")
+    (legal / "binance-usdm-provider-rights.v1.yaml").write_text(
+        yaml.safe_dump(rights_yaml_dict()), encoding="utf-8"
+    )
+    (legal / RESEARCH_LEGAL_V2_NAME).write_text(
+        yaml.safe_dump(rights_v2_yaml_dict()), encoding="utf-8"
+    )
+    return tmp_path
+
+
+YEAR_RESEARCH_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.research-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_research_core_v1
+dataset_type: research_table
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_{interval}_2024
+base_descriptor: configs/datasets/binance-usdm-btcusdt-{interval}-2024-derived.yaml
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2025-01-01T00:00:00Z"
+feature_set:
+  name: btcusdt_core_v1
+  version: "1"
+parameters:
+  roc_window: 60
+  vol_window: 20
+  volume_window: 20
+  label_horizon: 24
+schema_version: quantara_research_featureset_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+YEAR_VALIDATION_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.validation-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_validation_wf_v1
+dataset_type: validation_folds
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_{interval}_2024
+parent_descriptor: configs/datasets/{parent_name}
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2025-01-01T00:00:00Z"
+feature_set:
+  name: btcusdt_core_v1
+  version: "1"
+scheme: anchored_walkforward_v1
+fold_set:
+  name: btcusdt_core_v1_wf72_v1
+  version: "1"
+parameters:
+  test_size: 72
+  min_train_size: 336
+schema_version: quantara_validation_folds_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+YEAR_EVALUATION_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.evaluation-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_evaluation_dual_ic_v1
+dataset_type: feature_evaluation
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_{interval}_2024
+parent_descriptor: configs/datasets/{parent_name}
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2025-01-01T00:00:00Z"
+evaluation_set:
+  name: btcusdt_core_v1_dual_ic_v1
+  version: "1"
+features:
+  - f_ret_1
+  - f_roc_60
+  - f_rvol_20
+  - f_volratio_20
+target: l_fwdret_24
+metrics:
+  - pearson_ic
+  - spearman_ic
+schema_version: quantara_feature_evaluation_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
+"""
+
+
+def write_year_research_descriptor(root: Path, interval: str = "1h") -> Path:
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-research-core-v1.yaml"
+    )
+    target.write_text(
+        YEAR_RESEARCH_DESCRIPTOR_TEMPLATE.format(interval=interval),
+        encoding="utf-8",
+    )
+    return target
+
+
+def write_year_validation_descriptor(root: Path, interval: str = "1h") -> Path:
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-validation-wf-v1.yaml"
+    )
+    parent_name = f"binance-usdm-btcusdt-{interval}-2024-research-core-v1.yaml"
+    target.write_text(
+        YEAR_VALIDATION_DESCRIPTOR_TEMPLATE.format(
+            interval=interval, parent_name=parent_name
+        ),
+        encoding="utf-8",
+    )
+    return target
+
+
+def write_year_evaluation_descriptor(root: Path, interval: str = "1h") -> Path:
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-evaluation-dual-ic-v1.yaml"
+    )
+    parent_name = f"binance-usdm-btcusdt-{interval}-2024-validation-wf-v1.yaml"
+    target.write_text(
+        YEAR_EVALUATION_DESCRIPTOR_TEMPLATE.format(
+            interval=interval, parent_name=parent_name
+        ),
+        encoding="utf-8",
+    )
+    return target
+
+
+def year_chain_cfg_tree(tmp_path: Path) -> Path:
+    """Repo-shaped tree with the complete year 1m/1h/1d descriptor chain."""
+    root = year_cfg_tree(tmp_path)
+    write_year_research_descriptor(root, "1h")
+    write_year_validation_descriptor(root, "1h")
+    write_year_evaluation_descriptor(root, "1h")
+    return root
