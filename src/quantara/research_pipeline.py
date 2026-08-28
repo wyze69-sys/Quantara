@@ -61,6 +61,10 @@ from quantara.publication import (
     verify_commit_graph,
     write_current,
 )
+from quantara.quality_approval import (
+    evaluate_effective_quality,
+    load_approval_record,
+)
 from quantara.research_descriptor import (
     UndersizedBaseDataset,
     load_research_descriptor,
@@ -294,7 +298,12 @@ def _resolve_rights(descriptor_path: Path, legal_record: str) -> Path:
     return rights_path
 
 
-def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
+def _verify_parent(
+    parent_dir: Path,
+    data_root: Path,
+    base,
+    repo_root: Path | None = None,
+) -> dict:
     """Full parent authentication before any computation.
 
     The research parent is a derived dataset commit, so authentication uses
@@ -327,7 +336,12 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
 
     # COMMITTED marker, content.json, object hashes, address equation,
     # manifest digest pinning, manifest/content agreement, quality auth+PASS.
-    graph = verify_derived_current_graph(parent_dir, data_root)
+    graph = verify_derived_current_graph(
+        parent_dir,
+        data_root,
+        descriptor=base,
+        repo_root=repo_root,
+    )
 
     commit_dir = parent_dir / "commits" / graph["commit"]
     try:
@@ -390,11 +404,6 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
     fresh_report = evaluate_derived_quality(
         decoded_rows, view, expected_count=base.expected_row_count
     )
-    if fresh_report.state != "PASS":
-        raise QuantaraError(
-            f"fresh parent evaluation is {fresh_report.state}; a less-than-"
-            "PASS parent is never a research input"
-        )
     committed_identity = graph.get("quality_identity")
     if fresh_report.identity() != committed_identity:
         raise QuantaraError(
@@ -402,7 +411,37 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
             "authenticated committed quality evidence"
         )
 
-    return {
+    parent_policy = str(manifest.get("quality_policy_version", "1"))
+    approval_record = None
+    if parent_policy == "2" and fresh_report.state == "WARN_BLOCKED":
+        if base.quality_approval is None:
+            raise QuantaraError(
+                "policy-v2 WARN_APPROVED parent descriptor lacks approval path"
+            )
+        approval_record = load_approval_record(
+            base.quality_approval,
+            repo_root=repo_root,
+        )
+    fresh_decision = evaluate_effective_quality(
+        raw_report=fresh_report,
+        quality_policy_version=parent_policy,
+        approval_record=approval_record,
+        dataset_id=base.dataset_id,
+        canonical_content_hash=manifest["canonical_content_hash"],
+        schema_fingerprint=expected_fingerprint,
+        source_sha256=(graph["source_sha256"],),
+    )
+    if fresh_decision.effective_state not in ("PASS", "WARN_APPROVED"):
+        raise QuantaraError(
+            f"fresh parent decision is {fresh_decision.effective_state}; a "
+            "less-than-verified parent is never a research input"
+        )
+    if fresh_decision.effective_state != manifest.get("quality_state"):
+        raise QuantaraError(
+            "fresh parent effective-quality decision disagrees with committed state"
+        )
+
+    parent = {
         "commit": graph["commit"],
         "canonical_content_hash": manifest["canonical_content_hash"],
         "parquet_sha256": stored_sha,
@@ -410,7 +449,14 @@ def _verify_parent(parent_dir: Path, data_root: Path, base) -> dict:
         "parquet_path": object_path,
         "row_count": len(decoded_rows),
         "quality_identity": committed_identity,
+        "quality_state": fresh_decision.effective_state,
     }
+    if parent_policy == "2":
+        parent["quality_raw_state"] = fresh_decision.raw_state
+        if approval_record is not None:
+            parent["quality_approval_record_id"] = approval_record.record_id
+            parent["quality_approval_record_sha256"] = approval_record.record_sha256
+    return parent
 
 
 def _authenticate_research_quality_document(commit_dir: Path, manifest: dict) -> dict:
@@ -608,7 +654,7 @@ def run_research_pipeline(
 
     # Step 2: the parent must resolve and fully verify — BLOCKED otherwise.
     try:
-        parent = _verify_parent(parent_dir, data, base)
+        parent = _verify_parent(parent_dir, data, base, repo_root=root)
     except (QuantaraError, OSError, ValueError, KeyError) as exc:
         diagnostic = getattr(exc, "error_id", None) or "parent_dataset_unavailable"
         print(f"parent_dataset_unavailable: {exc}", file=sys.stderr)

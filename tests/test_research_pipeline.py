@@ -255,3 +255,207 @@ def test_golden_research_table_equality() -> None:
     fingerprint = research_schema_fingerprint(expected["schema_version"])
     assert fingerprint == expected["fingerprint"]
     assert research_content_hash(fingerprint, rendered) == expected["content_hash"]
+
+
+def test_verify_parent_accepts_authenticated_policy_v2_warn_approved(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.research_pipeline import _verify_parent
+    from test_derive_pipeline import _run_warn_approved_derived_fixture
+
+    root, data_root, descriptor_path, derived_dir, _, _ = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    parent = _verify_parent(
+        derived_dir,
+        data_root,
+        load_derived_descriptor(descriptor_path),
+        repo_root=root,
+    )
+    assert parent["quality_state"] == "WARN_APPROVED"
+    assert parent["quality_raw_state"] == "WARN_BLOCKED"
+
+
+def _assert_research_parent_rejected(
+    root: Path,
+    data_root: Path,
+    descriptor_path: Path,
+    derived_dir: Path,
+) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+    from quantara.errors import QuantaraError
+    from quantara.research_pipeline import _verify_parent
+
+    with pytest.raises(QuantaraError):
+        _verify_parent(
+            derived_dir,
+            data_root,
+            load_derived_descriptor(descriptor_path),
+            repo_root=root,
+        )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["manifest_only", "committed_approval", "repository_approval"],
+)
+def test_verify_parent_rejects_warn_approved_forgery_or_drift(
+    tmp_path: Path, monkeypatch, tamper: str
+) -> None:
+    from quantara.hashing import sha256_hex
+    from quantara.jcs import canonicalize
+    from test_derive_pipeline import _run_warn_approved_derived_fixture
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, approval_path = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    if tamper == "manifest_only":
+        (commit_dir / "quality-approval.json").unlink()
+    elif tamper == "committed_approval":
+        committed = json.loads(
+            (commit_dir / "quality-approval.json").read_text(encoding="utf-8")
+        )
+        committed["rationale"] = "tampered after publication"
+        (commit_dir / "quality-approval.json").write_text(
+            json.dumps(committed, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    else:
+        repository = yaml.safe_load(approval_path.read_text(encoding="utf-8"))
+        repository["rationale"] = "repository drift after publication"
+        semantics = {
+            key: value
+            for key, value in repository.items()
+            if key != "record_sha256"
+        }
+        repository["record_sha256"] = sha256_hex(
+            canonicalize(semantics).encode("utf-8")
+        )
+        approval_path.write_text(yaml.safe_dump(repository), encoding="utf-8")
+    _assert_research_parent_rejected(
+        root, data_root, descriptor_path, derived_dir
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("canonical_content_hash", "0" * 64),
+        ("schema_fingerprint", "1" * 64),
+        ("source_sha256", ["2" * 64]),
+        ("quality_identity_sha256", "3" * 64),
+    ],
+)
+def test_verify_parent_rejects_stale_warn_approved_bindings(
+    tmp_path: Path, monkeypatch, field: str, value
+) -> None:
+    from test_derive_pipeline import (
+        _rewrite_derived_approval_binding,
+        _run_warn_approved_derived_fixture,
+    )
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, approval_path = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    _rewrite_derived_approval_binding(
+        derived_dir,
+        commit_dir,
+        approval_path,
+        lambda document: document.__setitem__(field, value),
+    )
+    _assert_research_parent_rejected(
+        root, data_root, descriptor_path, derived_dir
+    )
+
+
+def test_verify_parent_rejects_fresh_warn_approved_rederivation_mismatch(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quantara.derive_quality import DerivedQualityReport, Finding
+    from test_derive_pipeline import _run_warn_approved_derived_fixture
+
+    root, data_root, descriptor_path, derived_dir, _, _ = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    monkeypatch.setattr(
+        "quantara.research_pipeline.evaluate_derived_quality",
+        lambda *args, **kwargs: DerivedQualityReport(
+            [Finding("derived_zero_volume_bucket", "pass", "warning", 0, {})]
+        ),
+    )
+    _assert_research_parent_rejected(
+        root, data_root, descriptor_path, derived_dir
+    )
+
+
+def test_verify_parent_rejects_policy_v1_warn_blocked(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quantara.hashing import sha256_hex
+    from test_derive_pipeline import _run_warn_approved_derived_fixture
+
+    root, data_root, descriptor_path, derived_dir, commit_dir, _ = (
+        _run_warn_approved_derived_fixture(tmp_path, monkeypatch)
+    )
+    descriptor = yaml.safe_load(descriptor_path.read_text(encoding="utf-8"))
+    descriptor["quality_policy_version"] = "1"
+    descriptor.pop("quality_approval")
+    descriptor_path.write_text(yaml.safe_dump(descriptor), encoding="utf-8")
+    for filename in ("manifest.json", "quality.json", "content.json"):
+        path = commit_dir / filename
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if filename == "manifest.json":
+            document["quality_policy_version"] = "1"
+            document["quality_state"] = "WARN_BLOCKED"
+        elif filename == "quality.json":
+            document["policy_version"] = "1"
+            document["state"] = "WARN_BLOCKED"
+            for key in (
+                "raw_state",
+                "identity_sha256",
+                "approval_record_id",
+                "approval_record_sha256",
+            ):
+                document.pop(key, None)
+        else:
+            for key in (
+                "quality_state",
+                "quality_raw_state",
+                "quality_identity_sha256",
+                "quality_approval_record_id",
+                "quality_approval_record_sha256",
+            ):
+                document.pop(key, None)
+        path.write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    (commit_dir / "quality-approval.json").unlink()
+    pointer = json.loads((derived_dir / "current.json").read_text())
+    pointer["manifest_sha256"] = sha256_hex(
+        (commit_dir / "manifest.json").read_bytes()
+    )
+    (derived_dir / "current.json").write_text(
+        json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    _assert_research_parent_rejected(
+        root, data_root, descriptor_path, derived_dir
+    )
+
+
+def test_verify_parent_accepts_legacy_pass_parent(chain) -> None:
+    from quantara.research_descriptor import load_research_descriptor
+    from quantara.research_pipeline import _parent_klines_dir, _verify_parent
+
+    root, data_root = chain
+    research_descriptor = load_research_descriptor(
+        write_research_descriptor(root, "1h")
+    )
+    base = research_descriptor.base_descriptor
+    parent_dir = _parent_klines_dir(
+        data_root, base.provider_symbol, base.interval, base.start_utc
+    )
+    parent = _verify_parent(parent_dir, data_root, base, repo_root=root)
+    assert parent["quality_state"] == "PASS"
+    assert "quality_raw_state" not in parent
