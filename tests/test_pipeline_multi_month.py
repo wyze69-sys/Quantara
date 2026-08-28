@@ -163,3 +163,4 @@ def test_ordered_month_sets_have_distinct_fingerprints() -> None:
     )
     fingerprints = {schema_fingerprint(months=months) for months in month_sets}
     assert len(fingerprints) == len(month_sets)
+

@@ -1,0 +1,29 @@
+schema: quantara.quality-warning-approval/v1
+record_id: binance-usdm-btcusdt-1m-2024-zero-volume-v1
+dataset_id: binance_usdm_btcusdt_klines_1m_2024
+canonical_content_hash: 28137ac3d5bf2f46156caf0dc188bd33cb392f4d110d8353af759c21b8648db5
+schema_fingerprint: f0d6a8dd92a1a4f1dcf29c4f9222c4ec7daa75a2e648ead6b4bfa453d347724a
+source_sha256:
+  - 21eeac04a76a7a35b10467e5e752fb2f8cff77cdeb57df6b50a23ce8d69bb190
+  - 1407acbf8ad99911bdf582805699b7e85fdbc346dbe12618ce8b6369f0d8058d
+  - 040b8e448e4243072b88b0d9908dfebed91bba943b75f4e831fa5337a2e1dab9
+  - 6a41f002da0c8e3f60bd46c841ea4ed766fb195764ad3b6b10e4f508d29c2eb7
+  - 42de617ed643def54b5a2c3fceb7cd2edec91aafaa01104a097b2ded5c5122d4
+  - 93499da4990fec5471bb0d73c91116e7d20a8b2697d7a4491665d6d1b8e85c85
+  - 97f9cd5104a33828c5c2d8d03a2796d600102ab88737d1c6da515b9609540c3c
+  - f69dbcebfd7108dc97825bd6c35d8d9a51745082f66617cb69de888e867e8e89
+  - 16fe2e13728236bfbd3efee99671612daadeea3b62dfd55d8874feae9faa4946
+  - aa8c79ad120a8d870e23276d1ad5966f99f59bc0a1886ef5927a3808a5efee36
+  - 9c3dad038f4b043ec51d4200f57d15a0a07b3fc32b3ea3dca6a96543b9624941
+  - bfce141d2a152c2b94d85b797fe18ebfa195fa0e6091a7ccc06663ae1309466f
+quality_policy_version: "2"
+quality_identity_sha256: 10e100b458244a3d496666afaf37ef1518da15e8d8503d463abc632eccf343b8
+approved_findings:
+  - check_id: zero_volume_candle
+    count: 89
+    canonical_finding_sha256: 6db969a652860d9fe74f6725e33f7aaad43c9cfe1b35fbeed7bfccecb24bcc68
+approver: 258711354+wyze69-sys@users.noreply.github.com
+decision_time_utc: "2026-08-28T07:07:38Z"
+rationale: official source contains 89 no-trade candles; rows are preserved, all hard invariants pass, and approval is internal-analysis-only.
+scope: exact full-year BTCUSDT USD-M 1m canonical content only; no wildcard or future-data scope.
+record_sha256: 83cdcf816a9e2a5d36e6446acab713ebaa934567be8dfe5524b632e9327da580

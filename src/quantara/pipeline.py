@@ -40,6 +40,7 @@ from quantara.hashing import (
     schema_fingerprint,
     sha256_hex,
 )
+from quantara.jcs import canonicalize
 from quantara.manifests import (
     PARSER_VERSION,
     attempt_id_now,
@@ -58,7 +59,13 @@ from quantara.publication import (
     verify_commit_graph,
     write_current,
 )
-from quantara.quality import evaluate_quality
+from quantara.quality import QualityReport, evaluate_quality
+from quantara.quality_approval import (
+    EffectiveQualityDecision,
+    QualityApprovalRecord,
+    evaluate_effective_quality,
+    load_approval_record,
+)
 
 EXIT_OK = 0
 EXIT_BLOCKED = 2
@@ -113,7 +120,7 @@ def _write_attempt(
         print(f"failed to record attempt manifest: {exc}", file=sys.stderr)
 
 
-def _quality_payload(report) -> dict:
+def _quality_payload(report: QualityReport) -> dict:
     return {
         "state": report.state,
         "policy_version": "1",
@@ -129,6 +136,34 @@ def _quality_payload(report) -> dict:
             for f in report.findings
         ],
     }
+
+
+def _quality_payload_v2(
+    report: QualityReport,
+    effective_decision: EffectiveQualityDecision,
+    approval_record: QualityApprovalRecord | None,
+) -> dict:
+    payload = {
+        "state": effective_decision.effective_state,
+        "raw_state": effective_decision.raw_state,
+        "policy_version": "2",
+        "identity": report.identity(),
+        "identity_sha256": effective_decision.raw_identity_sha256,
+        "findings": [
+            {
+                "check_id": f.check_id,
+                "outcome": f.outcome,
+                "severity": f.severity,
+                "count": f.count,
+                "evidence": f.evidence,
+            }
+            for f in report.findings
+        ],
+    }
+    if approval_record is not None:
+        payload["approval_record_id"] = approval_record.record_id
+        payload["approval_record_sha256"] = approval_record.record_sha256
+    return payload
 
 
 def _month_bounds(month: str) -> tuple[datetime, datetime]:
@@ -368,12 +403,54 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
             source_order_valid=order_ok,
             expected_count=descriptor.expected_row_count,
         )
-        if report.state != "PASS":
-            print(f"quality state {report.state} blocks publication", file=sys.stderr)
+
+        fingerprint = schema_fingerprint(
+            months=descriptor.months if descriptor.schema == V2_SCHEMA else None
+        )
+        descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
+        content_hash = canonical_content_hash(
+            fingerprint, (row.to_content_array() for row in assembled)
+        )
+        source_digests = (
+            [evidence.zip_sha256 for evidence in evidences]
+            if descriptor.schema == V2_SCHEMA
+            else [evidences[0].zip_sha256]
+        )
+
+        approval_record: QualityApprovalRecord | None = None
+        if descriptor.quality_policy_version == "2":
+            if descriptor.quality_approval is not None:
+                approval_record = load_approval_record(
+                    descriptor.quality_approval, repo_root=root
+                )
+            effective_decision = evaluate_effective_quality(
+                raw_report=report,
+                quality_policy_version="2",
+                approval_record=approval_record,
+                dataset_id=descriptor.dataset_id,
+                canonical_content_hash=content_hash,
+                schema_fingerprint=fingerprint,
+                source_sha256=source_digests,
+            )
+        else:
+            effective_decision = evaluate_effective_quality(
+                raw_report=report,
+                quality_policy_version="1",
+            )
+
+        if effective_decision.effective_state not in ("PASS", "WARN_APPROVED"):
+            print(
+                f"quality state {effective_decision.effective_state} blocks publication",
+                file=sys.stderr,
+            )
             _write_attempt(
                 data,
                 root,
-                terminal_result="BLOCKED",
+                terminal_result=(
+                    "BLOCKED"
+                    if effective_decision.effective_state != "FAIL"
+                    else "FAILED"
+                ),
                 dispositions={"zip": "retained", "normalized_parquet": "not_written"},
                 retry_evidence=[],
                 http_statuses=_http_statuses(acquirers),
@@ -381,10 +458,14 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
                 diagnostics=[
                     f.check_id for f in report.findings if f.outcome != "pass"
                 ]
-                or [f"quality_state_{report.state}"],
+                or [f"quality_state_{effective_decision.effective_state}"],
             )
             shutil.rmtree(data / "staging" / attempt_id, ignore_errors=True)
-            return EXIT_BLOCKED
+            return (
+                EXIT_BLOCKED
+                if effective_decision.effective_state != "FAIL"
+                else EXIT_FAILED
+            )
 
         staging = data / "staging" / attempt_id
         parquet_path = staging / "canonical.parquet"
@@ -420,13 +501,6 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         return EXIT_FAILED
 
     # Step 18: content identities.
-    fingerprint = schema_fingerprint(
-        months=descriptor.months if descriptor.schema == V2_SCHEMA else None
-    )
-    descriptor_sha = descriptor_hash(descriptor.canonical_semantics())
-    content_hash = canonical_content_hash(
-        fingerprint, (row.to_content_array() for row in assembled)
-    )
     parquet_bytes = parquet_path.read_bytes()
     parquet_sha = sha256_hex(parquet_bytes)
     normalized_ref = put_object(data, "normalized", parquet_bytes)
@@ -458,6 +532,16 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     }
     if descriptor.schema == V2_SCHEMA:
         identity_evidence["months"] = list(descriptor.months)
+    if descriptor.quality_policy_version == "2" and approval_record is not None:
+        identity_evidence.update(
+            {
+                "quality_state": effective_decision.effective_state,
+                "quality_raw_state": effective_decision.raw_state,
+                "quality_identity_sha256": effective_decision.raw_identity_sha256,
+                "quality_approval_record_id": approval_record.record_id,
+                "quality_approval_record_sha256": approval_record.record_sha256,
+            }
+        )
 
     # Steps 12.3/§16: idempotent rerun — verify the existing commit instead of
     # publishing an identical one. A malformed or non-object pointer behaves
@@ -471,7 +555,35 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         if isinstance(parsed_pointer, dict):
             current_commit = str(parsed_pointer.get("commit", ""))
         commit_dir = dataset_directory / "commits" / current_commit
-        if current_commit and existing_commit_matches(data, commit_dir, identity_evidence):
+        evidence_keys = tuple(identity_evidence.keys())
+        matches = bool(
+            current_commit
+            and existing_commit_matches(
+                data, commit_dir, identity_evidence, keys=evidence_keys
+            )
+        )
+        if (
+            matches
+            and descriptor.quality_policy_version == "2"
+            and approval_record is not None
+        ):
+            approval_file = commit_dir / "quality-approval.json"
+            if not approval_file.exists():
+                matches = False
+            else:
+                try:
+                    committed_approval = json.loads(
+                        approval_file.read_text(encoding="utf-8")
+                    )
+                    committed_sha = sha256_hex(
+                        canonicalize(committed_approval).encode("utf-8")
+                    )
+                    if committed_sha != approval_record.record_sha256:
+                        matches = False
+                except Exception:
+                    matches = False
+
+        if matches:
             _write_attempt(
                 data,
                 root,
@@ -490,7 +602,7 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
             return EXIT_OK
 
     # Steps 19–21: staged evidence, atomic commit publication, pointer.
-    manifest = build_dataset_manifest(
+    manifest_kwargs = dict(
         dataset_id=descriptor.dataset_id,
         instrument_id=descriptor.instrument_id,
         archive_url=(
@@ -543,9 +655,13 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         schema_version=descriptor.schema_version,
         schema_fingerprint=fingerprint,
         timestamp_semantics=descriptor.timestamp_semantics,
-        quality_policy_version="1",
+        quality_policy_version=descriptor.quality_policy_version,
         quality_identity=report.identity(),
-        quality_state=report.state,
+        quality_state=(
+            effective_decision.effective_state
+            if descriptor.quality_policy_version == "2"
+            else report.state
+        ),
         source_row_count=len(assembled),
         canonical_row_count=len(assembled),
         source_order_state="ordered" if order_ok else "sorted_from_unordered",
@@ -559,16 +675,39 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         },
         environment=environment_evidence(root),
     )
+    if descriptor.quality_policy_version == "2" and approval_record is not None:
+        manifest_kwargs.update(
+            quality_raw_state=effective_decision.raw_state,
+            quality_identity_sha256=effective_decision.raw_identity_sha256,
+            quality_approval_record_id=approval_record.record_id,
+            quality_approval_record_sha256=approval_record.record_sha256,
+        )
+    manifest = build_dataset_manifest(**manifest_kwargs)
     manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
     files = {
         "manifest.json": manifest_bytes,
         "quality.json": (
-            json.dumps(_quality_payload(report), indent=2, sort_keys=True) + "\n"
+            json.dumps(
+                _quality_payload(report)
+                if descriptor.quality_policy_version == "1"
+                else _quality_payload_v2(report, effective_decision, approval_record),
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
         ).encode(),
         "content.json": (
             json.dumps(identity_evidence, indent=2, sort_keys=True) + "\n"
         ).encode(),
     }
+    if descriptor.quality_policy_version == "2" and approval_record is not None:
+        files["quality-approval.json"] = (
+            json.dumps(
+                approval_record.canonical_semantics(), indent=2, sort_keys=True
+            )
+            + "\n"
+        ).encode()
+
     staged_commit = stage_commit(dataset_directory, attempt_id, files)
     published_manifest_bytes = manifest_bytes
     try:
@@ -578,15 +717,42 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
     except QuantaraError:
         # Recovery: an equivalent commit already exists (e.g., pointer loss).
         candidate = dataset_directory / "commits" / content_hash
+        evidence_keys = tuple(identity_evidence.keys())
         if not (
             candidate.is_dir()
-            and existing_commit_matches(data, candidate, identity_evidence)
+            and existing_commit_matches(
+                data, candidate, identity_evidence, keys=evidence_keys
+            )
         ):
             print(
                 "publication failed: existing commit differs from current evidence",
                 file=sys.stderr,
             )
             return EXIT_FAILED
+        if (
+            descriptor.quality_policy_version == "2"
+            and approval_record is not None
+        ):
+            app_file = candidate / "quality-approval.json"
+            if not app_file.exists():
+                print(
+                    "publication failed: existing commit missing quality-approval.json",
+                    file=sys.stderr,
+                )
+                return EXIT_FAILED
+            try:
+                cand_app = json.loads(app_file.read_text(encoding="utf-8"))
+                if (
+                    sha256_hex(canonicalize(cand_app).encode("utf-8"))
+                    != approval_record.record_sha256
+                ):
+                    print(
+                        "publication failed: existing quality-approval.json hash mismatch",
+                        file=sys.stderr,
+                    )
+                    return EXIT_FAILED
+            except Exception:
+                return EXIT_FAILED
         commit_dir = candidate
         published_manifest_bytes = (candidate / "manifest.json").read_bytes()
 

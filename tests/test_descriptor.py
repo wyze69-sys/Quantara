@@ -223,7 +223,8 @@ source:
   allowed_hosts: [data.binance.vision]
 schema_version: binance_usdm_kline_1m_v1
 timestamp_semantics: closed_interval_v1
-quality_policy_version: "1"
+quality_policy_version: "2"
+quality_approval: configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml
 legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
 """
 
@@ -235,11 +236,17 @@ def test_valid_v2_year_descriptor_loads_with_12_months(tmp_path: Path) -> None:
     assert descriptor.expected_row_count == 527_040  # leap year: 366 * 1440
     assert descriptor.start_utc.strftime("%Y-%m-%dT%H:%M:%SZ") == "2024-01-01T00:00:00Z"
     assert descriptor.end_utc.strftime("%Y-%m-%dT%H:%M:%SZ") == "2025-01-01T00:00:00Z"
+    assert descriptor.quality_policy_version == "2"
+    assert (
+        descriptor.quality_approval
+        == "configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml"
+    )
     assert len(descriptor.archive_urls) == 12
     assert descriptor.archive_urls[0].endswith("BTCUSDT-1m-2024-01.zip")
     assert descriptor.archive_urls[-1].endswith("BTCUSDT-1m-2024-12.zip")
     assert descriptor.checksum_urls[-1].endswith("BTCUSDT-1m-2024-12.zip.CHECKSUM")
     assert descriptor.member_patterns[-1] == r"^BTCUSDT-1m-2024-12\.csv$"
+    assert "quality_approval" in descriptor.canonical_semantics()
 
 
 def test_v2_year_rejects_unknown_range_dataset_id(tmp_path: Path) -> None:
@@ -253,3 +260,52 @@ def test_v2_year_rejects_unknown_range_dataset_id(tmp_path: Path) -> None:
         )
         with pytest.raises(DescriptorError, match="dataset_id"):
             load_descriptor(_write(tmp_path / bad_id, text))
+
+
+def test_v1_rejects_policy_2_and_quality_approval(valid_path: Path) -> None:
+    text_policy = VALID_DESCRIPTOR_YAML.replace(
+        'quality_policy_version: "1"', 'quality_policy_version: "2"'
+    )
+    with pytest.raises(DescriptorError, match="quality_policy_version"):
+        load_descriptor(_write(valid_path.parent / "bad_policy", text_policy))
+
+    text_approval = VALID_DESCRIPTOR_YAML + "quality_approval: foo.yaml\n"
+    with pytest.raises(DescriptorError, match="unknown descriptor keys"):
+        load_descriptor(_write(valid_path.parent / "bad_approval", text_approval))
+
+
+def test_v2_q1_rejects_policy_2_and_quality_approval(tmp_path: Path) -> None:
+    text_policy = VALID_V2_DESCRIPTOR_YAML.replace(
+        'quality_policy_version: "1"', 'quality_policy_version: "2"'
+    )
+    with pytest.raises(DescriptorError, match="quality_policy_version"):
+        load_descriptor(_write(tmp_path / "bad_q1_policy", text_policy))
+
+    text_approval = VALID_V2_DESCRIPTOR_YAML + "quality_approval: foo.yaml\n"
+    with pytest.raises(DescriptorError, match="unknown descriptor keys"):
+        load_descriptor(_write(tmp_path / "bad_q1_approval", text_approval))
+
+
+def test_v2_year_rejects_policy_1_and_missing_or_bad_approval(tmp_path: Path) -> None:
+    text_policy = VALID_V2_YEAR_DESCRIPTOR_YAML.replace(
+        'quality_policy_version: "2"', 'quality_policy_version: "1"'
+    )
+    with pytest.raises(DescriptorError, match="quality_policy_version"):
+        load_descriptor(_write(tmp_path / "bad_year_policy", text_policy))
+
+    text_missing = (
+        "\n".join(
+            line
+            for line in VALID_V2_YEAR_DESCRIPTOR_YAML.splitlines()
+            if not line.startswith("quality_approval:")
+        )
+        + "\n"
+    )
+    with pytest.raises(DescriptorError, match="missing descriptor keys"):
+        load_descriptor(_write(tmp_path / "missing_year_approval", text_missing))
+
+    text_bad_path = _replace_field(
+        VALID_V2_YEAR_DESCRIPTOR_YAML, "quality_approval", "configs/quality/bad.yaml"
+    )
+    with pytest.raises(DescriptorError, match="quality_approval"):
+        load_descriptor(_write(tmp_path / "bad_year_approval", text_bad_path))

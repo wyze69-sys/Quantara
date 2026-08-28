@@ -94,6 +94,14 @@ V2_DESCRIPTOR_KEYS = frozenset(V2_APPROVED_IDENTITIES) | {
     "quality_policy_version",
     "legal_record",
 }
+V2_YEAR_DESCRIPTOR_KEYS = frozenset(V2_YEAR_APPROVED_IDENTITIES) | {
+    "months",
+    "period",
+    "source",
+    "quality_policy_version",
+    "legal_record",
+    "quality_approval",
+}
 
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+$")
 INTERVAL_PATTERN = re.compile(r"^1m$")
@@ -164,6 +172,7 @@ class DatasetDescriptor:
     timestamp_semantics: str
     quality_policy_version: str
     legal_record: str
+    quality_approval: str | None = None
 
     @property
     def expected_row_count(self) -> int:
@@ -199,6 +208,8 @@ class DatasetDescriptor:
                 "legal_record": self.legal_record,
             }
         )
+        if self.quality_approval is not None:
+            semantics["quality_approval"] = self.quality_approval
         return canonicalize(semantics)
 
 
@@ -335,9 +346,13 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:
         _reject(f"schema must equal {V1_SCHEMA!r} or {V2_SCHEMA!r}")
     if schema == V1_SCHEMA:
         approved_identities = APPROVED_IDENTITIES
+        descriptor_keys = DESCRIPTOR_KEYS
+    elif document.get("dataset_id") == "binance_usdm_btcusdt_klines_1m_2024":
+        approved_identities = V2_YEAR_APPROVED_IDENTITIES
+        descriptor_keys = V2_YEAR_DESCRIPTOR_KEYS
     else:
         approved_identities = _v2_identity_table_for(document.get("dataset_id"))
-    descriptor_keys = DESCRIPTOR_KEYS if schema == V1_SCHEMA else V2_DESCRIPTOR_KEYS
+        descriptor_keys = V2_DESCRIPTOR_KEYS
     keys = set(document)
     missing = descriptor_keys - keys
     if missing:
@@ -401,6 +416,49 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:
     if not isinstance(legal_record, str) or not legal_record:
         _reject("legal_record must be a non-empty relative path string")
 
+    quality_approval: str | None = None
+    if schema == V1_SCHEMA:
+        if quality_policy_version != "1":
+            _reject(
+                f"v1 descriptor requires quality_policy_version '1', got {quality_policy_version!r}"
+            )
+        if "quality_approval" in document:
+            _reject("v1 descriptor must not specify quality_approval")
+    elif document["dataset_id"] == "binance_usdm_btcusdt_klines_1m_2024_q1":
+        if quality_policy_version != "1":
+            _reject(
+                "Q1 v2 descriptor requires quality_policy_version '1', "
+                f"got {quality_policy_version!r}"
+            )
+        if "quality_approval" in document:
+            _reject("Q1 v2 descriptor must not specify quality_approval")
+    elif document["dataset_id"] == "binance_usdm_btcusdt_klines_1m_2024":
+        if quality_policy_version != "2":
+            _reject(
+                "full-year 2024 descriptor requires quality_policy_version '2', "
+                f"got {quality_policy_version!r}"
+            )
+        if "quality_approval" not in document:
+            _reject("full-year 2024 descriptor requires quality_approval path")
+        quality_approval = document["quality_approval"]
+        if (
+            not isinstance(quality_approval, str)
+            or quality_approval
+            != "configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml"
+        ):
+            _reject(
+                "quality_approval must equal approved path "
+                "'configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml'"
+            )
+        from quantara.quality_approval import validate_approval_path
+
+        try:
+            validate_approval_path(quality_approval)
+        except QuantaraError as exc:
+            _reject(f"invalid quality_approval path: {exc}")
+    else:
+        _reject(f"unsupported descriptor combination: {document.get('dataset_id')}")
+
     return DatasetDescriptor(
         schema=document["schema"],
         dataset_id=document["dataset_id"],
@@ -428,6 +486,7 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:
         timestamp_semantics=document["timestamp_semantics"],
         quality_policy_version=quality_policy_version,
         legal_record=legal_record,
+        quality_approval=quality_approval,
     )
 
 
