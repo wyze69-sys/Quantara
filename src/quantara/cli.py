@@ -25,7 +25,8 @@ DERIVED_SCHEMA = "quantara.derived-dataset-descriptor/v1"
 RESEARCH_SCHEMA = "quantara.research-descriptor/v1"
 VALIDATION_SCHEMA = "quantara.validation-descriptor/v1"
 EVALUATION_SCHEMA = "quantara.evaluation-descriptor/v1"
-APPROVED_DATASET_TYPES = ("feature_evaluation",)
+TRAINING_SCHEMA = "quantara.training-descriptor/v1"
+APPROVED_DATASET_TYPES = ("feature_evaluation", "model_training")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,6 +71,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 3
+    if args.dataset_type == "model_training" and schema != TRAINING_SCHEMA:
+        print(
+            f"invalid_descriptor: unrecognized descriptor schema {schema!r} "
+            "for dataset-type model_training",
+            file=sys.stderr,
+        )
+        return 3
 
     if schema in (BASE_SCHEMA, BASE_SCHEMA_V2):
         from quantara.pipeline import run_pipeline
@@ -107,6 +115,14 @@ def main(argv: list[str] | None = None) -> int:
         from quantara.evaluation_pipeline import run_evaluation_pipeline
 
         return run_evaluation_pipeline(
+            descriptor_path=args.descriptor,
+            data_root=args.data_root,
+            dry_run=args.dry_run,
+        )
+    if schema == TRAINING_SCHEMA:
+        from quantara.training_pipeline import run_training_pipeline
+
+        return run_training_pipeline(
             descriptor_path=args.descriptor,
             data_root=args.data_root,
             dry_run=args.dry_run,

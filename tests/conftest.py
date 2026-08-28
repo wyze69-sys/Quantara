@@ -320,6 +320,25 @@ def rights_v2_yaml_dict() -> dict:
     )
 
 
+def rights_v3_yaml_dict() -> dict:
+    """Synthetic-chain rights record with owner-approved private training."""
+    document = rights_yaml(
+        {
+            "acquire_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "retain_raw_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "normalize_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "analyze_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "model_train_internal": op("OWNER_APPROVED_PENDING_COUNSEL"),
+            "commercial_production_eligible": op("UNKNOWN"),
+            "customer_display": op("UNKNOWN"),
+            "raw_redistribution": op("UNKNOWN"),
+        }
+    )
+    document["record_id"] = "binance-usdm-provider-rights.v3"
+    document["review_date"] = "2026-08-29"
+    return document
+
+
 def research_cfg_tree(tmp_path: Path) -> Path:
     """Repo-shaped tree: 1m base + 1h/1d derived descriptors + v1/v2 rights."""
     root = derived_cfg_tree(tmp_path)
@@ -569,6 +588,53 @@ def evaluation_cfg_tree(tmp_path: Path) -> Path:
     write_validation_descriptor(root, "1h")
     write_validation_descriptor(root, "1d")
     return root
+
+
+TRAINING_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.training-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_q1_training_ridge_v1
+dataset_type: model_training
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_q1
+parent_descriptor: configs/datasets/{parent_name}
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2024-04-01T00:00:00Z"
+model: {{ family: ridge_linear, lambda: "1", solver: gauss_elimination_partial_pivot }}
+standardization: train_window_zscore
+baselines: [majority_class_train_window, sign_f_ret_1]
+metrics: [pearson_ic, directional_accuracy, mse]
+features: [f_ret_1, f_roc_60, f_rvol_20, f_volratio_20]
+target: l_fwdret_24
+training_set: {{ name: btcusdt_core_v1_ridge_v1, version: "1" }}
+schema_version: quantara_model_training_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml
+"""
+
+
+def write_training_descriptor(root: Path, interval: str = "1h") -> Path:
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-q1-training-ridge-v1.yaml"
+    )
+    parent_name = f"binance-usdm-btcusdt-{interval}-2024-q1-validation-wf-v1.yaml"
+    target.write_text(
+        TRAINING_DESCRIPTOR_TEMPLATE.format(
+            interval=interval,
+            parent_name=parent_name,
+        ),
+        encoding="utf-8",
+    )
+    legal = root / "configs" / "legal"
+    (legal / "binance-usdm-provider-rights.v3.yaml").write_text(
+        yaml.safe_dump(rights_v3_yaml_dict(), sort_keys=False),
+        encoding="utf-8",
+    )
+    return target
 
 
 # --- Additive helpers for data slice 010 (2024 full-year range) ---------------
