@@ -1,6 +1,7 @@
 """Dual-IC feature evaluation pipeline (data slice 006).
 
-Consumes authenticated Q1 research and validation parents, computes deterministic
+Consumes authenticated research and validation parents for an approved period
+contract (Q1 or full-year 2024, data slice 010), computes deterministic
 Pearson and Spearman information coefficients across out-of-sample walk-forward
 folds, applies PASS-only quality gating, and publishes content-addressed evaluation
 artifacts under exclusive lock ownership with truthful attempt evidence.
@@ -13,6 +14,7 @@ import os
 import shutil
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -70,30 +72,67 @@ from quantara.validation_pipeline import (
 )
 
 __all__ = [
+    "APPROVED_PERIOD_CONTRACTS",
     "DISCLAIMER",
     "EVALUATION_ARTIFACT_SCHEMA",
     "EVALUATION_EVIDENCE_KEYS",
     "EXIT_BLOCKED",
     "EXIT_FAILED",
     "EXIT_OK",
+    "EvaluationPeriodContract",
     "build_evaluation_artifact",
     "evaluation_commit_identity",
+    "period_contract_for",
+    "period_contract_for_period",
     "run_evaluation_pipeline",
     "verify_evaluation_current_graph",
+    "verify_validation_parent_q1_period",
 ]
 
 EXIT_OK = 0
 EXIT_BLOCKED = 2
 EXIT_FAILED = 3
 
-# --- Exact Q1 half-open validation-period contract (requirement 6) ------------
+# --- Approved half-open validation-period contracts (requirement 6) -----------
+# Keyed by the validation parent's exact half-open period. The Q1 contract is
+# byte-frozen from data slice 006; data slice 010 adds the full-year 2024
+# contract. A validation parent matching neither contract blocks.
 
-APPROVED_Q1_PERIOD: dict[str, str] = {
-    "start": "2024-01-01T00:00:00Z",
-    "end": "2024-04-01T00:00:00Z",
-}
-Q1_START_EPOCH_MS = 1704067200000  # 2024-01-01T00:00:00Z inclusive
-Q1_END_EXCLUSIVE_EPOCH_MS = 1711929600000  # 2024-04-01T00:00:00Z exclusive
+
+@dataclass(frozen=True)
+class EvaluationPeriodContract:
+    """One approved evaluation period and its row/fold acceptance contract."""
+
+    label: str
+    window_label: str
+    period: dict[str, str]
+    start_epoch_ms: int
+    end_exclusive_epoch_ms: int
+    expected_parent_rows: int
+    expected_fold_count: int
+
+
+APPROVED_PERIOD_CONTRACTS: tuple[EvaluationPeriodContract, ...] = (
+    EvaluationPeriodContract(
+        label="Q1",
+        window_label="Q1 2024",
+        period={"start": "2024-01-01T00:00:00Z", "end": "2024-04-01T00:00:00Z"},
+        start_epoch_ms=1704067200000,  # 2024-01-01T00:00:00Z inclusive
+        end_exclusive_epoch_ms=1711929600000,  # 2024-04-01T00:00:00Z exclusive
+        expected_parent_rows=2184,
+        expected_fold_count=25,
+    ),
+    EvaluationPeriodContract(
+        label="2024",
+        window_label="2024",
+        period={"start": "2024-01-01T00:00:00Z", "end": "2025-01-01T00:00:00Z"},
+        start_epoch_ms=1704067200000,  # 2024-01-01T00:00:00Z inclusive
+        end_exclusive_epoch_ms=1735689600000,  # 2025-01-01T00:00:00Z exclusive
+        expected_parent_rows=8784,
+        expected_fold_count=117,
+    ),
+)
+
 HOUR_MS = 3_600_000
 _EPOCH_UTC = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -101,6 +140,30 @@ _EPOCH_UTC = datetime(1970, 1, 1, tzinfo=UTC)
 def _epoch_ms(moment: datetime) -> int:
     """Exact integer epoch milliseconds (no binary float arithmetic)."""
     return (moment.astimezone(UTC) - _EPOCH_UTC) // timedelta(milliseconds=1)
+
+
+def period_contract_for(
+    start_epoch_ms: int, end_exclusive_epoch_ms: int
+) -> EvaluationPeriodContract | None:
+    """Select the approved contract for an exact half-open period, if any.
+
+    Each approved period maps to exactly one contract; a parent matching
+    none of them is rejected by every downstream gate.
+    """
+    for contract in APPROVED_PERIOD_CONTRACTS:
+        if (
+            start_epoch_ms == contract.start_epoch_ms
+            and end_exclusive_epoch_ms == contract.end_exclusive_epoch_ms
+        ):
+            return contract
+    return None
+
+
+def period_contract_for_period(
+    start_utc: datetime, end_utc: datetime
+) -> EvaluationPeriodContract | None:
+    """Select the approved contract for a descriptor period, if any."""
+    return period_contract_for(_epoch_ms(start_utc), _epoch_ms(end_utc))
 
 
 def verify_validation_parent_q1_period(
@@ -111,33 +174,40 @@ def verify_validation_parent_q1_period(
     val_artifact: dict,
     research_rows: Sequence[Sequence],
 ) -> None:
-    """Authenticate the validation parent's exact Q1 half-open period and its
-    required timestamp/cadence endpoints against authenticated research rows.
+    """Authenticate the validation parent's exact approved half-open period
+    (Q1 or full-year 2024) and its required timestamp/cadence endpoints
+    against authenticated research rows.
 
     Raises QuantaraError on any mismatch; returns silently on full agreement.
     """
     start_ms = _epoch_ms(descriptor_start_utc)
     end_ms = _epoch_ms(descriptor_end_utc)
-    if start_ms != Q1_START_EPOCH_MS or end_ms != Q1_END_EXCLUSIVE_EPOCH_MS:
+    contract = period_contract_for(start_ms, end_ms)
+    if contract is None:
         raise QuantaraError(
-            "validation parent period is not the exact half-open Q1 2024 window"
+            "validation parent period is not an approved period contract; "
+            "approved periods: "
+            f"{[contract.period for contract in APPROVED_PERIOD_CONTRACTS]!r}"
         )
     if start_ms >= end_ms:
         raise QuantaraError("half-open period must satisfy start < end")
 
     manifest_period = val_manifest.get("period")
-    if manifest_period is not None and manifest_period != APPROVED_Q1_PERIOD:
+    if manifest_period is not None and manifest_period != contract.period:
         raise QuantaraError(
             f"validation parent manifest period {manifest_period!r} is not "
-            f"the approved half-open window {APPROVED_Q1_PERIOD!r}"
+            f"the approved half-open window {contract.period!r}"
         )
 
     excluded_head_rows = val_artifact.get("excluded_head_rows")
     folds = val_artifact.get("folds")
     if not isinstance(excluded_head_rows, int) or isinstance(excluded_head_rows, bool):
         raise QuantaraError("validation artifact lacks integer excluded_head_rows")
-    if not isinstance(folds, list) or len(folds) != 25:
-        raise QuantaraError("validation artifact must contain exactly 25 folds")
+    if not isinstance(folds, list) or len(folds) != contract.expected_fold_count:
+        raise QuantaraError(
+            "validation artifact must contain exactly "
+            f"{contract.expected_fold_count} folds"
+        )
 
     row_count = len(research_rows)
     ordered_ranges = []
@@ -434,6 +504,18 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "invalid_descriptor")
         return EXIT_BLOCKED
 
+    # 1b. Select the approved period contract (Q1 or full-year 2024); any
+    # other half-open period fails closed before parent authentication.
+    contract = period_contract_for_period(descriptor.start_utc, descriptor.end_utc)
+    if contract is None:
+        print(
+            "evaluation period is not an approved period contract; approved: "
+            f"{[approved.period for approved in APPROVED_PERIOD_CONTRACTS]!r}",
+            file=sys.stderr,
+        )
+        _pre_attempt("BLOCKED", "evaluation_period_contract_mismatch")
+        return EXIT_BLOCKED
+
     # 2. Rights check: require analyze_internal
     legal_path = root / descriptor.legal_record
     try:
@@ -500,15 +582,18 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "corrupt_validation_manifest")
         return EXIT_BLOCKED
 
-    # 8. Require Q1 dataset, 2,184 rows, 25 folds, approved fold set, PASS
+    # 8. Require the approved period contract: dataset, rows, fold set, PASS
     val_parent_rows = val_manifest.get("parent_row_count", val_manifest.get("parent_rows"))
     if (
         val_manifest.get("dataset_id") != descriptor.parent_descriptor.dataset_id
-        or val_parent_rows != 2184
+        or val_parent_rows != contract.expected_parent_rows
         or val_manifest.get("quality_state") != "PASS"
         or val_manifest.get("fold_set") != {"name": "btcusdt_core_v1_wf72_v1", "version": "1"}
     ):
-        print("validation manifest does not match required Q1 contract", file=sys.stderr)
+        print(
+            f"validation manifest does not match required {contract.label} contract",
+            file=sys.stderr,
+        )
         _pre_attempt("BLOCKED", "validation_manifest_contract_mismatch")
         return EXIT_BLOCKED
 
@@ -574,8 +659,11 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "invalid_validation_artifact_json")
         return EXIT_BLOCKED
 
-    if len(val_artifact.get("folds", [])) != 25:
-        print("validation artifact does not contain 25 folds", file=sys.stderr)
+    if len(val_artifact.get("folds", [])) != contract.expected_fold_count:
+        print(
+            f"validation artifact does not contain {contract.expected_fold_count} folds",
+            file=sys.stderr,
+        )
         _pre_attempt("BLOCKED", "validation_fold_count_mismatch")
         return EXIT_BLOCKED
 
@@ -691,8 +779,12 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "read_research_rows_failed")
         return EXIT_BLOCKED
 
-    if len(research_rows) != 2184:
-        print(f"expected 2184 research rows, got {len(research_rows)}", file=sys.stderr)
+    if len(research_rows) != contract.expected_parent_rows:
+        print(
+            f"expected {contract.expected_parent_rows} research rows, "
+            f"got {len(research_rows)}",
+            file=sys.stderr,
+        )
         _pre_attempt("BLOCKED", "research_row_count_mismatch")
         return EXIT_BLOCKED
 
@@ -717,18 +809,27 @@ def run_evaluation_pipeline(
         _pre_attempt("BLOCKED", "research_commit_identity_mismatch")
         return EXIT_BLOCKED
 
-    # Exact Q1 period and research timestamp endpoints
-    if research_rows[0][0] != 1704067200000 or research_rows[-1][0] != 1711926000000:
-        print("research timestamp endpoints do not match Q1 2024", file=sys.stderr)
+    # Exact period and research timestamp endpoints from the approved contract
+    if (
+        research_rows[0][0] != contract.start_epoch_ms
+        or research_rows[-1][0] != contract.end_exclusive_epoch_ms - HOUR_MS
+    ):
+        print(
+            f"research timestamp endpoints do not match {contract.window_label}",
+            file=sys.stderr,
+        )
         _pre_attempt("BLOCKED", "research_endpoints_mismatch")
         return EXIT_BLOCKED
 
-    if not all(research_rows[i + 1][0] - research_rows[i][0] == 3600000 for i in range(2183)):
+    if not all(
+        research_rows[i + 1][0] - research_rows[i][0] == 3600000
+        for i in range(len(research_rows) - 1)
+    ):
         print("research rows hourly cadence broken", file=sys.stderr)
         _pre_attempt("BLOCKED", "research_cadence_mismatch")
         return EXIT_BLOCKED
 
-    # Exact Q1 half-open validation-period, timestamp, and cadence endpoints
+    # Exact approved half-open validation-period, timestamp, and cadence endpoints
     try:
         verify_validation_parent_q1_period(
             descriptor_start_utc=descriptor.start_utc,
@@ -738,7 +839,10 @@ def run_evaluation_pipeline(
             research_rows=research_rows,
         )
     except QuantaraError as exc:
-        print(f"validation parent Q1 period authentication failed: {exc}", file=sys.stderr)
+        print(
+            f"validation parent {contract.label} period authentication failed: {exc}",
+            file=sys.stderr,
+        )
         _pre_attempt("BLOCKED", "validation_period_authentication_failed")
         return EXIT_BLOCKED
 

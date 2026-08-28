@@ -915,3 +915,528 @@ def test_validation_period_wrong_manifest_period_rejected(tmp_path: Path) -> Non
             val_artifact=_q1_val_artifact_dict(),
             research_rows=_period_rows_with_shift(0),
         )
+
+
+# --- Additive: data slice 010 (2024 full-year period contract, Task T2) --------
+
+YEAR_START_MS = 1704067200000  # 2024-01-01T00:00:00Z inclusive
+YEAR_END_MS = 1735689600000  # 2025-01-01T00:00:00Z exclusive
+YEAR_ROW_COUNT = 8784  # 366 days * 24 hourly bars (2024 is a leap year)
+YEAR_FOLD_COUNT = 117
+
+YEAR_MONTHS_YAML = "[" + ", ".join(f'"2024-{month:02d}"' for month in range(1, 13)) + "]"
+
+YEAR_1M_BASE_DESCRIPTOR_YAML = (
+    "schema: quantara.dataset-descriptor/v2\n"
+    "dataset_id: binance_usdm_btcusdt_klines_1m_2024\n"
+    "provider: binance\n"
+    "market_type: usd_m_futures\n"
+    "instrument_id: binance:usd_m_futures:BTCUSDT:perpetual\n"
+    "provider_symbol: BTCUSDT\n"
+    "base_asset: BTC\n"
+    "quote_asset: USDT\n"
+    "settlement_asset: USDT\n"
+    "contract_type: perpetual\n"
+    "dataset_type: klines\n"
+    "interval: 1m\n"
+    f"months: {YEAR_MONTHS_YAML}\n"
+    "period:\n"
+    '  start: "2024-01-01T00:00:00Z"\n'
+    '  end: "2025-01-01T00:00:00Z"\n'
+    "source:\n"
+    "  allowed_hosts:\n"
+    "    - data.binance.vision\n"
+    "schema_version: binance_usdm_kline_1m_v1\n"
+    "timestamp_semantics: closed_interval_v1\n"
+    "quality_policy_version: \"1\"\n"
+    "legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml\n"
+)
+
+YEAR_1H_DERIVED_DESCRIPTOR_YAML = (
+    "schema: quantara.derived-dataset-descriptor/v1\n"
+    "dataset_id: binance_usdm_btcusdt_klines_1h_2024\n"
+    "provider: binance\n"
+    "market_type: usd_m_futures\n"
+    "instrument_id: binance:usd_m_futures:BTCUSDT:perpetual\n"
+    "provider_symbol: BTCUSDT\n"
+    "base_asset: BTC\n"
+    "quote_asset: USDT\n"
+    "settlement_asset: USDT\n"
+    "contract_type: perpetual\n"
+    "dataset_type: klines\n"
+    "interval: 1h\n"
+    "base_dataset_id: binance_usdm_btcusdt_klines_1m_2024\n"
+    "base_descriptor: configs/datasets/binance-usdm-btcusdt-1m-2024.yaml\n"
+    "period:\n"
+    '  start: "2024-01-01T00:00:00Z"\n'
+    '  end: "2025-01-01T00:00:00Z"\n'
+    "transformation:\n"
+    "  name: multi_timeframe_aggregation\n"
+    "  version: \"1\"\n"
+    "schema_version: binance_usdm_kline_1h_v1\n"
+    "timestamp_semantics: closed_interval_v1\n"
+    "quality_policy_version: \"1\"\n"
+    "legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml\n"
+)
+
+YEAR_RESEARCH_DESCRIPTOR_YAML = (
+    "schema: quantara.research-descriptor/v1\n"
+    "dataset_id: binance_usdm_btcusdt_klines_1h_2024_research_core_v1\n"
+    "dataset_type: research_table\n"
+    "provider: binance\n"
+    "instrument_id: binance:usd_m_futures:BTCUSDT:perpetual\n"
+    "base_dataset_id: binance_usdm_btcusdt_klines_1h_2024\n"
+    "base_descriptor: configs/datasets/binance-usdm-btcusdt-1h-2024-derived.yaml\n"
+    "period: { start: \"2024-01-01T00:00:00Z\", end: \"2025-01-01T00:00:00Z\" }\n"
+    "feature_set: { name: btcusdt_core_v1, version: \"1\" }\n"
+    "parameters: { roc_window: 60, vol_window: 20, volume_window: 20, label_horizon: 24 }\n"
+    "schema_version: quantara_research_featureset_v1\n"
+    "quality_policy_version: \"1\"\n"
+    "legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml\n"
+)
+
+YEAR_VALIDATION_DESCRIPTOR_YAML = (
+    "schema: quantara.validation-descriptor/v1\n"
+    "dataset_id: binance_usdm_btcusdt_klines_1h_2024_validation_wf_v1\n"
+    "dataset_type: validation_folds\n"
+    "provider: binance\n"
+    "instrument_id: binance:usd_m_futures:BTCUSDT:perpetual\n"
+    "base_dataset_id: binance_usdm_btcusdt_klines_1h_2024\n"
+    "parent_descriptor: configs/datasets/binance-usdm-btcusdt-1h-2024-research-core-v1.yaml\n"
+    "period: { start: \"2024-01-01T00:00:00Z\", end: \"2025-01-01T00:00:00Z\" }\n"
+    "feature_set: { name: btcusdt_core_v1, version: \"1\" }\n"
+    "scheme: anchored_walkforward_v1\n"
+    "fold_set: { name: btcusdt_core_v1_wf72_v1, version: \"1\" }\n"
+    "parameters: { test_size: 72, min_train_size: 336 }\n"
+    "schema_version: quantara_validation_folds_v1\n"
+    "quality_policy_version: \"1\"\n"
+    "legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml\n"
+)
+
+YEAR_EVALUATION_DESCRIPTOR_YAML = (
+    "schema: quantara.evaluation-descriptor/v1\n"
+    "dataset_id: binance_usdm_btcusdt_klines_1h_2024_evaluation_dual_ic_v1\n"
+    "dataset_type: feature_evaluation\n"
+    "provider: binance\n"
+    "instrument_id: binance:usd_m_futures:BTCUSDT:perpetual\n"
+    "base_dataset_id: binance_usdm_btcusdt_klines_1h_2024\n"
+    "parent_descriptor: configs/datasets/binance-usdm-btcusdt-1h-2024-validation-wf-v1.yaml\n"
+    "period:\n"
+    '  start: "2024-01-01T00:00:00Z"\n'
+    '  end: "2025-01-01T00:00:00Z"\n'
+    "evaluation_set:\n"
+    "  name: btcusdt_core_v1_dual_ic_v1\n"
+    "  version: \"1\"\n"
+    "features:\n"
+    "  - f_ret_1\n"
+    "  - f_roc_60\n"
+    "  - f_rvol_20\n"
+    "  - f_volratio_20\n"
+    "target: l_fwdret_24\n"
+    "metrics:\n"
+    "  - pearson_ic\n"
+    "  - spearman_ic\n"
+    "schema_version: quantara_feature_evaluation_v1\n"
+    "quality_policy_version: \"1\"\n"
+    "legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml\n"
+)
+
+YEAR_PERIOD_DICT = {"start": "2024-01-01T00:00:00Z", "end": "2025-01-01T00:00:00Z"}
+
+
+def write_year_chain_descriptors(repo_root: Path) -> Path:
+    datasets = repo_root / "configs" / "datasets"
+    datasets.mkdir(parents=True, exist_ok=True)
+    (datasets / "binance-usdm-btcusdt-1m-2024.yaml").write_text(
+        YEAR_1M_BASE_DESCRIPTOR_YAML, encoding="utf-8"
+    )
+    (datasets / "binance-usdm-btcusdt-1h-2024-derived.yaml").write_text(
+        YEAR_1H_DERIVED_DESCRIPTOR_YAML, encoding="utf-8"
+    )
+    (datasets / "binance-usdm-btcusdt-1h-2024-research-core-v1.yaml").write_text(
+        YEAR_RESEARCH_DESCRIPTOR_YAML, encoding="utf-8"
+    )
+    (datasets / "binance-usdm-btcusdt-1h-2024-validation-wf-v1.yaml").write_text(
+        YEAR_VALIDATION_DESCRIPTOR_YAML, encoding="utf-8"
+    )
+    (datasets / "binance-usdm-btcusdt-1h-2024-evaluation-dual-ic-v1.yaml").write_text(
+        YEAR_EVALUATION_DESCRIPTOR_YAML, encoding="utf-8"
+    )
+    return datasets / "binance-usdm-btcusdt-1h-2024-evaluation-dual-ic-v1.yaml"
+
+
+def _build_clean_year_rows(n_rows: int = YEAR_ROW_COUNT) -> list[tuple]:
+    rows = []
+    for i in range(n_rows):
+        t = YEAR_START_MS + i * 3600_000
+        if i >= n_rows - 24:
+            l_fwdret = None
+            l_fwddir = None
+        else:
+            l_fwdret = Decimal((i + 7) % 80 + 1) / Decimal(5000)
+            l_fwddir = 1
+        rows.append(
+            (
+                t,
+                Decimal(i % 100 + 1) / Decimal(10000),
+                Decimal(i % 50 + 1) / Decimal(1000),
+                Decimal(i % 30 + 1) / Decimal(100),
+                Decimal(i % 20 + 1) / Decimal(20),
+                l_fwdret,
+                l_fwddir,
+            )
+        )
+    return rows
+
+
+def _build_clean_year_folds() -> list[dict]:
+    """117 consecutive 72-row test folds starting at the excluded head (360)."""
+    folds = []
+    start = 360
+    for fold_id in range(YEAR_FOLD_COUNT):
+        end = start + 72
+        folds.append({"fold_id": fold_id, "test_range": [start, end]})
+        start = end
+    return folds
+
+
+def setup_offline_year_parents(
+    tmp_path: Path,
+    *,
+    parent_rows: int = YEAR_ROW_COUNT,
+    folds: list[dict] | None = None,
+    manifest_period: dict[str, str] | None = None,
+) -> tuple[Path, Path, Path]:
+    """Build a complete offline 2024 full-year research and validation parent graph."""
+    repo_root = tmp_path / "repo"
+    data_root = tmp_path / "data"
+
+    import shutil
+
+    shutil.copytree(Path("configs"), repo_root / "configs")
+    eval_desc = write_year_chain_descriptors(repo_root)
+
+    res_rows = _build_clean_year_rows(parent_rows)
+    temp_pq = tmp_path / "research.parquet"
+    write_research_parquet(res_rows, temp_pq)
+    pq_bytes = temp_pq.read_bytes()
+    pq_res = store_object(data_root, "normalized", pq_bytes)
+    pq_sha = pq_res.sha256
+    temp_pq.unlink()
+
+    res_fp = research_schema_fingerprint("quantara_research_featureset_v1")
+    res_cch = research_content_hash(res_fp, render_content_rows(res_rows))
+    res_lineage = {
+        "parent_dataset_id": "binance_usdm_btcusdt_klines_1h_2024",
+        "parent_commit_address": "0" * 64,
+        "parent_canonical_content_hash": "1" * 64,
+        "parent_zip_sha256": "2" * 64,
+    }
+    res_cid = research_commit_identity(res_cch, res_lineage)
+
+    res_dir = (
+        data_root
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "research"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+    res_findings = [
+        {
+            "check_id": "row_count",
+            "count": 0,
+            "evidence": {"rows": parent_rows},
+            "outcome": "pass",
+            "severity": "hard",
+        }
+    ]
+    res_qid = quality_identity(res_findings)
+
+    res_manifest = {
+        "dataset_id": "binance_usdm_btcusdt_klines_1h_2024_research_core_v1",
+        "schema_version": "quantara_research_featureset_v1",
+        "schema_fingerprint": res_fp,
+        "parser_version": "1.0.0",
+        "canonical_content_hash": res_cch,
+        "quality_identity": res_qid,
+        "quality_state": "PASS",
+        "quality_policy_version": "1",
+        "commit_identity": res_cid,
+        "parquet_sha256": pq_sha,
+        "parquet_size": len(pq_bytes),
+        "object_refs": [{"kind": "normalized", "sha256": pq_sha}],
+        "research_from": res_lineage,
+        "period": dict(YEAR_PERIOD_DICT),
+    }
+    res_content = {
+        "schema_fingerprint": res_fp,
+        "parser_version": "1.0.0",
+        "canonical_content_hash": res_cch,
+        "quality_identity": res_qid,
+        "object_refs": [{"kind": "normalized", "sha256": pq_sha}],
+        "research_from": res_lineage,
+        "research_commit_identity": res_cid,
+    }
+    res_quality = {
+        "state": "PASS",
+        "policy_version": "1",
+        "identity": res_qid,
+        "findings": res_findings,
+    }
+    res_files = {
+        "manifest.json": (json.dumps(res_manifest, indent=2, sort_keys=True) + "\n").encode(),
+        "content.json": (json.dumps(res_content, indent=2, sort_keys=True) + "\n").encode(),
+        "quality.json": (json.dumps(res_quality, indent=2, sort_keys=True) + "\n").encode(),
+    }
+    staged_res = stage_commit(res_dir, "test_res_year", res_files)
+    res_commit_dir = res_dir / "commits" / res_cid
+    res_commit_dir.parent.mkdir(parents=True, exist_ok=True)
+    staged_res.replace(res_commit_dir)
+    (res_commit_dir / "COMMITTED").touch()
+    write_current(res_dir, res_cid, sha256_hex(res_files["manifest.json"]))
+    val_folds = _build_clean_year_folds() if folds is None else folds
+    val_artifact = {
+        "schema": "quantara.validation_folds/v1",
+        "fold_set": "btcusdt_core_v1_wf72_v1",
+        "scheme": "anchored_walkforward_v1",
+        "parameters": {"test_size": 72, "min_train_size": 336, "embargo": 24},
+        "parent_rows": parent_rows,
+        "excluded_head_rows": 360,
+        "folds": val_folds,
+        "coverage": {
+            "total_rows": parent_rows,
+            "test_rows": val_folds[-1]["test_range"][1] - 360 if val_folds else 0,
+            "fold_count": len(val_folds),
+        },
+    }
+    val_art_bytes = canonicalize(val_artifact).encode("utf-8") + b"\n"
+    val_obj = store_object(data_root, "normalized", val_art_bytes)
+    val_sha = val_obj.sha256
+
+    val_fp = validation_schema_fingerprint(
+        parent_fingerprint=res_fp,
+        schema_id="quantara_validation_folds_v1",
+        scheme="anchored_walkforward_v1",
+        parameters={"test_size": 72, "min_train_size": 336, "embargo": 24},
+        fold_set_name="btcusdt_core_v1_wf72_v1",
+        fold_set_version="1",
+    )
+    val_cch = validation_content_hash(val_fp, val_art_bytes)
+    val_lineage = {
+        "parent_dataset_id": "binance_usdm_btcusdt_klines_1h_2024_research_core_v1",
+        "parent_commit_address": res_cid,
+        "parent_canonical_content_hash": res_cch,
+        "parent_parquet_sha256": pq_sha,
+        "parent_parquet_size": len(pq_bytes),
+    }
+    val_cid = validation_commit_identity(val_cch, val_lineage)
+
+    val_dir = (
+        data_root
+        / "datasets"
+        / "binance"
+        / "usdm"
+        / "validation"
+        / "BTCUSDT"
+        / "1h"
+        / "year=2024"
+        / "month=01"
+    )
+    val_findings = [
+        {
+            "check_id": "fold_coverage",
+            "count": 0,
+            "evidence": {"folds": len(val_folds)},
+            "outcome": "pass",
+            "severity": "hard",
+        }
+    ]
+    val_qid = quality_identity(val_findings)
+
+    val_manifest = {
+        "dataset_id": "binance_usdm_btcusdt_klines_1h_2024_validation_wf_v1",
+        "schema_version": "quantara_validation_folds_v1",
+        "schema_fingerprint": val_fp,
+        "parser_version": "1.0.0",
+        "canonical_content_hash": val_cch,
+        "quality_identity": val_qid,
+        "quality_state": "PASS",
+        "quality_policy_version": "1",
+        "commit_identity": val_cid,
+        "artifact_sha256": val_sha,
+        "artifact_size": len(val_art_bytes),
+        "parent_rows": parent_rows,
+        "fold_count": len(val_folds),
+        "fold_set": {"name": "btcusdt_core_v1_wf72_v1", "version": "1"},
+        "scheme": "anchored_walkforward_v1",
+        "parameters": {"test_size": 72, "min_train_size": 336},
+        "embargo": 24,
+        "object_refs": [{"kind": "normalized", "sha256": val_sha}],
+        "validation_from": val_lineage,
+        "period": manifest_period if manifest_period is not None else dict(YEAR_PERIOD_DICT),
+    }
+    val_content = {
+        "schema_fingerprint": val_fp,
+        "parser_version": "1.0.0",
+        "canonical_content_hash": val_cch,
+        "quality_identity": val_qid,
+        "object_refs": [{"kind": "normalized", "sha256": val_sha}],
+        "validation_from": val_lineage,
+        "validation_commit_identity": val_cid,
+    }
+    val_quality = {
+        "state": "PASS",
+        "policy_version": "1",
+        "identity": val_qid,
+        "findings": val_findings,
+    }
+    val_files = {
+        "manifest.json": (json.dumps(val_manifest, indent=2, sort_keys=True) + "\n").encode(),
+        "content.json": (json.dumps(val_content, indent=2, sort_keys=True) + "\n").encode(),
+        "quality.json": (json.dumps(val_quality, indent=2, sort_keys=True) + "\n").encode(),
+    }
+    staged_val = stage_commit(val_dir, "test_val_year", val_files)
+    val_commit_dir = val_dir / "commits" / val_cid
+    val_commit_dir.parent.mkdir(parents=True, exist_ok=True)
+    staged_val.replace(val_commit_dir)
+    (val_commit_dir / "COMMITTED").touch()
+    write_current(val_dir, val_cid, sha256_hex(val_files["manifest.json"]))
+
+    return repo_root, data_root, eval_desc
+
+def test_year_contract_dry_run_succeeds(tmp_path: Path) -> None:
+    """Slice 010: the approved 2024 period contract is accepted end-to-end on a
+    synthetic year parent graph; the pinned contract table keeps Q1 frozen."""
+    from datetime import UTC, datetime
+
+    from quantara.evaluation_pipeline import (
+        period_contract_for,
+        period_contract_for_period,
+        verify_validation_parent_q1_period,
+    )
+
+    q1 = period_contract_for(1704067200000, 1711929600000)
+    assert q1 is not None
+    assert q1.label == "Q1"
+    assert q1.period == {"start": "2024-01-01T00:00:00Z", "end": "2024-04-01T00:00:00Z"}
+    assert q1.expected_parent_rows == 2184
+    assert q1.expected_fold_count == 25
+
+    year = period_contract_for(YEAR_START_MS, YEAR_END_MS)
+    assert year is not None
+    assert year.period == YEAR_PERIOD_DICT
+    assert year.expected_parent_rows == YEAR_ROW_COUNT
+    assert year.expected_fold_count == YEAR_FOLD_COUNT
+
+    assert period_contract_for(1704067200000, 1735689600000) is year
+    assert period_contract_for(YEAR_START_MS, YEAR_START_MS + 1) is None
+
+    assert (
+        period_contract_for_period(
+            datetime(2024, 1, 1, tzinfo=UTC), datetime(2025, 1, 1, tzinfo=UTC)
+        )
+        is year
+    )
+
+    # The period verifier accepts the clean year parent shape.
+    verify_validation_parent_q1_period(
+        descriptor_start_utc=datetime(2024, 1, 1, tzinfo=UTC),
+        descriptor_end_utc=datetime(2025, 1, 1, tzinfo=UTC),
+        val_manifest={"period": dict(YEAR_PERIOD_DICT)},
+        val_artifact={"excluded_head_rows": 360, "folds": _build_clean_year_folds()},
+        research_rows=_build_clean_year_rows(),
+    )
+
+    repo_root, data_root, eval_desc = setup_offline_year_parents(tmp_path)
+    eval_dir = (
+        data_root / "datasets" / "binance" / "usdm" / "evaluation" / "BTCUSDT" / "1h"
+        / "year=2024" / "month=01"
+    )
+
+    code = run_evaluation_pipeline(
+        descriptor_path=eval_desc,
+        data_root=data_root,
+        repo_root=repo_root,
+        dry_run=True,
+    )
+    assert code == 0
+    assert not eval_dir.exists()
+    assert not (data_root / "attempts" / "evaluation").exists()
+
+
+def test_year_wrong_parent_rows_blocked(tmp_path: Path) -> None:
+    """Slice 010: a year parent whose row count is not the approved 8,784 blocks."""
+    repo_root, data_root, eval_desc = setup_offline_year_parents(
+        tmp_path, parent_rows=YEAR_ROW_COUNT - 1
+    )
+    code = run_evaluation_pipeline(
+        descriptor_path=eval_desc,
+        data_root=data_root,
+        repo_root=repo_root,
+        dry_run=True,
+    )
+    assert code == 2
+
+
+def test_year_wrong_fold_count_blocked(tmp_path: Path) -> None:
+    """Slice 010: a year parent whose fold count is not the approved 117 blocks."""
+    repo_root, data_root, eval_desc = setup_offline_year_parents(
+        tmp_path, folds=_build_clean_year_folds()[: YEAR_FOLD_COUNT - 1]
+    )
+    code = run_evaluation_pipeline(
+        descriptor_path=eval_desc,
+        data_root=data_root,
+        repo_root=repo_root,
+        dry_run=True,
+    )
+    assert code == 2
+
+
+def test_unapproved_period_blocked_and_verifier_rejects_year_artifact_drift(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """Slice 010: a period matching no approved contract blocks with a clear
+    message, and the verifier rejects both unknown periods and a Q1-shaped
+    artifact against the year period."""
+    from datetime import UTC, datetime
+
+    from quantara.evaluation_pipeline import verify_validation_parent_q1_period
+
+    with pytest.raises(QuantaraError, match="approved period contract"):
+        verify_validation_parent_q1_period(
+            descriptor_start_utc=datetime(2024, 1, 1, tzinfo=UTC),
+            descriptor_end_utc=datetime(2024, 7, 1, tzinfo=UTC),
+            val_manifest={"period": None},
+            val_artifact={"excluded_head_rows": 360, "folds": _build_clean_year_folds()},
+            research_rows=_build_clean_year_rows(),
+        )
+
+    with pytest.raises(QuantaraError, match="117 folds"):
+        verify_validation_parent_q1_period(
+            descriptor_start_utc=datetime(2024, 1, 1, tzinfo=UTC),
+            descriptor_end_utc=datetime(2025, 1, 1, tzinfo=UTC),
+            val_manifest={"period": dict(YEAR_PERIOD_DICT)},
+            val_artifact={"excluded_head_rows": 360, "folds": _build_clean_q1_folds()},
+            research_rows=_build_clean_year_rows(),
+        )
+
+    repo_root, data_root, eval_desc = setup_offline_year_parents(
+        tmp_path,
+        manifest_period={
+            "start": "2024-01-01T00:00:00Z",
+            "end": "2024-06-01T00:00:00Z",
+        },
+    )
+
+    code = run_evaluation_pipeline(
+        descriptor_path=eval_desc,
+        data_root=data_root,
+        repo_root=repo_root,
+        dry_run=True,
+    )
+    assert code == 2
+    assert "period authentication failed" in capsys.readouterr().err

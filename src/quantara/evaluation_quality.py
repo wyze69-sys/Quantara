@@ -158,6 +158,31 @@ def evaluate_evaluation_quality(
     """Evaluate dual-IC evaluation records and artifact against PASS-only gates."""
     findings: list[Finding] = []
 
+    # Approved period contract (Q1 or full-year 2024, data slice 010), bound to
+    # the authenticated research rows' half-open span (first bar .. last bar +
+    # one hour bar); any other span fails every contract-dependent gate closed.
+    # The function-level import avoids the evaluation_pipeline module cycle.
+    # The 360/72/24 literals below are the frozen walk-forward scheme parameters
+    # (excluded head, test size, label horizon), unchanged across periods.
+    from quantara.evaluation_pipeline import HOUR_MS, period_contract_for
+
+    contract = None
+    if research_rows:
+        first_ts = research_rows[0][0]
+        last_ts = research_rows[-1][0]
+        if (
+            isinstance(first_ts, int)
+            and isinstance(last_ts, int)
+            and not isinstance(first_ts, bool)
+            and not isinstance(last_ts, bool)
+        ):
+            contract = period_contract_for(first_ts, last_ts + HOUR_MS)
+    expected_parent_rows = (
+        contract.expected_parent_rows if contract is not None else -1
+    )
+    expected_fold_count = contract.expected_fold_count if contract is not None else -1
+    last_fold_size = (expected_parent_rows - 360) - (expected_fold_count - 1) * 72
+
     def record(check_id: str, ok: bool, count: int = 0, **evidence) -> None:
         findings.append(
             Finding(
@@ -243,7 +268,7 @@ def evaluate_evaluation_quality(
     # 4. fold_ranges
     folds = validation_artifact.get("folds", [])
     fold_ranges_ok = True
-    if len(folds) != 25:
+    if len(folds) != expected_fold_count:
         fold_ranges_ok = False
     else:
         for idx, fold in enumerate(folds):
@@ -261,7 +286,7 @@ def evaluate_evaluation_quality(
             if idx > 0 and start != folds[idx - 1]["test_range"][1]:
                 fold_ranges_ok = False
                 break
-            expected_size = 96 if idx == 24 else 72
+            expected_size = last_fold_size if idx == expected_fold_count - 1 else 72
             if end - start != expected_size:
                 fold_ranges_ok = False
                 break
@@ -276,14 +301,14 @@ def evaluate_evaluation_quality(
 
     # 5. row_alignment
     n_rows = len(research_rows)
-    parent_rows_match = validation_artifact.get("parent_rows") == n_rows == 2184
-    time_strictly_increasing = n_rows == 2184 and all(
+    parent_rows_match = validation_artifact.get("parent_rows") == n_rows == expected_parent_rows
+    time_strictly_increasing = n_rows == expected_parent_rows and all(
         isinstance(research_rows[i][0], int)
         and not isinstance(research_rows[i][0], bool)
         and research_rows[i][0] < research_rows[i + 1][0]
         for i in range(n_rows - 1)
     )
-    time_hourly = n_rows == 2184 and all(
+    time_hourly = n_rows == expected_parent_rows and all(
         research_rows[i + 1][0] - research_rows[i][0] == 3600000 for i in range(n_rows - 1)
     )
     row_align_ok = parent_rows_match and time_strictly_increasing and time_hourly
@@ -297,11 +322,16 @@ def evaluate_evaluation_quality(
 
     # 6. record_matrix
     records = artifact.get("records", [])
+    expected_record_count = expected_fold_count * len(APPROVED_FEATURES)
     matrix_ok = True
-    if len(records) != 100:
+    if len(records) != expected_record_count:
         matrix_ok = False
     else:
-        expected_matrix = [(fold_id, feat) for fold_id in range(25) for feat in APPROVED_FEATURES]
+        expected_matrix = [
+            (fold_id, feat)
+            for fold_id in range(expected_fold_count)
+            for feat in APPROVED_FEATURES
+        ]
         actual_matrix = [(r.get("fold_id"), r.get("feature")) for r in records]
         if actual_matrix != expected_matrix:
             matrix_ok = False
@@ -315,6 +345,9 @@ def evaluate_evaluation_quality(
     )
 
     # 7. pair_counts
+    expected_total_valid = (
+        (expected_fold_count - 1) * 72 + (last_fold_size - 24)
+    ) * len(APPROVED_FEATURES)
     pair_counts_ok = True
     total_valid = 0
     if not matrix_ok:
@@ -322,12 +355,14 @@ def evaluate_evaluation_quality(
     else:
         for r in records:
             fold_id = r.get("fold_id")
-            expected_test_rows = 96 if fold_id == 24 else 72
-            expected_nulls = 24 if fold_id == 24 else 0
+            is_last_fold = fold_id == expected_fold_count - 1
+            expected_test_rows = last_fold_size if is_last_fold else 72
+            expected_nulls = 24 if is_last_fold else 0
+            expected_valid_pairs = expected_test_rows - expected_nulls
             if r.get("test_row_count") != expected_test_rows:
                 pair_counts_ok = False
                 break
-            if r.get("valid_pair_count") != 72:
+            if r.get("valid_pair_count") != expected_valid_pairs:
                 pair_counts_ok = False
                 break
             if r.get("feature_null_count") != 0:
@@ -340,7 +375,7 @@ def evaluate_evaluation_quality(
                 pair_counts_ok = False
                 break
             total_valid += r.get("valid_pair_count", 0)
-        if pair_counts_ok and total_valid != 7200:
+        if pair_counts_ok and total_valid != expected_total_valid:
             pair_counts_ok = False
     record(
         "pair_counts",
