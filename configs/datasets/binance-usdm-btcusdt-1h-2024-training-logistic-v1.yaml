@@ -1,0 +1,30 @@
+schema: quantara.training-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_1h_2024_training_logistic_v1
+dataset_type: model_training
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_1h_2024
+parent_descriptor: configs/datasets/binance-usdm-btcusdt-1h-2024-validation-wf-v1.yaml
+period: { start: "2024-01-01T00:00:00Z", end: "2025-01-01T00:00:00Z" }
+model:
+  family: logistic_irls
+  lambda: "1"
+  max_iterations: 50
+  tolerance: "0.000000000001"
+  eta_clamp: "24"
+  mu_clamp: "0.000000000001"
+  solver: gauss_elimination_partial_pivot
+standardization: train_window_zscore
+baselines: [majority_class_train_window, sign_f_ret_1, climatology_p]
+metrics: [directional_accuracy, log_loss, brier, direction_ic, pearson_ic]
+features: [f_ret_1, f_roc_60, f_rvol_20, f_volratio_20]
+target: l_fwddir_24
+training_set: { name: btcusdt_core_v1_logistic_v1, version: "1" }
+kill_criteria:
+  directional_accuracy_min: "0.534900284900284900"
+  direction_ic_min: "0.020000000000000000"
+  log_loss_max: "0.762500000000000000"
+  brier_max: "0.250000000000000000"
+schema_version: quantara_model_training_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml
