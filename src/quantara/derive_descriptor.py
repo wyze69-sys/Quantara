@@ -82,6 +82,9 @@ DERIVED_KEYS = frozenset(
     }
 )
 
+# Slice 010B: optional under policy 1 (forbidden), required under policy 2.
+DERIVED_OPTIONAL_KEYS = frozenset({"quality_approval"})
+
 
 def _reject(detail: str) -> None:
     raise DerivedDescriptorError(detail)
@@ -123,6 +126,7 @@ class DerivedDatasetDescriptor:
     timestamp_semantics: str
     quality_policy_version: str
     legal_record: str
+    quality_approval: str | None = None
 
     @property
     def expected_row_count(self) -> int:
@@ -174,6 +178,8 @@ class DerivedDatasetDescriptor:
                 ),
             },
         }
+        if self.quality_approval is not None:
+            semantics["quality_approval"] = self.quality_approval
         return canonicalize(semantics)
 
 
@@ -196,7 +202,7 @@ def load_derived_descriptor(path: Path | str) -> DerivedDatasetDescriptor:
     document = yaml.safe_load(descriptor_path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         _reject("derived descriptor must be a YAML mapping")
-    unknown = set(document) - DERIVED_KEYS
+    unknown = set(document) - DERIVED_KEYS - DERIVED_OPTIONAL_KEYS
     if unknown:
         _reject(f"unknown derived-descriptor keys: {sorted(unknown)}")
     missing = DERIVED_KEYS - set(document)
@@ -225,8 +231,38 @@ def load_derived_descriptor(path: Path | str) -> DerivedDatasetDescriptor:
     for name in ("timestamp_semantics", "legal_record"):
         if str(document[name]) != getattr(base, name):
             _reject(f"{name} must equal the base descriptor's value")
-    if str(document["quality_policy_version"]) != "1":
-        _reject("quality_policy_version must equal '1'")
+    # Slice 010B policy combination rule (mirrors the base-descriptor rule
+    # from 010A T2): "2" is accepted only with quality_approval; "1" only
+    # without it. Any other version is rejected outright.
+    quality_policy_version = str(document["quality_policy_version"])
+    has_approval = "quality_approval" in document
+    if quality_policy_version == "1":
+        if has_approval:
+            _reject(
+                "quality_policy_version '1' derived descriptors must not "
+                "specify quality_approval"
+            )
+        quality_approval = None
+    elif quality_policy_version == "2":
+        if not has_approval:
+            _reject(
+                "quality_policy_version '2' derived descriptors require a "
+                "quality_approval record path"
+            )
+        quality_approval = document["quality_approval"]
+        if not isinstance(quality_approval, str) or not quality_approval:
+            _reject("quality_approval must be a non-empty path string")
+        from quantara.quality_approval import validate_approval_path
+
+        try:
+            validate_approval_path(quality_approval)
+        except QuantaraError as exc:
+            _reject(f"invalid quality_approval path: {exc}")
+    else:
+        _reject(
+            f"quality_policy_version must be '1' or '2', got "
+            f"{quality_policy_version!r}"
+        )
 
     period = document["period"]
     if not isinstance(period, dict) or set(period) != {"start", "end"}:
@@ -290,4 +326,5 @@ def load_derived_descriptor(path: Path | str) -> DerivedDatasetDescriptor:
         timestamp_semantics=document["timestamp_semantics"],
         quality_policy_version=str(document["quality_policy_version"]),
         legal_record=document["legal_record"],
+        quality_approval=quality_approval,
     )

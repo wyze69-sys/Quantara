@@ -650,3 +650,180 @@ record_sha256: {payload["record_sha256"]}
 
     assert record1.record_sha256 == record2.record_sha256
     assert record1.canonical_semantics() == record2.canonical_semantics()
+
+
+# --- Slice 010B: derived-lane approval plumbing ---------------------------------
+
+DERIVED_FROZEN_DATASET_ID = "binance_usdm_btcusdt_klines_1h_2024"
+DERIVED_FROZEN_CONTENT_HASH = (
+    "9129f9ac1a5ad2f21b8e74d4512ed334871d1cee22a1d99275ad8db74b29f39e"
+)
+DERIVED_FROZEN_SCHEMA_FINGERPRINT = (
+    "2e2fb0f01e206d892fd5f2116d5ee206c5af27cf6fc9bdfb288b4ead0c6b13ff"
+)
+DERIVED_FROZEN_PARENT_PARQUET_SHA256 = (
+    "4456d6a7b5693bac7bc4870affead2f5be79d52eba0593d9d235234e0b340726"
+)
+DERIVED_FROZEN_RAW_IDENTITY_SHA256 = (
+    "14c8b656ab519f23b307149c243311e7d2337d6b79d77d39b2883ef48dd11f20"
+)
+DERIVED_FROZEN_FINDING_SHA256 = (
+    "11db14d6d01bbe81bfefc89d20f0fc113e97f8991768c0007831d6a1b07ae05c"
+)
+
+
+def _make_derived_approval_payload() -> dict:
+    semantics = {
+        "schema": APPROVAL_SCHEMA,
+        "record_id": "binance-usdm-btcusdt-1h-2024-derived-zero-volume-v1",
+        "dataset_id": DERIVED_FROZEN_DATASET_ID,
+        "canonical_content_hash": DERIVED_FROZEN_CONTENT_HASH,
+        "schema_fingerprint": DERIVED_FROZEN_SCHEMA_FINGERPRINT,
+        "source_sha256": [DERIVED_FROZEN_PARENT_PARQUET_SHA256],
+        "quality_policy_version": "2",
+        "quality_identity_sha256": DERIVED_FROZEN_RAW_IDENTITY_SHA256,
+        "approved_findings": [
+            {
+                "check_id": "derived_zero_volume_bucket",
+                "count": 1,
+                "canonical_finding_sha256": DERIVED_FROZEN_FINDING_SHA256,
+            }
+        ],
+        "approver": "258711354+wyze69-sys@users.noreply.github.com",
+        "decision_time_utc": "2026-08-28T16:00:00Z",
+        "rationale": (
+            "the single zero-volume 1h bucket at 2024-10-28T20:00:00Z aggregates "
+            "the 60-minute Binance USD-M maintenance window; rows are preserved, "
+            "all hard invariants pass, approval is internal-analysis-only."
+        ),
+        "scope": (
+            "exact full-year BTCUSDT USD-M 1h canonical content only; "
+            "no wildcard or future-data scope."
+        ),
+    }
+    self_hash = hashlib.sha256(
+        canonicalize(semantics).encode("utf-8")
+    ).hexdigest()
+    return {**semantics, "record_sha256": self_hash}
+
+
+def test_derived_zero_volume_bucket_is_appovable() -> None:
+    """derived_zero_volume_bucket must be an approvable warning check id."""
+    from quantara.quality_approval import APPROVABLE_WARNING_CHECK_IDS
+
+    assert "derived_zero_volume_bucket" in APPROVABLE_WARNING_CHECK_IDS
+
+
+def test_derived_approval_payload_roundtrip() -> None:
+    payload = _make_derived_approval_payload()
+    record = parse_approval_dict(payload)
+    assert record.record_id == (
+        "binance-usdm-btcusdt-1h-2024-derived-zero-volume-v1"
+    )
+    assert record.dataset_id == DERIVED_FROZEN_DATASET_ID
+    assert record.source_sha256 == (DERIVED_FROZEN_PARENT_PARQUET_SHA256,)
+    assert record.approved_findings[0].check_id == "derived_zero_volume_bucket"
+    assert record.approved_findings[0].count == 1
+    record.verify_self_hash()
+
+
+def test_repository_derived_approval_record_loads() -> None:
+    """The frozen repository record must load and self-authenticate."""
+    repo_root = Path(__file__).resolve().parents[1]
+    record = load_approval_record(
+        "configs/quality/approvals/"
+        "binance-usdm-btcusdt-1h-2024-derived-zero-volume.v1.yaml",
+        repo_root=repo_root,
+    )
+    assert record.record_id == (
+        "binance-usdm-btcusdt-1h-2024-derived-zero-volume-v1"
+    )
+    assert record.dataset_id == DERIVED_FROZEN_DATASET_ID
+    assert record.canonical_content_hash == DERIVED_FROZEN_CONTENT_HASH
+    assert record.schema_fingerprint == DERIVED_FROZEN_SCHEMA_FINGERPRINT
+    assert record.source_sha256 == (DERIVED_FROZEN_PARENT_PARQUET_SHA256,)
+    assert record.quality_policy_version == "2"
+    assert record.quality_identity_sha256 == DERIVED_FROZEN_RAW_IDENTITY_SHA256
+    assert record.approved_findings[0].check_id == "derived_zero_volume_bucket"
+    assert record.approved_findings[0].count == 1
+    assert (
+        record.approved_findings[0].canonical_finding_sha256
+        == DERIVED_FROZEN_FINDING_SHA256
+    )
+    assert record.approver == "258711354+wyze69-sys@users.noreply.github.com"
+    record.verify_self_hash()
+
+
+_FROZEN_DERIVED_FINDINGS_DATA = [
+    ("derived_row_count_matches_expected", "pass", "hard", 8784,
+     {"approved_rows": 8784, "actual_rows": 8784}),
+    ("derived_first_boundary_exact", "pass", "hard", 0,
+     {"observed_first_open": 1704067200000, "approved_first_open": 1704067200000}),
+    ("derived_last_boundary_exact", "pass", "hard", 0,
+     {"observed_last_close": 1735689599999, "approved_last_close": 1735689599999}),
+    ("derived_unique_open_times", "pass", "hard", 0, {"violations": 0}),
+    ("derived_strictly_ascending_open_times", "pass", "hard", 0, {"violations": 0}),
+    ("derived_adjacency_exactly_timeframe_ms", "pass", "hard", 0, {"violations": 0}),
+    ("derived_ohlc_bounds_hold", "pass", "hard", 0, {"violations": 0}),
+    ("derived_prices_strictly_positive", "pass", "hard", 0, {"violations": 0}),
+    ("derived_volumes_and_counts_nonnegative", "pass", "hard", 0, {"violations": 0}),
+    ("derived_taker_buy_within_counterpart_volumes", "pass", "hard", 0,
+     {"violations": 0}),
+    ("derived_close_time_relation", "pass", "hard", 0, {"violations": 0}),
+    ("derived_zero_volume_bucket", "warn", "warning", 1, {"occurrences": 1}),
+    ("derived_reconciliation_matches", "pass", "hard", 0, {"violations": 0}),
+]
+
+
+def _frozen_derived_findings() -> list:
+    """The exact 13 findings of the frozen full-year 1h derived evaluation."""
+    from quantara.derive_quality import Finding as DFinding
+
+    return [
+        DFinding(
+            check_id=check_id,
+            outcome=outcome,
+            severity=severity,
+            count=count,
+            evidence=dict(evidence),
+        )
+        for check_id, outcome, severity, count, evidence
+        in _FROZEN_DERIVED_FINDINGS_DATA
+    ]
+
+
+def test_derived_effective_quality_warn_approved() -> None:
+    """Policy 2 + derived approval over the exact frozen derived report."""
+    from quantara.derive_quality import DerivedQualityReport
+
+    report = DerivedQualityReport(findings=_frozen_derived_findings())
+
+    record = parse_approval_dict(_make_derived_approval_payload())
+    decision = evaluate_effective_quality(
+        raw_report=report,
+        quality_policy_version="2",
+        approval_record=record,
+        dataset_id=DERIVED_FROZEN_DATASET_ID,
+        canonical_content_hash=DERIVED_FROZEN_CONTENT_HASH,
+        schema_fingerprint=DERIVED_FROZEN_SCHEMA_FINGERPRINT,
+        source_sha256=(DERIVED_FROZEN_PARENT_PARQUET_SHA256,),
+    )
+    assert decision.effective_state == "WARN_APPROVED"
+    assert decision.raw_state == "WARN_BLOCKED"
+    assert decision.policy_version == "2"
+    assert decision.approval_record_id == (
+        "binance-usdm-btcusdt-1h-2024-derived-zero-volume-v1"
+    )
+    assert decision.raw_identity_sha256 == DERIVED_FROZEN_RAW_IDENTITY_SHA256
+
+
+def test_derived_effective_quality_blocks_without_record() -> None:
+    from quantara.derive_quality import DerivedQualityReport
+
+    report = DerivedQualityReport(findings=_frozen_derived_findings())
+    decision = evaluate_effective_quality(
+        raw_report=report,
+        quality_policy_version="2",
+        approval_record=None,
+    )
+    assert decision.effective_state == "WARN_BLOCKED"

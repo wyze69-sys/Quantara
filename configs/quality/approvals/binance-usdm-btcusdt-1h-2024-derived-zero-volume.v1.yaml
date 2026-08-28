@@ -1,0 +1,26 @@
+# Immutable quality warning approval record (Slice 010B).
+# Binds the derived 1h full-year lane to exactly one
+# derived_zero_volume_bucket warning (Binance USD-M maintenance hour).
+schema: quantara.quality-warning-approval/v1
+record_id: binance-usdm-btcusdt-1h-2024-derived-zero-volume-v1
+dataset_id: binance_usdm_btcusdt_klines_1h_2024
+canonical_content_hash: 9129f9ac1a5ad2f21b8e74d4512ed334871d1cee22a1d99275ad8db74b29f39e
+schema_fingerprint: 2e2fb0f01e206d892fd5f2116d5ee206c5af27cf6fc9bdfb288b4ead0c6b13ff
+source_sha256:
+  - 4456d6a7b5693bac7bc4870affead2f5be79d52eba0593d9d235234e0b340726
+quality_policy_version: "2"
+quality_identity_sha256: 14c8b656ab519f23b307149c243311e7d2337d6b79d77d39b2883ef48dd11f20
+approved_findings:
+  - check_id: derived_zero_volume_bucket
+    count: 1
+    canonical_finding_sha256: 11db14d6d01bbe81bfefc89d20f0fc113e97f8991768c0007831d6a1b07ae05c
+approver: 258711354+wyze69-sys@users.noreply.github.com
+decision_time_utc: "2026-08-28T13:03:32Z"
+rationale: >-
+  the single zero-volume 1h bucket at 2024-10-28T20:00:00Z aggregates
+  the 60-minute Binance USD-M maintenance window; rows are preserved,
+  all hard invariants pass, approval is internal-analysis-only.
+scope: >-
+  exact full-year BTCUSDT USD-M 1h canonical content only;
+  no wildcard or future-data scope.
+record_sha256: b394ec101cb69293c39af2028a0995029f50599a9413604ab0834c8921433878

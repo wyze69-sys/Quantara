@@ -57,6 +57,8 @@ APPROVABLE_WARNING_CHECK_IDS = frozenset(
         "source_order_invalid",
         "nonzero_source_ignore",
         "transport_metadata_difference",
+        # Slice 010B: the only derived warning check id in the codebase.
+        "derived_zero_volume_bucket",
     }
 )
 
@@ -153,22 +155,27 @@ class EffectiveQualityDecision:
 
 
 def canonical_finding_sha256(finding: Finding | dict) -> str:
-    """Return the SHA-256 digest of the complete JCS finding object."""
-    if isinstance(finding, Finding):
-        payload = {
-            "check_id": finding.check_id,
-            "count": finding.count,
-            "evidence": finding.evidence,
-            "outcome": finding.outcome,
-            "severity": finding.severity,
-        }
-    elif isinstance(finding, dict):
+    """Return the SHA-256 digest of the complete JCS finding object.
+
+    Accepts either a ``quality.Finding``/dict or any duck-typed finding
+    (``derive_quality.Finding`` carries the same five attributes); the
+    canonical payload is identical either way.
+    """
+    if isinstance(finding, dict):
         payload = {
             "check_id": finding["check_id"],
             "count": finding["count"],
             "evidence": finding["evidence"],
             "outcome": finding["outcome"],
             "severity": finding["severity"],
+        }
+    elif hasattr(finding, "check_id") and hasattr(finding, "outcome"):
+        payload = {
+            "check_id": finding.check_id,
+            "count": finding.count,
+            "evidence": finding.evidence,
+            "outcome": finding.outcome,
+            "severity": finding.severity,
         }
     else:
         raise TypeError(f"expected Finding or dict, got {type(finding)!r}")

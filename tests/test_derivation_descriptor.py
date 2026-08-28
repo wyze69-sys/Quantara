@@ -192,3 +192,173 @@ def test_rejects_base_dataset_id_mismatch(cfg: Path) -> None:
         lambda d: d.update(base_dataset_id="some_other_parent"),
         "bad-parent-id.yaml",
     )
+
+
+# --- Slice 010B: policy-2 derived descriptors with warning approvals ------------
+
+APPROVAL_NAME = "binance-usdm-btcusdt-1h-2024-derived-zero-volume.v1.yaml"
+APPROVAL_PATH = f"configs/quality/approvals/{APPROVAL_NAME}"
+
+
+def _write_year_tree(tmp_path: Path) -> Path:
+    """Repo-shaped tree with the full-year policy-2 base descriptor and its
+    approval record plus the v1 January rights, mirroring the real repo."""
+    datasets = tmp_path / "configs" / "datasets"
+    approvals = tmp_path / "configs" / "quality" / "approvals"
+    legal = tmp_path / "configs" / "legal"
+    datasets.mkdir(parents=True, exist_ok=True)
+    approvals.mkdir(parents=True, exist_ok=True)
+    legal.mkdir(parents=True, exist_ok=True)
+    (datasets / "binance-usdm-btcusdt-1m-2024.yaml").write_text(
+        Path("configs/datasets/binance-usdm-btcusdt-1m-2024.yaml").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    (approvals / APPROVAL_NAME).write_text(
+        Path(f"configs/quality/approvals/{APPROVAL_NAME}").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    (approvals / "binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml").write_text(
+        Path(
+            "configs/quality/approvals/"
+            "binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml"
+        ).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (legal / "binance-usdm-provider-rights.v2.yaml").write_text(
+        Path("configs/legal/binance-usdm-provider-rights.v2.yaml").read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _year_derived_yaml(policy: str, approval: str | None) -> str:
+    lines = [
+        "schema: quantara.derived-dataset-descriptor/v1",
+        "dataset_id: binance_usdm_btcusdt_klines_1h_2024",
+        "provider: binance",
+        "market_type: usd_m_futures",
+        "instrument_id: binance:usd_m_futures:BTCUSDT:perpetual",
+        "provider_symbol: BTCUSDT",
+        "base_asset: BTC",
+        "quote_asset: USDT",
+        "settlement_asset: USDT",
+        "contract_type: perpetual",
+        "dataset_type: klines",
+        "interval: 1h",
+        "base_dataset_id: binance_usdm_btcusdt_klines_1m_2024",
+        "base_descriptor: configs/datasets/binance-usdm-btcusdt-1m-2024.yaml",
+        "period:",
+        '  start: "2024-01-01T00:00:00Z"',
+        '  end: "2025-01-01T00:00:00Z"',
+        "transformation:",
+        "  name: multi_timeframe_aggregation",
+        '  version: "1"',
+        "schema_version: binance_usdm_kline_1h_v1",
+        "timestamp_semantics: closed_interval_v1",
+        f'quality_policy_version: "{policy}"',
+    ]
+    if approval is not None:
+        lines.append(f"quality_approval: {approval}")
+    lines.append(
+        "legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml"
+    )
+    return "\n".join(lines) + "\n"
+
+
+def test_policy2_with_approval_accepted(cfg_year: Path) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+
+    path = write_text(
+        cfg_year / "configs" / "datasets" / "derived-year-1h.yaml",
+        _year_derived_yaml("2", APPROVAL_PATH),
+        name="derived-year-1h.yaml",
+    )
+    descriptor = load_derived_descriptor(path)
+    assert descriptor.quality_policy_version == "2"
+    assert descriptor.quality_approval == APPROVAL_PATH
+    assert descriptor.dataset_id == "binance_usdm_btcusdt_klines_1h_2024"
+    assert descriptor.expected_row_count == 8784
+
+
+def test_policy2_without_approval_rejected(cfg_year: Path) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+
+    path = write_text(
+        cfg_year / "configs" / "datasets" / "derived-year-1h.yaml",
+        _year_derived_yaml("2", None),
+        name="derived-year-1h.yaml",
+    )
+    with pytest.raises(QuantaraError, match="quality_approval"):
+        load_derived_descriptor(path)
+
+
+def test_policy1_with_approval_rejected(cfg_year: Path) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+
+    path = write_text(
+        cfg_year / "configs" / "datasets" / "derived-year-1h.yaml",
+        _year_derived_yaml("1", APPROVAL_PATH),
+        name="derived-year-1h.yaml",
+    )
+    with pytest.raises(QuantaraError, match="quality_approval"):
+        load_derived_descriptor(path)
+
+
+def test_policy2_traversal_approval_path_rejected(cfg_year: Path) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+
+    path = write_text(
+        cfg_year / "configs" / "datasets" / "derived-year-1h.yaml",
+        _year_derived_yaml("2", "../../../escape.yaml"),
+        name="derived-year-1h.yaml",
+    )
+    with pytest.raises(QuantaraError):
+        load_derived_descriptor(path)
+
+
+def test_policy3_rejected(cfg_year: Path) -> None:
+    from quantara.derive_descriptor import load_derived_descriptor
+
+    path = write_text(
+        cfg_year / "configs" / "datasets" / "derived-year-1h.yaml",
+        _year_derived_yaml("3", APPROVAL_PATH),
+        name="derived-year-1h.yaml",
+    )
+    with pytest.raises(QuantaraError, match="quality_policy_version"):
+        load_derived_descriptor(path)
+
+
+@pytest.fixture()
+def cfg_year(tmp_path: Path) -> Path:
+    return _write_year_tree(tmp_path)
+
+
+FROZEN_JAN_SEMANTIC_SHA = (
+    "87a2a23b49d36f693cac37e56fd6e06ebb1f72dd6a2a84b61a93356ad2442e6f"
+)
+FROZEN_Q1_SEMANTIC_SHA = (
+    "59fdb7efa84dd0b19b2cf82b53a435d835bd9ab5e1f90252c98bd769c9062a82"
+)
+
+
+def test_january_q1_derived_descriptors_unchanged() -> None:
+    """January/Q1 derived descriptors stay v1, loadable, hash-identical."""
+    from quantara.derive_descriptor import load_derived_descriptor
+
+    repo_root = Path(__file__).resolve().parents[1]
+    jan = load_derived_descriptor(
+        repo_root / "configs/datasets/binance-usdm-btcusdt-1h-2024-01-derived.yaml"
+    )
+    q1 = load_derived_descriptor(
+        repo_root / "configs/datasets/binance-usdm-btcusdt-1h-2024-q1-derived.yaml"
+    )
+    assert jan.quality_policy_version == "1"
+    assert q1.quality_policy_version == "1"
+    assert descriptor_hash(jan.canonical_semantics()) == FROZEN_JAN_SEMANTIC_SHA
+    assert descriptor_hash(q1.canonical_semantics()) == FROZEN_Q1_SEMANTIC_SHA
