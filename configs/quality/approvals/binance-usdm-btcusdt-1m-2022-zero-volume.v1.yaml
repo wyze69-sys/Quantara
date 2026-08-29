@@ -1,0 +1,32 @@
+# Immutable quality warning approval record (slice 015-extended, 2022).
+# Binds the full-year 1m lane to exactly the reviewed zero-volume
+# no-trade candles present in the official Binance Vision archives.
+schema: quantara.quality-warning-approval/v1
+record_id: binance-usdm-btcusdt-1m-2022-zero-volume-v1
+dataset_id: binance_usdm_btcusdt_klines_1m_2022
+canonical_content_hash: 84e4147fdffa096930ae6b1a2d440b5587b568f9798c5e8db49da8d9c419882b
+schema_fingerprint: 6739560e3e0b3163257f67bb17cd12bc93ec5f192118ca9840eac7389f9c4544
+source_sha256:
+  - 9cdbcf68903434c850f9bec60d8174c2cfd105dd24a7566965b442ec15124e04
+  - 63672d552f98ec125ac4d90d82154313fb9832b7e1aaed196101816bd61bfb89
+  - 4532faf2f92d205fac79b7d25327d2045843b60a4494e00b0962e6b7f028bc06
+  - 0f509e296da62eed5f4e903507ced0de9738ea96a7a885e76dd2394b8049e689
+  - 768bdbbd11b08d935b3753ecfee7f1e351a346c71b11cf68a4a51296d694f368
+  - 8587319eaf1b1f6d73fd34446acdecdc72c47b23ecfd2d88e2a6dd2a35470565
+  - 6fc45fa135a6be85679a6ab0b1268fbd1f8258079295cd134b9a4c535c6b6b65
+  - 806ee1d6efa856984fe79453d17f04c0fb5e447413fe828cbd3ec2df9a1f5fc4
+  - fa1adecbe41b530c12f481882115511297ac7b78a9a7ae9d9d21b11c745649a4
+  - 0f2d2cd67b30ab186bf3db5a07acfe835f1d74335c6493c80e9e4f0598e29b2c
+  - 96916aba47f230a9bc68cd3fd98d0d352e1fd8f23c16c515107c4d965a2067a3
+  - 0f4788019cdb29f4db7b03d9efefce099d7adf49c0daf70a144b814b292bf577
+quality_policy_version: "2"
+quality_identity_sha256: 6828b5d75a94c575e411f117b04a0eba9e467009df99447d94ef20b62e075602
+approved_findings:
+  - check_id: zero_volume_candle
+    count: 64
+    canonical_finding_sha256: bbae226b53c735e0c8caaf5ba02265478365d71eaf494bf9cf3638c8bb3fdbd2
+approver: 258711354+wyze69-sys@users.noreply.github.com
+decision_time_utc: "2026-08-29T14:31:21Z"
+rationale: official source contains 64 no-trade candles in May 2022 (2022-05-01 and 2022-05-28 UTC); rows are preserved, all hard invariants pass, and approval is internal-analysis-only.
+scope: exact full-year 2022 BTCUSDT USD-M 1m canonical content only; no wildcard or future-data scope.
+record_sha256: 90468329d08b9cf8b485f67227b85926a7cefbbac02a646caaa007e2392adcbb

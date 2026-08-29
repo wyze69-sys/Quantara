@@ -6,9 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from conftest import VALID_DESCRIPTOR_YAML
+from conftest import EXTENDED_YEARS, VALID_DESCRIPTOR_YAML
+from conftest import extended_year_1m_descriptor_text as _extended_year_1m_text
 from conftest import write_text as _write
 from quantara.descriptor import DescriptorError, load_descriptor
+from quantara.hashing import descriptor_hash
 
 VALID_V2_DESCRIPTOR_YAML = """\
 schema: quantara.dataset-descriptor/v2
@@ -309,3 +311,126 @@ def test_v2_year_rejects_policy_1_and_missing_or_bad_approval(tmp_path: Path) ->
     )
     with pytest.raises(DescriptorError, match="quality_approval"):
         load_descriptor(_write(tmp_path / "bad_year_approval", text_bad_path))
+
+
+# --- Additive: data slice 015-extended (2020/2021/2022 year identities) --------
+
+# Frozen JCS canonical-semantics digests for the three approved 015-extended
+# year descriptors under the pre-registered policy-"1" combination. These are
+# the round-trip anchors required by gate G1: a silent identity, month-set,
+# period, host, or policy drift changes the digest and fails here.
+EXTENDED_YEAR_CANONICAL_DIGESTS = {
+    2020: "eb589f21f01499444b832fcbfa611addc5bb2889a2d2b8cedbc926d7551dd7f9",
+    2021: "4e3e359ccaded605e9f82003e99fba81b72f09bfbb359f8a011852293903f19f",
+    2022: "b1eb75e9b0f569632454eb6489ecf5eaf91db397eb408a77e2a6254102936f00",
+}
+
+EXTENDED_YEAR_EXPECTED_ROWS = {2020: 527_040, 2021: 525_600, 2022: 525_600}
+
+
+@pytest.mark.parametrize("year", EXTENDED_YEARS)
+def test_extended_year_descriptor_round_trip(tmp_path: Path, year: int) -> None:
+    """One round-trip per approved year: load, then assert frozen JCS bytes."""
+    path = _write(
+        tmp_path / str(year),
+        _extended_year_1m_text(year),
+        name=f"binance-usdm-btcusdt-1m-{year}.yaml",
+    )
+    descriptor = load_descriptor(path)
+    assert descriptor.dataset_id == f"binance_usdm_btcusdt_klines_1m_{year}"
+    assert descriptor.months == tuple(f"{year}-{month:02d}" for month in range(1, 13))
+    assert descriptor.expected_row_count == EXTENDED_YEAR_EXPECTED_ROWS[year]
+    assert (
+        descriptor.start_utc.strftime("%Y-%m-%dT%H:%M:%SZ") == f"{year}-01-01T00:00:00Z"
+    )
+    assert (
+        descriptor.end_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        == f"{year + 1}-01-01T00:00:00Z"
+    )
+    assert descriptor.quality_policy_version == "1"
+    assert descriptor.quality_approval is None
+    assert len(descriptor.archive_urls) == 12
+    assert descriptor.archive_urls[0].endswith(f"BTCUSDT-1m-{year}-01.zip")
+    assert descriptor.archive_urls[-1].endswith(f"BTCUSDT-1m-{year}-12.zip")
+    assert descriptor.checksum_urls[-1].endswith(f"BTCUSDT-1m-{year}-12.zip.CHECKSUM")
+    assert descriptor.member_patterns[-1] == rf"^BTCUSDT-1m-{year}-12\.csv$"
+    assert (
+        descriptor_hash(descriptor.canonical_semantics())
+        == EXTENDED_YEAR_CANONICAL_DIGESTS[year]
+    )
+
+
+@pytest.mark.parametrize("year", EXTENDED_YEARS)
+def test_extended_year_rejects_unapproved_policy_combinations(
+    tmp_path: Path, year: int
+) -> None:
+    """Only ("1", no approval) and ("2", that year's exact path) are approved."""
+    base = _extended_year_1m_text(year)
+    approved_path = (
+        "configs/quality/approvals/"
+        f"binance-usdm-btcusdt-1m-{year}-zero-volume.v1.yaml"
+    )
+
+    # Policy 1 must not carry an approval path.
+    text = base + f"quality_approval: {approved_path}\n"
+    with pytest.raises(DescriptorError, match="quality_approval"):
+        load_descriptor(_write(tmp_path / f"{year}-p1-approval", text))
+
+    # Policy 2 requires an approval path.
+    text = base.replace('quality_policy_version: "1"', 'quality_policy_version: "2"')
+    with pytest.raises(DescriptorError, match="quality_approval"):
+        load_descriptor(_write(tmp_path / f"{year}-p2-missing", text))
+
+    # Policy 2 with another year's approval path is rejected.
+    other = 2021 if year != 2021 else 2022
+    wrong_path = (
+        "configs/quality/approvals/"
+        f"binance-usdm-btcusdt-1m-{other}-zero-volume.v1.yaml"
+    )
+    text = (
+        base.replace('quality_policy_version: "1"', 'quality_policy_version: "2"')
+        + f"quality_approval: {wrong_path}\n"
+    )
+    with pytest.raises(DescriptorError, match="quality_approval"):
+        load_descriptor(_write(tmp_path / f"{year}-p2-wrong", text))
+
+    # Any other policy version is rejected outright.
+    text = base.replace('quality_policy_version: "1"', 'quality_policy_version: "3"')
+    with pytest.raises(DescriptorError, match="quality_policy_version"):
+        load_descriptor(_write(tmp_path / f"{year}-p3", text))
+
+
+def test_extended_year_identities_do_not_admit_unapproved_years(
+    tmp_path: Path,
+) -> None:
+    """2019/2023 are not approved identities; only 2020-2022 were added."""
+    for unapproved in (2019, 2023):
+        text = _extended_year_1m_text(2020).replace("2020", str(unapproved))
+        with pytest.raises(DescriptorError, match="dataset_id"):
+            load_descriptor(_write(tmp_path / f"unapproved-{unapproved}", text))
+
+
+@pytest.mark.parametrize("year", EXTENDED_YEARS)
+def test_repository_extended_year_descriptor_matches_approved_contract(
+    year: int,
+) -> None:
+    """The committed repository descriptor obeys the approved year contract."""
+    repo_root = Path(__file__).resolve().parents[1]
+    descriptor = load_descriptor(
+        repo_root / "configs" / "datasets" / f"binance-usdm-btcusdt-1m-{year}.yaml"
+    )
+    assert descriptor.dataset_id == f"binance_usdm_btcusdt_klines_1m_{year}"
+    assert descriptor.months == tuple(f"{year}-{month:02d}" for month in range(1, 13))
+    assert descriptor.expected_row_count == EXTENDED_YEAR_EXPECTED_ROWS[year]
+    assert descriptor.allowed_hosts == ("data.binance.vision",)
+    assert descriptor.legal_record == (
+        "configs/legal/binance-usdm-provider-rights.v3.yaml"
+    )
+    if descriptor.quality_policy_version == "1":
+        assert descriptor.quality_approval is None
+    else:
+        assert descriptor.quality_policy_version == "2"
+        assert descriptor.quality_approval == (
+            "configs/quality/approvals/"
+            f"binance-usdm-btcusdt-1m-{year}-zero-volume.v1.yaml"
+        )

@@ -1,0 +1,23 @@
+schema: quantara.dataset-descriptor/v2
+dataset_id: binance_usdm_btcusdt_klines_1m_2020
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1m
+months: ["2020-01", "2020-02", "2020-03", "2020-04", "2020-05", "2020-06", "2020-07", "2020-08", "2020-09", "2020-10", "2020-11", "2020-12"]
+period:
+  start: "2020-01-01T00:00:00Z"
+  end: "2021-01-01T00:00:00Z"
+source:
+  allowed_hosts:
+    - data.binance.vision
+schema_version: binance_usdm_kline_1m_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml

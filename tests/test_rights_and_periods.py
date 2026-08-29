@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import calendar
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 import yaml
 
 from conftest import (
+    EXTENDED_YEARS,
     VALID_DESCRIPTOR_YAML,
 )
 from conftest import (
@@ -19,6 +22,7 @@ from conftest import (
 from conftest import (
     write_text as _write,
 )
+from quantara.derive_descriptor import load_derived_descriptor
 from quantara.descriptor import (
     APPROVED_INTERNAL_OPERATIONS,
     RIGHTS_OPERATIONS,
@@ -185,3 +189,72 @@ def test_approved_internal_operation_names() -> None:
         "analyze_internal",
         "model_train_internal",
     )
+
+
+# --- Additive: data slice 015-extended period coverage (2020/2021/2022) --------
+
+CONFIG_ROOT = REPO_ROOT / "configs" / "datasets"
+
+# Calendar math, stated independently of the loader: 1m rows, 1h buckets,
+# 1d buckets per approved year. 2020 is a leap year.
+EXTENDED_YEAR_CALENDAR = {
+    2020: {"1m": 527_040, "1h": 8_784, "1d": 366},
+    2021: {"1m": 525_600, "1h": 8_760, "1d": 365},
+    2022: {"1m": 525_600, "1h": 8_760, "1d": 365},
+}
+
+
+@pytest.mark.parametrize("year", EXTENDED_YEARS)
+def test_extended_year_period_covers_exactly_twelve_consecutive_months(
+    year: int,
+) -> None:
+    """The 1m year period is the exact union of its twelve listed months."""
+    descriptor = load_descriptor(CONFIG_ROOT / f"binance-usdm-btcusdt-1m-{year}.yaml")
+    assert descriptor.months == tuple(f"{year}-{month:02d}" for month in range(1, 13))
+    assert descriptor.start_utc == datetime(year, 1, 1, tzinfo=UTC)
+    assert descriptor.end_utc == datetime(year + 1, 1, 1, tzinfo=UTC)
+    assert descriptor.expected_row_count == EXTENDED_YEAR_CALENDAR[year]["1m"]
+    # Per-month calendar accounting must sum to the year total exactly.
+    per_month = [
+        calendar.monthrange(year, month)[1] * 1_440 for month in range(1, 13)
+    ]
+    assert sum(per_month) == EXTENDED_YEAR_CALENDAR[year]["1m"]
+
+
+@pytest.mark.parametrize("year", EXTENDED_YEARS)
+def test_extended_year_derived_periods_equal_base_and_divide_evenly(
+    year: int,
+) -> None:
+    """1h/1d derived periods equal the base period and divide with no remainder."""
+    base = load_descriptor(CONFIG_ROOT / f"binance-usdm-btcusdt-1m-{year}.yaml")
+    for interval in ("1h", "1d"):
+        derived = load_derived_descriptor(
+            CONFIG_ROOT / f"binance-usdm-btcusdt-{interval}-{year}-derived.yaml"
+        )
+        assert derived.dataset_id == f"binance_usdm_btcusdt_klines_{interval}_{year}"
+        assert derived.base_dataset_id == base.dataset_id
+        assert (derived.start_utc, derived.end_utc) == (base.start_utc, base.end_utc)
+        assert derived.expected_row_count == EXTENDED_YEAR_CALENDAR[year][interval]
+        length_ms = (derived.end_utc - derived.start_utc) // timedelta(milliseconds=1)
+        assert length_ms % derived.timeframe_ms == 0
+        assert derived.legal_record == base.legal_record
+
+
+@pytest.mark.parametrize("year", EXTENDED_YEARS)
+def test_extended_year_lane_is_authorized_by_rights_v3(year: int) -> None:
+    """Every 015-extended descriptor binds v3, which permits all five internals."""
+    record = load_rights_record(V3_RECORD_PATH)
+    paths = [CONFIG_ROOT / f"binance-usdm-btcusdt-1m-{year}.yaml"]
+    for path in paths:
+        descriptor = load_descriptor(path)
+        assert descriptor.legal_record == (
+            "configs/legal/binance-usdm-provider-rights.v3.yaml"
+        )
+    for operation in APPROVED_INTERNAL_OPERATIONS:
+        assert record.permits(operation) is True
+    for operation in (
+        "commercial_production_eligible",
+        "customer_display",
+        "raw_redistribution",
+    ):
+        assert record.permits(operation) is False

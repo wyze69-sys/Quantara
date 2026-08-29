@@ -1,0 +1,24 @@
+schema: quantara.dataset-descriptor/v2
+dataset_id: binance_usdm_btcusdt_klines_1m_2022
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1m
+months: ["2022-01", "2022-02", "2022-03", "2022-04", "2022-05", "2022-06", "2022-07", "2022-08", "2022-09", "2022-10", "2022-11", "2022-12"]
+period:
+  start: "2022-01-01T00:00:00Z"
+  end: "2023-01-01T00:00:00Z"
+source:
+  allowed_hosts:
+    - data.binance.vision
+schema_version: binance_usdm_kline_1m_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "2"
+quality_approval: configs/quality/approvals/binance-usdm-btcusdt-1m-2022-zero-volume.v1.yaml
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml

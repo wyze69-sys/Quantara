@@ -955,6 +955,117 @@ def year_chain_cfg_tree(tmp_path: Path) -> Path:
     return root
 
 
+# --- Additive helpers for data slice 015-extended (2020/2021/2022 years) ------
+
+# The three approved slice 015-extended calendar years. The tuple is the
+# single source of truth for the per-year test helpers below; a year absent
+# from it has no approved identity table and must fail descriptor loading.
+EXTENDED_YEARS: tuple[int, ...] = (2020, 2021, 2022)
+
+EXTENDED_YEAR_1M_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.dataset-descriptor/v2
+dataset_id: binance_usdm_btcusdt_klines_1m_{year}
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1m
+months: {months}
+period:
+  start: "{year}-01-01T00:00:00Z"
+  end: "{next_year}-01-01T00:00:00Z"
+source:
+  allowed_hosts:
+    - data.binance.vision
+schema_version: binance_usdm_kline_1m_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml
+"""
+
+EXTENDED_YEAR_DERIVED_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.derived-dataset-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_{year}
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: {interval}
+base_dataset_id: binance_usdm_btcusdt_klines_1m_{year}
+base_descriptor: configs/datasets/binance-usdm-btcusdt-1m-{year}.yaml
+period:
+  start: "{year}-01-01T00:00:00Z"
+  end: "{next_year}-01-01T00:00:00Z"
+transformation:
+  name: multi_timeframe_aggregation
+  version: "1"
+schema_version: binance_usdm_kline_{interval}_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml
+"""
+
+
+def extended_year_months(year: int) -> list[str]:
+    """The twelve consecutive calendar months of one approved year."""
+    return [f"{year}-{month:02d}" for month in range(1, 13)]
+
+
+def extended_year_1m_descriptor_text(year: int) -> str:
+    """Render the approved 1m year descriptor for one 015-extended year."""
+    months = extended_year_months(year)
+    return EXTENDED_YEAR_1M_DESCRIPTOR_TEMPLATE.format(
+        year=year,
+        next_year=year + 1,
+        months="[" + ", ".join(f'"{month}"' for month in months) + "]",
+    )
+
+
+def extended_year_derived_descriptor_text(year: int, interval: str) -> str:
+    """Render the approved 1h/1d derived descriptor for one year."""
+    return EXTENDED_YEAR_DERIVED_DESCRIPTOR_TEMPLATE.format(
+        year=year, next_year=year + 1, interval=interval
+    )
+
+
+def write_extended_year_descriptors(root: Path, year: int) -> dict[str, Path]:
+    """Write the 1m/1h/1d descriptor trio for one 015-extended year."""
+    datasets = root / "configs" / "datasets"
+    datasets.mkdir(parents=True, exist_ok=True)
+    written: dict[str, Path] = {}
+    base = datasets / f"binance-usdm-btcusdt-1m-{year}.yaml"
+    base.write_text(extended_year_1m_descriptor_text(year), encoding="utf-8")
+    written["1m"] = base
+    for interval in ("1h", "1d"):
+        target = datasets / f"binance-usdm-btcusdt-{interval}-{year}-derived.yaml"
+        target.write_text(
+            extended_year_derived_descriptor_text(year, interval), encoding="utf-8"
+        )
+        written[interval] = target
+    return written
+
+
+def extended_year_cfg_tree(tmp_path: Path, year: int) -> Path:
+    """Repo-shaped tree with one 015-extended year's descriptors and rights."""
+    legal = tmp_path / "configs" / "legal"
+    legal.mkdir(parents=True, exist_ok=True)
+    (legal / "binance-usdm-provider-rights.v3.yaml").write_text(
+        yaml.safe_dump(rights_v3_yaml_dict(), sort_keys=False), encoding="utf-8"
+    )
+    write_extended_year_descriptors(tmp_path, year)
+    return tmp_path
+
+
 def write_synthetic_sidecar(path: Path, ics: list[Decimal]) -> Path:
     """Write a frozen-shape IC sidecar for diagnostic integration tests."""
     path.parent.mkdir(parents=True, exist_ok=True)

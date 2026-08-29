@@ -75,9 +75,33 @@ V2_YEAR_APPROVED_IDENTITIES: dict[str, str] = {
     **COMMON_APPROVED_IDENTITIES,
 }
 
+# Data slice 015-extended: three additional approved full-calendar-year range
+# identities. Each year is its own explicit approved table — the year is never
+# a free parameter, so no unapproved year can enter through the loader.
+V2_YEAR_APPROVED_IDENTITIES_2020: dict[str, str] = {
+    "schema": V2_SCHEMA,
+    "dataset_id": "binance_usdm_btcusdt_klines_1m_2020",
+    **COMMON_APPROVED_IDENTITIES,
+}
+
+V2_YEAR_APPROVED_IDENTITIES_2021: dict[str, str] = {
+    "schema": V2_SCHEMA,
+    "dataset_id": "binance_usdm_btcusdt_klines_1m_2021",
+    **COMMON_APPROVED_IDENTITIES,
+}
+
+V2_YEAR_APPROVED_IDENTITIES_2022: dict[str, str] = {
+    "schema": V2_SCHEMA,
+    "dataset_id": "binance_usdm_btcusdt_klines_1m_2022",
+    **COMMON_APPROVED_IDENTITIES,
+}
+
 V2_IDENTITY_TABLES: tuple[dict[str, str], ...] = (
     V2_APPROVED_IDENTITIES,
     V2_YEAR_APPROVED_IDENTITIES,
+    V2_YEAR_APPROVED_IDENTITIES_2020,
+    V2_YEAR_APPROVED_IDENTITIES_2021,
+    V2_YEAR_APPROVED_IDENTITIES_2022,
 )
 
 
@@ -101,6 +125,61 @@ V2_YEAR_DESCRIPTOR_KEYS = frozenset(V2_YEAR_APPROVED_IDENTITIES) | {
     "quality_policy_version",
     "legal_record",
     "quality_approval",
+}
+V2_YEAR_DESCRIPTOR_KEYS_2020 = frozenset(V2_YEAR_APPROVED_IDENTITIES_2020) | {
+    "months",
+    "period",
+    "source",
+    "quality_policy_version",
+    "legal_record",
+    "quality_approval",
+}
+V2_YEAR_DESCRIPTOR_KEYS_2021 = frozenset(V2_YEAR_APPROVED_IDENTITIES_2021) | {
+    "months",
+    "period",
+    "source",
+    "quality_policy_version",
+    "legal_record",
+    "quality_approval",
+}
+V2_YEAR_DESCRIPTOR_KEYS_2022 = frozenset(V2_YEAR_APPROVED_IDENTITIES_2022) | {
+    "months",
+    "period",
+    "source",
+    "quality_policy_version",
+    "legal_record",
+    "quality_approval",
+}
+
+# The exact approved 2024 approval path (frozen by slice 010A) and the exact
+# approved per-year paths introduced by slice 015-extended. A per-year
+# descriptor may name only its own path; no wildcard and no cross-year reuse.
+V2_YEAR_APPROVED_QUALITY_APPROVALS: dict[str, str] = {
+    "binance_usdm_btcusdt_klines_1m_2024": (
+        "configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml"
+    ),
+    "binance_usdm_btcusdt_klines_1m_2020": (
+        "configs/quality/approvals/binance-usdm-btcusdt-1m-2020-zero-volume.v1.yaml"
+    ),
+    "binance_usdm_btcusdt_klines_1m_2021": (
+        "configs/quality/approvals/binance-usdm-btcusdt-1m-2021-zero-volume.v1.yaml"
+    ),
+    "binance_usdm_btcusdt_klines_1m_2022": (
+        "configs/quality/approvals/binance-usdm-btcusdt-1m-2022-zero-volume.v1.yaml"
+    ),
+}
+
+# Slice 015-extended year lanes. Unlike the frozen 2024 lane (whose real
+# archives are known to carry exactly one reviewed warning and therefore
+# require policy 2), each new year's raw findings are unknown before
+# acquisition. Both approved combinations are pre-registered constants:
+# policy "1" with NO approval (strictly warning-blocking) or policy "2" with
+# that year's exact approval path. The year is never a free parameter and no
+# other policy/path combination is accepted.
+V2_EXTENDED_YEAR_DESCRIPTOR_KEYS: dict[str, frozenset[str]] = {
+    "binance_usdm_btcusdt_klines_1m_2020": V2_YEAR_DESCRIPTOR_KEYS_2020,
+    "binance_usdm_btcusdt_klines_1m_2021": V2_YEAR_DESCRIPTOR_KEYS_2021,
+    "binance_usdm_btcusdt_klines_1m_2022": V2_YEAR_DESCRIPTOR_KEYS_2022,
 }
 
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+$")
@@ -325,8 +404,9 @@ def _v2_identity_table_for(dataset_id: Any) -> dict[str, str]:
     """Return the approved v2 identity table whose dataset_id matches.
 
     A v2 descriptor must match exactly one approved range identity table
-    (Q1 or the full 2024 calendar year); a dataset_id matching none of
-    them is rejected with the same identity-drift message style.
+    (Q1, the full 2024 calendar year, or one of the slice 015-extended
+    calendar years 2020/2021/2022); a dataset_id matching none of them is
+    rejected with the same identity-drift message style.
     """
     for table in V2_IDENTITY_TABLES:
         if dataset_id == table["dataset_id"]:
@@ -338,24 +418,32 @@ def _v2_identity_table_for(dataset_id: Any) -> dict[str, str]:
     return V2_IDENTITY_TABLES[0]  # unreachable; _reject raises
 
 
-def load_descriptor(path: Path | str) -> DatasetDescriptor:
+def load_descriptor(path: Path | str) -> DatasetDescriptor:  # noqa: C901, PLR0912
     document = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         _reject("descriptor must be a YAML mapping")
     schema = document.get("schema")
     if schema not in (V1_SCHEMA, V2_SCHEMA):
         _reject(f"schema must equal {V1_SCHEMA!r} or {V2_SCHEMA!r}")
+    # Keys that may legitimately be absent: only the per-year approval path of
+    # a slice 015-extended year, whose approved policy combination is either
+    # ("1", no approval) or ("2", that year's exact approval path).
+    optional_keys: frozenset[str] = frozenset()
     if schema == V1_SCHEMA:
         approved_identities = APPROVED_IDENTITIES
         descriptor_keys = DESCRIPTOR_KEYS
     elif document.get("dataset_id") == "binance_usdm_btcusdt_klines_1m_2024":
         approved_identities = V2_YEAR_APPROVED_IDENTITIES
         descriptor_keys = V2_YEAR_DESCRIPTOR_KEYS
+    elif document.get("dataset_id") in V2_EXTENDED_YEAR_DESCRIPTOR_KEYS:
+        approved_identities = _v2_identity_table_for(document.get("dataset_id"))
+        descriptor_keys = V2_EXTENDED_YEAR_DESCRIPTOR_KEYS[document["dataset_id"]]
+        optional_keys = frozenset({"quality_approval"})
     else:
         approved_identities = _v2_identity_table_for(document.get("dataset_id"))
         descriptor_keys = V2_DESCRIPTOR_KEYS
     keys = set(document)
-    missing = descriptor_keys - keys
+    missing = descriptor_keys - optional_keys - keys
     if missing:
         _reject(f"missing descriptor keys: {sorted(missing)}")
     unknown = keys - descriptor_keys
@@ -442,21 +530,48 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:
         if "quality_approval" not in document:
             _reject("full-year 2024 descriptor requires quality_approval path")
         quality_approval = document["quality_approval"]
-        if (
-            not isinstance(quality_approval, str)
-            or quality_approval
-            != "configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml"
-        ):
-            _reject(
-                "quality_approval must equal approved path "
-                "'configs/quality/approvals/binance-usdm-btcusdt-1m-2024-zero-volume.v1.yaml'"
-            )
+        approved_path = V2_YEAR_APPROVED_QUALITY_APPROVALS[document["dataset_id"]]
+        if not isinstance(quality_approval, str) or quality_approval != approved_path:
+            _reject(f"quality_approval must equal approved path {approved_path!r}")
         from quantara.quality_approval import validate_approval_path
 
         try:
             validate_approval_path(quality_approval)
         except QuantaraError as exc:
             _reject(f"invalid quality_approval path: {exc}")
+    elif document["dataset_id"] in V2_EXTENDED_YEAR_DESCRIPTOR_KEYS:
+        # Slice 015-extended year lane: exactly two approved combinations.
+        approved_path = V2_YEAR_APPROVED_QUALITY_APPROVALS[document["dataset_id"]]
+        if quality_policy_version == "1":
+            if "quality_approval" in document:
+                _reject(
+                    f"{document['dataset_id']} descriptor under "
+                    "quality_policy_version '1' must not specify quality_approval"
+                )
+        elif quality_policy_version == "2":
+            if "quality_approval" not in document:
+                _reject(
+                    f"{document['dataset_id']} descriptor under "
+                    "quality_policy_version '2' requires quality_approval path"
+                )
+            quality_approval = document["quality_approval"]
+            if (
+                not isinstance(quality_approval, str)
+                or quality_approval != approved_path
+            ):
+                _reject(f"quality_approval must equal approved path {approved_path!r}")
+            from quantara.quality_approval import validate_approval_path
+
+            try:
+                validate_approval_path(quality_approval)
+            except QuantaraError as exc:
+                _reject(f"invalid quality_approval path: {exc}")
+        else:
+            _reject(
+                f"{document['dataset_id']} descriptor requires "
+                "quality_policy_version '1' or '2', got "
+                f"{quality_policy_version!r}"
+            )
     else:
         _reject(f"unsupported descriptor combination: {document.get('dataset_id')}")
 
