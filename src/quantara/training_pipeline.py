@@ -86,6 +86,39 @@ TRAINING_EVIDENCE_KEYS = (
 )
 
 
+def _write_per_fold_sidecar(records: list[dict], path: Path) -> None:
+    """Write the non-publication snapshot consumed by the IC diagnostic."""
+    prefix = "per_fold_"
+    if not path.stem.startswith(prefix) or path.stem == prefix:
+        raise ValueError("per-fold sidecar path must encode an attempt id")
+    if len(records) != 117:
+        raise ValueError("per-fold sidecar requires exactly 117 records")
+    normalized_records: list[dict] = []
+    for expected_index, record in enumerate(records):
+        fold_index = record.get("fold_index", record.get("fold_id"))
+        if fold_index != expected_index:
+            raise ValueError("per-fold sidecar records must be in fold order")
+        normalized = dict(record)
+        normalized.pop("fold_id", None)
+        normalized["fold_index"] = fold_index
+        normalized_records.append(normalized)
+
+    code_revision = environment_evidence(
+        Path(__file__).resolve().parents[2]
+    ).get("git_head")
+    if not isinstance(code_revision, str):
+        raise ValueError("per-fold sidecar requires a code revision")
+    write_json(
+        path,
+        {
+            "schema_version": "quantara.ic_stability_sidecar/v1",
+            "attempt_id": path.stem.removeprefix(prefix),
+            "code_revision": code_revision,
+            "records": normalized_records,
+        },
+    )
+
+
 
 def _dataset_dir(data_root: Path, lane: str, start: datetime) -> Path:
     return (
@@ -671,6 +704,13 @@ def run_training_pipeline(
             file=sys.stderr,
         )
         if not dry_run:
+            _write_per_fold_sidecar(
+                records,
+                data
+                / "diagnostic"
+                / "training"
+                / f"per_fold_{attempt_id}.json",
+            )
             _write_kill_attempt(data, root, attempt_id, kill)
         return EXIT_KILL_CRITERIA_FAILED
 
