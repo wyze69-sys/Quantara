@@ -37,7 +37,7 @@ from quantara.training_metrics_logistic import (
     brier,
     clamp_eta,
     climatology_probability,
-    direction_ic,
+    direction_ic_with_definition,
     log_loss,
     logistic_sigmoid,
 )
@@ -559,6 +559,7 @@ def _logistic_stored_metrics(item: dict) -> dict[str, str] | None:
         1 for left, right in zip(predicted, actual, strict=True) if left == right
     )
     try:
+        ic, defined = direction_ic_with_definition(probabilities, labels)
         return {
             "directional_accuracy": format(
                 logistic_quantize_q18(
@@ -570,9 +571,8 @@ def _logistic_stored_metrics(item: dict) -> dict[str, str] | None:
                 logistic_quantize_q18(log_loss(probabilities, labels)), "f"
             ),
             "brier": format(logistic_quantize_q18(brier(probabilities, labels)), "f"),
-            "direction_ic": format(
-                logistic_quantize_q18(direction_ic(probabilities, labels)), "f"
-            ),
+            "direction_ic": format(logistic_quantize_q18(ic), "f"),
+            "direction_ic_defined": defined,
         }
     except Exception:
         return None

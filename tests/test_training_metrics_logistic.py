@@ -18,12 +18,14 @@ from quantara.training_metrics_logistic import (
     clamp_mu,
     climatology_probability,
     direction_ic,
+    direction_ic_with_definition,
     evaluate_kill_criteria,
     fit_logistic_irls,
     log_loss,
     logistic_sigmoid,
     predict_probability,
     quantize_q18,
+    return_ic_with_definition,
 )
 
 _ORACLE_CONTEXT = Context(prec=50, rounding=ROUND_HALF_EVEN)
@@ -205,6 +207,27 @@ def test_direction_ic_and_climatology_probability() -> None:
         climatology_probability(0, 0)
 
 
+def test_single_class_fold_ic_is_zero_and_flagged_undefined() -> None:
+    probabilities = [Decimal("0.2"), Decimal("0.4"), Decimal("0.7")]
+    # All-one-class labels: correlation is mathematically undefined.
+    with pytest.raises(MetricDomainError, match="zero variance"):
+        direction_ic(probabilities, [0, 0, 0])
+    value, defined = direction_ic_with_definition(probabilities, [0, 0, 0])
+    assert defined is False
+    assert value == Decimal("0.000000000000000000")
+    value, defined = direction_ic_with_definition(probabilities, [0, 1, 1])
+    assert defined is True
+    assert value == direction_ic(probabilities, [0, 1, 1])
+
+    constant = [(Decimal("0.5"), Decimal("0.1")), (Decimal("0.5"), Decimal("0.2"))]
+    value, defined = return_ic_with_definition(constant)
+    assert (value, defined) == (Decimal("0.000000000000000000"), False)
+    varying = [(Decimal("0.4"), Decimal("0.1")), (Decimal("0.6"), Decimal("0.2"))]
+    value, defined = return_ic_with_definition(varying)
+    assert defined is True
+    assert value == Decimal(1)
+
+
 def _kill_block(accuracy: str, ic: str, loss: str, score: str) -> dict:
     summaries = [
         {"metric": "directional_accuracy", "equal_weight_mean": accuracy},
@@ -380,6 +403,8 @@ def test_fold_records_exclude_zero_and_null_rows_with_causal_baselines() -> None
     assert record["direction_ic"] == format(
         quantize_q18(direction_ic(probabilities, scored_labels)), "f"
     )
+    assert record["direction_ic_defined"] is True
+    assert record["pearson_ic_defined"] is True
     for name in (
         "directional_accuracy",
         "log_loss",
@@ -423,6 +448,23 @@ def test_training_uses_only_train_rows_and_predicts_with_the_fold_fit() -> None:
         assert format(probability, "f") == prediction["probability"]
 
 
+def test_single_class_test_fold_records_zero_ic_instead_of_failing() -> None:
+    rows = _fixture_rows()
+    # Force every eligible scored row in the fold to the same direction, as
+    # 2024 fold 56 genuinely is.
+    for index in range(264, 270):
+        rows[index] = (*rows[index][:6], -1)
+    record = build_logistic_training_records([_fold()], rows)[0]
+    assert record["predicted_count"] == 5
+    assert record["direction_ic"] == "0.000000000000000000"
+    assert record["direction_ic_defined"] is False
+    assert record["pearson_ic_defined"] is True
+    summaries, _ = build_logistic_training_summaries([record])
+    ic_summary = next(item for item in summaries if item["metric"] == "direction_ic")
+    assert ic_summary["defined_fold_count"] == 0
+    assert ic_summary["equal_weight_mean"] == "0.000000000000000000"
+
+
 def test_prediction_eta_clamp_is_counted() -> None:
     rows = _fixture_rows()
     rows[266] = (
@@ -458,6 +500,7 @@ def test_summaries_and_baseline_summaries_cover_every_metric() -> None:
     ]
     assert all(item["fold_count"] == 1 for item in summaries)
     assert all(item["total_predicted_count"] == 4 for item in summaries)
+    assert all(item["defined_fold_count"] == 1 for item in summaries)
     assert set(baselines) == {
         "majority_class_train_window",
         "sign_f_ret_1",

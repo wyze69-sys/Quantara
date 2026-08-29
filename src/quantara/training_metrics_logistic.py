@@ -405,6 +405,39 @@ def direction_ic(probabilities: Sequence[Decimal], labels: Sequence[object]) -> 
     return _pearson(pairs, "direction_ic")
 
 
+def direction_ic_with_definition(
+    probabilities: Sequence[Decimal], labels: Sequence[object]
+) -> tuple[Decimal, bool]:
+    """``direction_ic`` with the documented single-class-fold convention.
+
+    A fold whose scored labels are all identical (2024 fold 56 is all-down)
+    has zero label variance, so its correlation is mathematically undefined.
+    Such a fold carries no rank information, and its IC is therefore recorded
+    as exactly zero and flagged undefined. Zero is the conservative choice: it
+    can only pull the K2 mean toward the threshold, never away from it, so the
+    pre-registered bar is never weakened by the convention. The same treatment
+    applies to a degenerate constant-probability fold.
+    """
+    try:
+        return direction_ic(probabilities, labels), True
+    except MetricDomainError as exc:
+        if "zero variance" not in str(exc):
+            raise
+        return _Q18_ZERO, False
+
+
+def return_ic_with_definition(
+    pairs: Sequence[tuple[Decimal, Decimal]],
+) -> tuple[Decimal, bool]:
+    """``pearson_ic`` (probability vs forward return) under the same convention."""
+    try:
+        return _pearson(pairs, "pearson_ic"), True
+    except MetricDomainError as exc:
+        if "zero variance" not in str(exc):
+            raise
+        return _Q18_ZERO, False
+
+
 def climatology_probability(up_count: int, down_count: int) -> Decimal:
     """Train-window up-rate as a Q18 constant probability baseline."""
     for name, value in (("up_count", up_count), ("down_count", down_count)):
@@ -531,6 +564,10 @@ def build_logistic_training_records(
             )
 
         predicted_count = len(predictions)
+        fold_direction_ic, direction_ic_defined = direction_ic_with_definition(
+            probabilities, scored_labels
+        )
+        fold_return_ic, return_ic_defined = return_ic_with_definition(return_pairs)
         record = {
             "fold_id": fold["fold_id"],
             "train_range": list(fold["train_range"]),
@@ -565,8 +602,10 @@ def build_logistic_training_records(
             "directional_accuracy": _q18(_accuracy(predicted_directions, actual_directions)),
             "log_loss": _q18(log_loss(probabilities, scored_labels)),
             "brier": _q18(brier(probabilities, scored_labels)),
-            "direction_ic": _q18(direction_ic(probabilities, scored_labels)),
-            "pearson_ic": _q18(_pearson(return_pairs, "pearson_ic")),
+            "direction_ic": _q18(fold_direction_ic),
+            "direction_ic_defined": direction_ic_defined,
+            "pearson_ic": _q18(fold_return_ic),
+            "pearson_ic_defined": return_ic_defined,
             "predictions": predictions,
             "baselines": {
                 "majority_class_train_window": {
@@ -627,7 +666,13 @@ def build_logistic_training_summaries(records: Sequence[dict]) -> tuple[list[dic
     summaries = []
     for metric in METRICS:
         values = [Decimal(record[metric]) for record in records]
-        summaries.append({"metric": metric, **_summary(values, total)})
+        defined_key = f"{metric}_defined"
+        defined = sum(
+            1 for record in records if record.get(defined_key, True) is not False
+        )
+        summaries.append(
+            {"metric": metric, **_summary(values, total), "defined_fold_count": defined}
+        )
     baselines: dict[str, dict] = {}
     for baseline in BASELINES:
         baselines[baseline] = {
