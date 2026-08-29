@@ -957,10 +957,11 @@ def year_chain_cfg_tree(tmp_path: Path) -> Path:
 
 # --- Additive helpers for data slice 015-extended (2020/2021/2022 years) ------
 
-# The three approved slice 015-extended calendar years. The tuple is the
-# single source of truth for the per-year test helpers below; a year absent
-# from it has no approved identity table and must fail descriptor loading.
-EXTENDED_YEARS: tuple[int, ...] = (2020, 2021, 2022)
+# The approved slice 015-extended calendar years, plus the 015-extended-b year
+# 2023. The tuple is the single source of truth for the per-year test helpers
+# below; a year absent from it has no approved identity table and must fail
+# descriptor loading.
+EXTENDED_YEARS: tuple[int, ...] = (2020, 2021, 2022, 2023)
 
 EXTENDED_YEAR_1M_DESCRIPTOR_TEMPLATE = """\
 schema: quantara.dataset-descriptor/v2

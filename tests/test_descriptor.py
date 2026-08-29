@@ -323,9 +323,15 @@ EXTENDED_YEAR_CANONICAL_DIGESTS = {
     2020: "eb589f21f01499444b832fcbfa611addc5bb2889a2d2b8cedbc926d7551dd7f9",
     2021: "4e3e359ccaded605e9f82003e99fba81b72f09bfbb359f8a011852293903f19f",
     2022: "b1eb75e9b0f569632454eb6489ecf5eaf91db397eb408a77e2a6254102936f00",
+    2023: "3e8aac8001e37304e5827a8796ea911a03f497e411492325ca0ad47b11f56623",
 }
 
-EXTENDED_YEAR_EXPECTED_ROWS = {2020: 527_040, 2021: 525_600, 2022: 525_600}
+EXTENDED_YEAR_EXPECTED_ROWS = {
+    2020: 527_040,
+    2021: 525_600,
+    2022: 525_600,
+    2023: 525_600,
+}
 
 
 @pytest.mark.parametrize("year", EXTENDED_YEARS)
@@ -403,8 +409,8 @@ def test_extended_year_rejects_unapproved_policy_combinations(
 def test_extended_year_identities_do_not_admit_unapproved_years(
     tmp_path: Path,
 ) -> None:
-    """2019/2023 are not approved identities; only 2020-2022 were added."""
-    for unapproved in (2019, 2023):
+    """2019/2025 are not approved identities; only 2020-2023 were added."""
+    for unapproved in (2019, 2025):
         text = _extended_year_1m_text(2020).replace("2020", str(unapproved))
         with pytest.raises(DescriptorError, match="dataset_id"):
             load_descriptor(_write(tmp_path / f"unapproved-{unapproved}", text))

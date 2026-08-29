@@ -96,12 +96,22 @@ V2_YEAR_APPROVED_IDENTITIES_2022: dict[str, str] = {
     **COMMON_APPROVED_IDENTITIES,
 }
 
+# Data slice 015-extended-b: the 2023 recovery year, added so the frozen 012
+# model can be validated across bear (2022) / recovery (2023) / bull (2024).
+# 2023 archives are headered, so no descriptor-format amendment is required.
+V2_YEAR_APPROVED_IDENTITIES_2023: dict[str, str] = {
+    "schema": V2_SCHEMA,
+    "dataset_id": "binance_usdm_btcusdt_klines_1m_2023",
+    **COMMON_APPROVED_IDENTITIES,
+}
+
 V2_IDENTITY_TABLES: tuple[dict[str, str], ...] = (
     V2_APPROVED_IDENTITIES,
     V2_YEAR_APPROVED_IDENTITIES,
     V2_YEAR_APPROVED_IDENTITIES_2020,
     V2_YEAR_APPROVED_IDENTITIES_2021,
     V2_YEAR_APPROVED_IDENTITIES_2022,
+    V2_YEAR_APPROVED_IDENTITIES_2023,
 )
 
 
@@ -150,6 +160,14 @@ V2_YEAR_DESCRIPTOR_KEYS_2022 = frozenset(V2_YEAR_APPROVED_IDENTITIES_2022) | {
     "legal_record",
     "quality_approval",
 }
+V2_YEAR_DESCRIPTOR_KEYS_2023 = frozenset(V2_YEAR_APPROVED_IDENTITIES_2023) | {
+    "months",
+    "period",
+    "source",
+    "quality_policy_version",
+    "legal_record",
+    "quality_approval",
+}
 
 # The exact approved 2024 approval path (frozen by slice 010A) and the exact
 # approved per-year paths introduced by slice 015-extended. A per-year
@@ -167,6 +185,9 @@ V2_YEAR_APPROVED_QUALITY_APPROVALS: dict[str, str] = {
     "binance_usdm_btcusdt_klines_1m_2022": (
         "configs/quality/approvals/binance-usdm-btcusdt-1m-2022-zero-volume.v1.yaml"
     ),
+    "binance_usdm_btcusdt_klines_1m_2023": (
+        "configs/quality/approvals/binance-usdm-btcusdt-1m-2023-zero-volume.v1.yaml"
+    ),
 }
 
 # Slice 015-extended year lanes. Unlike the frozen 2024 lane (whose real
@@ -180,6 +201,7 @@ V2_EXTENDED_YEAR_DESCRIPTOR_KEYS: dict[str, frozenset[str]] = {
     "binance_usdm_btcusdt_klines_1m_2020": V2_YEAR_DESCRIPTOR_KEYS_2020,
     "binance_usdm_btcusdt_klines_1m_2021": V2_YEAR_DESCRIPTOR_KEYS_2021,
     "binance_usdm_btcusdt_klines_1m_2022": V2_YEAR_DESCRIPTOR_KEYS_2022,
+    "binance_usdm_btcusdt_klines_1m_2023": V2_YEAR_DESCRIPTOR_KEYS_2023,
 }
 
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]+$")
@@ -404,9 +426,10 @@ def _v2_identity_table_for(dataset_id: Any) -> dict[str, str]:
     """Return the approved v2 identity table whose dataset_id matches.
 
     A v2 descriptor must match exactly one approved range identity table
-    (Q1, the full 2024 calendar year, or one of the slice 015-extended
-    calendar years 2020/2021/2022); a dataset_id matching none of them is
-    rejected with the same identity-drift message style.
+    (Q1, the full 2024 calendar year, one of the slice 015-extended
+    calendar years 2020/2021/2022, or the slice 015-extended-b year 2023);
+    a dataset_id matching none of them is rejected with the same
+    identity-drift message style.
     """
     for table in V2_IDENTITY_TABLES:
         if dataset_id == table["dataset_id"]:

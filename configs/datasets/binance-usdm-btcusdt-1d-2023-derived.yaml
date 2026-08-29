@@ -1,0 +1,24 @@
+schema: quantara.derived-dataset-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_1d_2023
+provider: binance
+market_type: usd_m_futures
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+provider_symbol: BTCUSDT
+base_asset: BTC
+quote_asset: USDT
+settlement_asset: USDT
+contract_type: perpetual
+dataset_type: klines
+interval: 1d
+base_dataset_id: binance_usdm_btcusdt_klines_1m_2023
+base_descriptor: configs/datasets/binance-usdm-btcusdt-1m-2023.yaml
+period:
+  start: "2023-01-01T00:00:00Z"
+  end: "2024-01-01T00:00:00Z"
+transformation:
+  name: multi_timeframe_aggregation
+  version: "1"
+schema_version: binance_usdm_kline_1d_v1
+timestamp_semantics: closed_interval_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml
