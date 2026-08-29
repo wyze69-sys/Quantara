@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import statistics
 from decimal import Decimal, localcontext
@@ -26,6 +27,10 @@ def _q18(value: Decimal) -> Decimal:
     with localcontext() as context:
         context.prec = 50
         return value.quantize(Q18)
+
+
+def _decimal_text(value: Decimal) -> str:
+    return format(value, "f")
 
 
 def _validated_ics(ics: list[Decimal]) -> list[Decimal]:
@@ -188,7 +193,88 @@ def evaluate_ic_stability_gate(
         verdict = GateVerdict.PROCEED_WITH_CAVEAT
 
     reason = (
-        f"per_fold_sd={stdev} ci=({lower},{upper}) "
-        f"permutation_p={permutation_p}"
+        f"per_fold_sd={_decimal_text(stdev)} "
+        f"ci=({_decimal_text(lower)},{_decimal_text(upper)}) "
+        f"permutation_p={_decimal_text(permutation_p)}"
     )
     return verdict, reason
+
+
+def _run_ic_stability_report(sidecar_path: Path, report_path: Path) -> dict:
+    """Write the durable report, then remove its consumed sidecar."""
+    source = Path(sidecar_path)
+    sidecar = json.loads(source.read_text(encoding="utf-8"))
+    attempt_id = sidecar.get("attempt_id")
+    code_revision = sidecar.get("code_revision")
+    if not isinstance(attempt_id, str) or not attempt_id:
+        raise ValueError("sidecar attempt_id must be a non-empty string")
+    if not isinstance(code_revision, str) or not code_revision:
+        raise ValueError("sidecar code_revision must be a non-empty string")
+
+    ics = load_per_fold_ics(source)
+    summary = summarize_per_fold(ics)
+    bootstrap_ci = bootstrap_mean_ci(ics)
+    permutation_p = permutation_test(ics)
+    gate_verdict, gate_reason = evaluate_ic_stability_gate(ics)
+
+    statistic_keys = (
+        "mean",
+        "median",
+        "stdev",
+        "p25",
+        "p75",
+        "min",
+        "max",
+    )
+    report_summary = {key: _decimal_text(summary[key]) for key in statistic_keys}
+    report_summary.update(
+        {
+            "count_positive": summary["count_positive"],
+            "count_above_0_10": summary["count_above_0_10"],
+        }
+    )
+
+    def report_folds(items: list[dict]) -> list[dict]:
+        return [
+            {
+                "fold_index": item["fold_index"],
+                "direction_ic": _decimal_text(item["direction_ic"]),
+            }
+            for item in items
+        ]
+
+    report = {
+        "schema_version": "quantara.ic_stability_report/v1",
+        "attempt_id": attempt_id,
+        "code_revision": code_revision,
+        "summary": report_summary,
+        "bootstrap_ci": [
+            _decimal_text(bootstrap_ci[0]),
+            _decimal_text(bootstrap_ci[1]),
+        ],
+        "permutation_p_value": _decimal_text(permutation_p),
+        "gate_verdict": gate_verdict.value,
+        "gate_reason": gate_reason,
+        "best_10_folds": report_folds(summary["best_10"]),
+        "worst_10_folds": report_folds(summary["worst_10"]),
+        "time_series": [
+            {
+                "fold_index": item["fold_index"],
+                "direction_ic": _decimal_text(item["direction_ic"]),
+                "quarter": item["quarter"],
+            }
+            for item in summary["time_series"]
+        ],
+    }
+
+    destination = Path(report_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, destination)
+    source.unlink()
+    return report

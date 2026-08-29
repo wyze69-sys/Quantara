@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import calendar
+import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -951,3 +953,30 @@ def year_chain_cfg_tree(tmp_path: Path) -> Path:
     write_year_validation_descriptor(root, "1h")
     write_year_evaluation_descriptor(root, "1h")
     return root
+
+
+def write_synthetic_sidecar(path: Path, ics: list[Decimal]) -> Path:
+    """Write a frozen-shape IC sidecar for diagnostic integration tests."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "quantara.ic_stability_sidecar/v1",
+                "attempt_id": path.stem.removeprefix("per_fold_"),
+                "code_revision": "f" * 40,
+                "records": [
+                    {
+                        "fold_index": fold_index,
+                        "direction_ic": str(ic),
+                        "direction_ic_defined": True,
+                    }
+                    for fold_index, ic in enumerate(ics)
+                ],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
