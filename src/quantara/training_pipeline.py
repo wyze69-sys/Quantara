@@ -87,12 +87,19 @@ TRAINING_EVIDENCE_KEYS = (
 
 
 def _write_per_fold_sidecar(records: list[dict], path: Path) -> None:
-    """Write the non-publication snapshot consumed by the IC diagnostic."""
+    """Write the non-publication snapshot consumed by the IC diagnostic.
+
+    The sidecar is fold-count agnostic: the writer accepts any record list
+    (Q1 chain, full-year chain, or any future chain) and the fold-count
+    validation lives in the diagnostic module's ``load_per_fold_ics`` (where
+    the expected count is bound to the descriptor under test). Defense in
+    depth without over-constraining the writer.
+    """
     prefix = "per_fold_"
     if not path.stem.startswith(prefix) or path.stem == prefix:
         raise ValueError("per-fold sidecar path must encode an attempt id")
-    if len(records) != 117:
-        raise ValueError("per-fold sidecar requires exactly 117 records")
+    if len(records) == 0:
+        raise ValueError("per-fold sidecar requires at least one record")
     normalized_records: list[dict] = []
     for expected_index, record in enumerate(records):
         fold_index = record.get("fold_index", record.get("fold_id"))
