@@ -662,14 +662,22 @@ def _baseline_mean(baselines: dict, baseline: str, metric: str) -> str:
     return value
 
 
-def evaluate_kill_criteria(summaries: Sequence[dict], baselines: dict) -> dict:
+def evaluate_kill_criteria(
+    summaries: Sequence[dict],
+    baselines: dict,
+    constants: dict[str, str] | None = None,
+) -> dict:
     """Pure kill-criteria evaluation over published summaries only.
 
     Consumes summary and baseline-summary blocks — never test rows — so the
-    decision cannot see prediction-level data. The four thresholds are the
-    pre-registered constants; they are compared with exact Decimal equality
-    semantics and are never renegotiated from observed values.
+    decision cannot see prediction-level data. ``constants`` defaults to the
+    pre-registered module constants; a caller may pass the descriptor's pinned
+    block (the same values) so the artifact and the descriptor agree by
+    construction. The thresholds are never derived from observed values.
     """
+    pinned = dict(KILL_CRITERIA if constants is None else constants)
+    if set(pinned) != set(KILL_CRITERIA):
+        raise MetricDomainError(f"kill-criteria constants must be {sorted(KILL_CRITERIA)}")
     observed = {
         "directional_accuracy_mean": _summary_mean(summaries, "directional_accuracy"),
         "direction_ic_mean": _summary_mean(summaries, "direction_ic"),
@@ -682,15 +690,14 @@ def evaluate_kill_criteria(summaries: Sequence[dict], baselines: dict) -> dict:
             observed[f"{baseline}_{metric}_mean"] = _baseline_mean(baselines, baseline, metric)
     results = {
         "k1_directional_accuracy": Decimal(observed["directional_accuracy_mean"])
-        >= Decimal(KILL_CRITERIA["directional_accuracy_min"]),
+        >= Decimal(pinned["directional_accuracy_min"]),
         "k2_direction_ic": Decimal(observed["direction_ic_mean"])
-        >= Decimal(KILL_CRITERIA["direction_ic_min"]),
-        "k3_log_loss": Decimal(observed["log_loss_mean"])
-        <= Decimal(KILL_CRITERIA["log_loss_max"]),
-        "k4_brier": Decimal(observed["brier_mean"]) <= Decimal(KILL_CRITERIA["brier_max"]),
+        >= Decimal(pinned["direction_ic_min"]),
+        "k3_log_loss": Decimal(observed["log_loss_mean"]) <= Decimal(pinned["log_loss_max"]),
+        "k4_brier": Decimal(observed["brier_mean"]) <= Decimal(pinned["brier_max"]),
     }
     return {
-        "constants": dict(KILL_CRITERIA),
+        "constants": pinned,
         "observed": observed,
         "results": {key: bool(results[key]) for key in KILL_RESULT_KEYS},
         "all_passed": all(bool(results[key]) for key in KILL_RESULT_KEYS),

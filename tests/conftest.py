@@ -637,6 +637,92 @@ def write_training_descriptor(root: Path, interval: str = "1h") -> Path:
     return target
 
 
+# --- Additive helpers for data slice 012 (logistic IRLS kill criteria) --------
+
+LOGISTIC_TRAINING_DESCRIPTOR_TEMPLATE = """\
+schema: quantara.training-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_q1_training_logistic_v1
+dataset_type: model_training
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_{interval}_2024_q1
+parent_descriptor: configs/datasets/{parent_name}
+period:
+  start: "2024-01-01T00:00:00Z"
+  end: "2024-04-01T00:00:00Z"
+model:
+  family: logistic_irls
+  lambda: "1"
+  max_iterations: 50
+  tolerance: "0.000000000001"
+  eta_clamp: "24"
+  mu_clamp: "0.000000000001"
+  solver: gauss_elimination_partial_pivot
+standardization: train_window_zscore
+baselines: [majority_class_train_window, sign_f_ret_1, climatology_p]
+metrics: [directional_accuracy, log_loss, brier, direction_ic, pearson_ic]
+features: [f_ret_1, f_roc_60, f_rvol_20, f_volratio_20]
+target: l_fwddir_24
+training_set: {{ name: btcusdt_core_v1_logistic_v1, version: "1" }}
+kill_criteria:
+  directional_accuracy_min: "{directional_accuracy_min}"
+  direction_ic_min: "{direction_ic_min}"
+  log_loss_max: "{log_loss_max}"
+  brier_max: "{brier_max}"
+schema_version: quantara_model_training_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml
+"""
+
+# The pre-registered constants (plan slice 012 section 4).
+LOGISTIC_KILL_CRITERIA = {
+    "directional_accuracy_min": "0.534900284900284900",
+    "direction_ic_min": "0.020000000000000000",
+    "log_loss_max": "0.762500000000000000",
+    "brier_max": "0.250000000000000000",
+}
+# An unreachable K1 bar used only to drive the kill branch in synthetic tests;
+# loading it requires the test to patch the descriptor's approved constants, so
+# the real pre-registered bar can never be relaxed by accident.
+LOGISTIC_KILL_CRITERIA_IMPOSSIBLE = {
+    **LOGISTIC_KILL_CRITERIA,
+    "directional_accuracy_min": "0.990000000000000000",
+}
+
+
+def write_training_descriptor_logistic(
+    root: Path, interval: str = "1h", kill_criteria: dict | None = None
+) -> Path:
+    """Write a synthetic-chain logistic training descriptor.
+
+    ``kill_criteria`` defaults to the pre-registered constants; an override
+    writes the impossible-criteria variant for dual-outcome pipeline tests.
+    """
+    target = (
+        root
+        / "configs"
+        / "datasets"
+        / f"binance-usdm-btcusdt-{interval}-2024-q1-training-logistic-v1.yaml"
+    )
+    parent_name = f"binance-usdm-btcusdt-{interval}-2024-q1-validation-wf-v1.yaml"
+    constants = dict(kill_criteria or LOGISTIC_KILL_CRITERIA)
+    target.write_text(
+        LOGISTIC_TRAINING_DESCRIPTOR_TEMPLATE.format(
+            interval=interval,
+            parent_name=parent_name,
+            **constants,
+        ),
+        encoding="utf-8",
+    )
+    legal = root / "configs" / "legal"
+    legal.mkdir(parents=True, exist_ok=True)
+    (legal / "binance-usdm-provider-rights.v3.yaml").write_text(
+        yaml.safe_dump(rights_v3_yaml_dict(), sort_keys=False),
+        encoding="utf-8",
+    )
+    return target
+
+
 # --- Additive helpers for data slice 010 (2024 full-year range) ---------------
 
 YEAR_1M_BASE_DESCRIPTOR_YAML = """\
