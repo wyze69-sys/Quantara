@@ -1,0 +1,32 @@
+# Immutable quality warning approval record (slice 015-extended-b, 2023).
+# Binds the full-year 1m lane to exactly the reviewed zero-volume
+# no-trade candles present in the official Binance Vision archives.
+schema: quantara.quality-warning-approval/v1
+record_id: binance-usdm-btcusdt-1m-2023-zero-volume-v1
+dataset_id: binance_usdm_btcusdt_klines_1m_2023
+canonical_content_hash: 3ab4e5c735919066cba9313d00ea53b4c3935c3e6125bdefb5b5f06bd0e83217
+schema_fingerprint: 6a65a5ca75aa392f5a89785e0c850d27436745d7a9f5b6509144ff2a3b031ac3
+source_sha256:
+  - b7b04483464b36c89f519bf35d6461d278c709577562108b6a00fb786b92e6a6
+  - b62ca5df57b1715109cb1fd57097529b28410fb36b0db5bd41dbefe7e070db68
+  - 1cb47aae71e941d3e9d333f9c96723eb35c8b4a7ec90e819c59a7c02f89b03bb
+  - 2c22e2e460bf0e41884bf71031eebf60224ba470b25777a4d17ddc9298390650
+  - cf9e0ab390e3872ddb9d807ad161933a28e374e09dbee2b9addf659856d1e656
+  - 8dac3fe301198e752b257817542a7ded393dbe00b604f67aba6bc0090778ae95
+  - 5cc84c767c9f4d1fa3cb3d33bd009a0b5e3a445e9c89ad2ef259c90b0365cbc3
+  - 8d77e6f898fba3aa5bf643d128e0aaa1b722ea6881cd26a3d19088705117a1d7
+  - ea43f6e612b54e165c47ea30955b8d9e825b1d3ad1846f12c03ad0f0fced9029
+  - 153f1322695d16a12cab261b7798045323d9f893b19d35d95ffe94a62530b4de
+  - 63aa156170b2316927ae4c4928cc78866934a02b4bbc14c730b5fe4790383a80
+  - 947ea9b1c5dfa301f1d5ff89d28f3ee49bc73eef2cfa1f0dc4024048458eb60b
+quality_policy_version: "2"
+quality_identity_sha256: c52e095a04bd50b833696cf3c4643a8852c3b4f93b192b33d6d764b0d523c379
+approved_findings:
+  - check_id: zero_volume_candle
+    count: 118
+    canonical_finding_sha256: 5b694ac57299ab9357f1da68ee16c7e71190017fe6b763e3391e37b3b8707acc
+approver: 258711354+wyze69-sys@users.noreply.github.com
+decision_time_utc: "2026-08-29T16:55:13Z"
+rationale: official source contains 118 no-trade candles on two UTC days (19 on 2023-09-12 08:34-08:52Z and 99 on 2023-11-10 15:07-16:45Z); rows are preserved, all hard invariants pass, and approval is internal-analysis-only.
+scope: exact full-year 2023 BTCUSDT USD-M 1m canonical content only; no wildcard or future-data scope.
+record_sha256: dac2b6ee7a13e78ee4bea69550c1fddbe00a49fd23c68c02602f3f73112754d5
