@@ -1,13 +1,13 @@
 # Quantara
 
-![Quantara — foundation-stage, correctness-first market-data infrastructure specified but not implemented](docs/assets/quantara-header.svg)
+![Quantara — correctness-first market-data and machine-learning research infrastructure](docs/assets/quantara-header.svg)
 
-> **FOUNDATION-STAGE — SPECIFIED, NOT IMPLEMENTED**
-> Quantara currently publishes engineering contracts and repository standards. It does not yet ship executable ingestion, market-data, machine-learning, backtesting, or trading software.
+> **Active development, bounded scope, honest-negative friendly.**
+> Quantara is an open-source research project building correctness-first infrastructure for reproducible crypto market-data and machine-learning work. The project ships one slice at a time; current state is documented slice-by-slice below.
 
 **No trading signals. No production execution. No performance claims.**
 
-Quantara is correctness-first infrastructure for reproducible market-data and machine-learning research. Its first bounded target is an auditable archive-to-canonical data slice for Binance USD-M `BTCUSDT` perpetual one-minute data from January 2024.
+Quantara is correctness-first infrastructure for reproducible market-data and machine-learning research. Its first bounded target is an auditable archive-to-canonical data slice for Binance USD-M `BTCUSDT` perpetual one-minute data, with rigorous pre-registered evaluation gates and honest negative-result reporting. The project welcomes contributors, forks, and external audits.
 
 [Read the first data-slice specification](docs/superpowers/specs/2026-08-24-binance-btcusdt-perpetual-january-2024-data-slice-design.md) · [Review the roadmap](#roadmap) · [Contribute](CONTRIBUTING.md)
 
@@ -16,6 +16,16 @@ Quantara is correctness-first infrastructure for reproducible market-data and ma
 Quantitative research can look reproducible while depending on data that was unavailable at decision time, silently incomplete, numerically ambiguous, or transformed without verifiable provenance. Quantara treats those failures as contract violations—not modeling details.
 
 The project is being built one bounded vertical slice at a time. Each slice must make its source, legal-use decision, temporal assumptions, canonical representation, quality state, and content identity reviewable before broader capabilities are added.
+
+## How to engage
+
+- **Read the [roadmap](docs/superpowers/roadmap.md)** to see where the project is and where it's going.
+- **Read the [contribution guide](CONTRIBUTING.md)** before opening a pull request.
+- **Open an [issue](../../issues)** for bugs, feature requests, or scope questions — design-proposal issues are required for any new capability.
+- **Report security issues** privately via [SECURITY.md](SECURITY.md), not public issues.
+- **Cite this project** using the metadata in [CITATION.cff](CITATION.cff) if you build on it.
+
+The project is small and currently maintained by a single author. External reviews, forks, and audit reports are welcome and credited.
 
 ## Specified design invariants
 
@@ -113,22 +123,40 @@ No empty API, tutorial, package, source, or speculative architecture directories
 
 ## Roadmap
 
+The project is built one bounded vertical slice at a time. Every slice ships with
+a frozen plan, live tests, and a documented outcome. The full roadmap is at
+[`docs/superpowers/roadmap.md`](docs/superpowers/roadmap.md).
+
 ### Implemented and verified
 
-- No executable market-data or ML capabilities yet.
+- Slice 001 — checksum-verified archive acquisition (Binance Vision, 1m klines)
+- Slice 002 — exact-decimal canonical normalization with content addressing
+- Slice 003a/003b — research table with 4 causal features and 2 forward labels
+- Slice 004 — anchored walk-forward validation folds with 24h embargo
+- Slice 005/010 — temporal expansion to Q1 2024 and full-year 2024
+- Slice 006 — dual-IC feature evaluation (Pearson + Spearman)
+- Slices 007/008/009 — performance work (canonical hashing, Rust kernel)
+- Slice 011 — Ridge regression model with pre-registered kill criteria
+- Slice 012 — Logistic IRLS model with pre-registered kill criteria (KILL result)
+- Slice B3.5 — per-fold IC stability diagnostic, pre-registered decision gate
 
-### Specified but not implemented
+### In progress
 
-- The Binance USD-M `BTCUSDT` perpetual one-minute archive-to-canonical slice for January 2024.
-- Descriptor validation, operation-specific legal-use gates, unique staging, integrity validation, deterministic content identity, immutable publication, and attempt/content evidence.
+- Slice 015-extended — multi-year OHLCV acquisition (2020-2022) and per-year
+  feature distribution report (plan committed, executor pending)
 
 ### Planned
 
-- Higher-timeframe derivation from the canonical one-minute base.
-- Feature and label contracts with leakage-resistant temporal validation.
-- Research evaluation and calibration workflows.
+- Slice 015b — frozen-model multi-year validation (post-015-extended)
+- Slice B3.5b — cross-year decision gate (post-015b)
+- Higher-timeframe derivation from canonical 1m base
+- Feature and label contracts with leakage-resistant temporal validation
+- Research evaluation and calibration workflows
+- Slice 013 — derivatives backfill (funding, open interest, taker flow)
 
-Live collection, forecasting models, backtesting, portfolio construction, and order execution require separate design and verification gates.
+Live collection, forecasting models, backtesting, portfolio construction, and order
+execution require separate design and verification gates. The project does not
+ship trading signals.
 
 ## Engineering and contribution standards
 
@@ -147,6 +175,14 @@ Original Quantara repository material is licensed under the [Apache License 2.0]
 Raw and normalized Binance artifacts for the first slice remain restricted to private/internal evaluation while commercial-use rights are unresolved. Users are responsible for provider terms, data rights, and applicable law.
 
 Quantara is research and engineering software. It is not investment advice, a recommendation, a representation of expected performance, or a warranty of data fitness. Financial markets involve substantial risk; users remain responsible for independent validation and decisions.
+
+### Code vs. data license boundary
+
+The **code** in this repository is licensed under [Apache License 2.0](LICENSE) and is freely available for use, modification, and redistribution under that license.
+
+The **data layer** is licensed separately. Raw and normalized Binance market data, trained model artifacts, and any analytical output derived from retained Binance data are governed by the versioned [provider-rights records](configs/legal/) and are not covered by the Apache 2.0 license. The data layer is currently restricted to internal research use while commercial-use rights remain under review. See `configs/legal/binance-usdm-provider-rights.v3.yaml` for the governing record.
+
+If you fork this project, the code is yours to use under Apache 2.0; the data and any artifacts derived from it are not.
 
 ## Data foundation status
 
