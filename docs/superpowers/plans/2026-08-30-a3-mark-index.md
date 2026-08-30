@@ -1,4 +1,6 @@
-# A3 — Mark and index price history (BTCUSDT, USD-M)
+# A3 — Mark price / index price (BTCUSDT, USD-M)
+
+> **CORRECTED BY A10 (2026-08-31):** Earlier statements treating headerless physical row 0 as a header and explaining interior gaps as a recoverable offset are false. Row 0 is the valid 00:00 bar. Fresh checksum-verified re-probes found real missing minute bins in sampled 2020-01 and 2020-12 files. The authoritative correction is `2026-08-31-a10-live-acquisition-consolidation.md` and sidecar `temp/audit_a10_corrections/a3a4_reprobe_v2.json`.
 
 **Slice status:** COMPLETE
 **Audit window:** 2020-01-01 → 2024-12-31

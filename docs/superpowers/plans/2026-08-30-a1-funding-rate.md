@@ -1,5 +1,7 @@
 # A1 — Funding-rate history (BTCUSDT, USD-M)
 
+> **A10 correction notice (2026-08-31):** Use `2026-08-31-a10-live-acquisition-consolidation.md` for final completeness, publication-lag, rights, and semantic claims. In particular, 60 filenames were listed but 15 monthly contents were sampled; settlement-time availability is distinct from monthly archive publication.
+
 **Slice status:** COMPLETE
 **Audit window:** 2020-01-01 → 2024-12-31
 **Authorisation:** owner, 2026-08-30 ("after task 1 done go to another one")

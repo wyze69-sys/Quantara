@@ -3,7 +3,7 @@
 **Project:** Quantara (`D:\PROJECT\Quantara`)
 **Window:** 2020-01-01 → 2024-12-31 (2025 deliberately excluded — sealed final canary)
 **Date opened:** 2026-08-30
-**Status:** A1 complete; A2–A10 queued
+**Status:** **A1–A10 COMPLETE** — consolidated corrections and final verdicts are in `2026-08-31-a10-live-acquisition-consolidation.md`.
 **Owner authorization:** "do we can breack task to small i dont want you to stuck on my screen , just after task 1 done go to another one" (2026-08-30)
 
 ## Scope and method
@@ -31,16 +31,16 @@ A10 consolidate.
 
 | ID | Series | Status | Evidence artifact | Verdict |
 | --- | --- | --- | --- | --- |
-| A1 | BTCUSDT USD-M funding rate | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a1-funding-rate.md` + `temp/audit_a1_funding/funding_probe_v1.json` | KEEP — primary archive complete 2020-01 → 2024-12, 8h settlement, ±33 ms jitter, `.CHECKSUM` matches every probed month |
-| A2 | OI / ΔOI | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a2-open-interest.md` + `temp/audit_a2_oi/oi_probe_v1.json` + `temp/audit_a2_oi/oi_probe_v2.json` | KEEP with caveats — `metrics` archive 2020-09-01 → 2024-12-31 at 5-min; 2020-01 → 2020-08 is a real gap on Binance public archives; dedup the 2×288 anomaly in 2020-09 → 2021-01 |
-| A3 | Mark / index | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a3-mark-index.md` + `temp/audit_a3_mark_index/mark_index_probe_v1.json` | KEEP — both `markPriceKlines` and `indexPriceKlines` monthly archives 2020-01 → 2024-12, 1m OHLCV; **same headerless→headered format transition on 2022-12-01 as the base klines** — apply existing `csv_header: absent` allowlist path to the two new dataset ids |
-| A4 | Perp-spot basis | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a4-basis.md` + `temp/audit_a4_basis/basis_probe_v1.json` | KEEP — `premiumIndexKlines` archive is Binance's native TWA perp-vs-index basis 1m OHLCV (decimal fraction), 2020-01 → 2024-12; spot 1m archive extends back to 2017-08 for any future fallback; same headerless→headered transition on 2022-12-01 |
-| A5 | Liquidations | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a5-liquidations.md` + `temp/audit_a5_liquidations/liquidation_probe_v1.json` | DROP — no Binance public liquidation archive (6/6 paths 404); live `/fapi/v1/allForceOrders` retains only 7 days; `@forceOrder` WS throttled to 1/sec/symbol since 2021-04-27; vendor archives inherit the cap and are not auditable to first-party source |
-| A6 | Options IV / skew / OI | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a6-options.md` + `temp/audit_a6_options/options_probe_v1.json` | PARTIAL KEEP with severe gap — BVOL index 2023-06-20 → 2026-08-29 (1,141 days, one 1-day gap 2024-06-30); EOH summary 2023-05-18 → 2023-10-23 (147 days only); 2020-01-01 → 2023-05-17 has **zero** first-party options history |
-| A7 | ETHUSDT perpetual | pending | — | — |
-| A8 | BTCUSDT spot | pending | — | — |
-| A9 | Second BTC venue | pending | — | — |
-| A10 | Final matrix | pending | — | — |
+| A1 | BTCUSDT USD-M funding rate | **COMPLETE** | `2026-08-30-a1-funding-rate.md` | KEEP; 60 filenames listed, 15 contents sampled; settlement and archive publication are separate timestamps |
+| A2 | OI / ΔOI | **COMPLETE** | `2026-08-30-a2-open-interest.md` | KEEP WITH CAVEATS from 2020-09-01; prehistory null; enumerate duplicates/gaps before publication |
+| A3 | Mark / index | **COMPLETE — CORRECTED** | A3 report + A10 correction sidecar | KEEP WITH CAVEATS; row 0 is data and sampled 2020 files contain real minute gaps |
+| A4 | Native premium + spot diagnostics | **COMPLETE — CORRECTED** | A4 report + A8 + A10 | KEEP native impact-price premium WITH CAVEATS; it is not mark/index or mark/spot; real gaps remain null |
+| A5 | Liquidations | **COMPLETE — CORRECTED** | `2026-08-30-a5-liquidations.md` | DROP; no complete auditable first-party market tape; distinguish historical public REST, private user history, and lossy WebSocket |
+| A6 | Options IV / skew / OI | **COMPLETE — CORRECTED** | A6 report + A10 | DROP FROM PROTOCOL V1; partial 2023+ coverage and prior continuity claims unsupported by file counts |
+| A7 | ETHUSDT perpetual | **COMPLETE** | `2026-08-31-a7-ethusdt-perpetual.md` | KEEP WITH RESTRICTIONS; ETH OI starts 2021-12-01; model inclusion still gated |
+| A8 | BTCUSDT spot | **COMPLETE** | `2026-08-31-a8-btcusdt-spot.md` | KEEP WITH EXPLICIT GAPS; 60/60 checksums, 15 discontinuities, 2,325 missing minutes |
+| A9 | Second BTC venue | **COMPLETE** | `2026-08-31-a9-second-btc-venue-kraken.md` | Select Kraken XBT/USD; 20 missing hours, internal-use rights posture |
+| A10 | Final matrix | **COMPLETE** | `2026-08-31-a10-live-acquisition-consolidation.md` | Final source, fallback, rights, hash, missing-data, and publication contract |
 
 ## Authorisation policy
 

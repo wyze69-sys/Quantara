@@ -1,12 +1,14 @@
 # A5 — Liquidations (BTCUSDT, USD-M)
 
+> **A10 correction notice (2026-08-31):** The final verdict remains DROP. Use `2026-08-31-a10-live-acquisition-consolidation.md` for the authoritative distinction between historical public market REST, current authenticated user-force-order history, and the lossy public WebSocket. Vendor completeness is unknown until vendor-specific audit.
+
 **Slice status:** COMPLETE
 **Audit window:** 2020-01-01 → 2024-12-31
 **Authorisation:** owner, 2026-08-30 ("after task 1 done go to another one")
 **Probed:** 2026-08-30 (UTC retrieval)
 **Probe script:** `temp/probe_liquidations_v1.py`
 **Raw evidence:** `temp/audit_a5_liquidations/liquidation_probe_v1.json`
-**Verdict:** **DROP** — Binance does **not** publish a liquidation archive. The live API endpoint `/fapi/v1/allForceOrders` only retains the **most recent 7 days**, and since **2021-04-27 09:00 UTC** the WebSocket `@forceOrder` stream has been throttled to **1 liquidation per second per symbol**. Pre-2021-04-27 history is not publicly archived. The audit recommends a **vendor fallback** (Coinalyze / CoinGlass / CoinAPI) for any liquidation feature, with the explicit understanding that the 2020-01 → 2024-12 vendor data is **not auditable to first-party source** and must carry a `LIQUIDATION_VENDOR` flag in the loader.
+**Verdict:** **DROP** — Binance does **not** publish a market-wide liquidation archive. The historical public market endpoint `/fapi/v1/allForceOrders` was restricted to a recent 7-day query range when documented; the current authenticated `/fapi/v1/forceOrders` surface supports up to 90 days of the requesting user's own force orders and is **not** a market-wide substitute. Since **2021-04-27 09:00 UTC**, the public WebSocket `@forceOrder` stream has exposed at most one liquidation snapshot per second per symbol; current documentation describes the largest order in the interval. Pre-2021-04-27 history is not publicly archived. The audit recommends a **vendor fallback** (Coinalyze / CoinGlass / CoinAPI) only after a separate audit, with the explicit understanding that 2020-01 → 2024-12 vendor data is **not auditable to a complete first-party tape** and must carry a `LIQUIDATION_VENDOR` flag.
 
 ## 1. Primary source — none
 
@@ -29,21 +31,23 @@ exactly eight archives: `aggTrades`, `bookTicker`, `fundingRate`,
 `premiumIndexKlines`, `trades`. **No liquidation archive** is
 exposed.
 
-## 2. Live API — bounded retention + 1/sec throttling
+## 2. Live API — no historical market tape + 1/sec snapshots
 
-### 2.1 REST endpoint retention
+### 2.1 REST endpoint distinction
 
-Binance's official `/fapi/v1/allForceOrders` endpoint
-documentation (https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/All-Force-Orders)
-and the changelog (2021-01-26) state:
+Binance's historical public market endpoint
+`/fapi/v1/allForceOrders` and the changelog (2021-01-26) stated:
 
 > "The query time period for endpoint GET /fapi/v1/allForceOrders
 > must be within the recent 7 days."
 
-**Retention window: 7 days rolling.** This is **half** the
-`openInterestHist` retention (1 month) and an order of magnitude
-shorter than what the audit needs (5 years). With API key, the
-most one can scrape is the past week.
+That was a 7-day market-query limitation, not a durable archive.
+Current Binance documentation separately exposes authenticated
+`GET /fapi/v1/forceOrders` for the requesting **user's own** force
+orders: the default query interval is 7 days and records can be
+queried only within the past 90 days. That private-account endpoint
+does not provide market-wide liquidation history and cannot replace
+the retired/limited public market endpoint for this audit.
 
 ### 2.2 WebSocket stream throttling
 
@@ -51,15 +55,19 @@ Effective **2021-04-27 09:00 UTC**, Binance's `@forceOrder`
 WebSocket stream switched from real-time push to a snapshot pattern
 documented as:
 
-> "For each symbol, only the latest one liquidation order within
+> "For each symbol, only one liquidation order within
 > 1000ms will be pushed as the snapshot. If no liquidation happens
 > in the interval of 1000ms, no stream will be pushed."
 
 (Quoted from the Binance developer community post linked below; the
 upgrade was announced on 2021-04-22 and rolled out 5 days later.)
 
+Binance changed the wording in June 2026 from the **latest** to the
+**largest** liquidation order in each 1000ms interval. Either
+semantics remains a lossy snapshot rather than a complete tape.
+
 **Implication:** at most 1 liquidation per second per symbol is
-publicly broadcast, and that one is the **most recent** snapshot.
+publicly broadcast.
 During a cascade with hundreds of liquidations in a second, the
 public stream sees 1 of them; the rest are private. Vendor archives
 that claim full liquidation history either ingest a private data
@@ -67,9 +75,9 @@ feed (paid) or have the same 1/sec cap baked in.
 
 ## 3. Earliest real timestamp
 
-**Not auditable to first-party source for any date before the past
-7 days at probe time.** The audit cannot place a verifiable
-earliest timestamp on BTCUSDT USD-M liquidation history.
+**Not auditable as a complete first-party market tape for any date
+in the 2020–2024 window.** The audit cannot place a verifiable
+earliest timestamp on complete BTCUSDT USD-M liquidation history.
 
 ## 4. Coverage across 2020-2024
 
@@ -78,10 +86,11 @@ earliest timestamp on BTCUSDT USD-M liquidation history.
   public archive retains this — it is gone unless someone was
   listening at the time.
 - **2021-04-27 09:00 UTC → probe time (post-throttle):** at most
-  one liquidation per second per symbol is publicly available,
-  retained on Binance's servers for at most 7 days. The actual
-  count of publicly observable liquidations is therefore an
-  unknown but small fraction of the true count.
+  one public liquidation snapshot per second per symbol is
+  available. Authenticated 90-day user-force-order history is
+  private account history, not market history. The actual count of
+  publicly observable market liquidations is therefore an unknown
+  fraction of the true count.
 
 **Coverage is therefore effectively zero** for the 2020-01 →
 2024-12 audit window. The audit can neither confirm nor deny the

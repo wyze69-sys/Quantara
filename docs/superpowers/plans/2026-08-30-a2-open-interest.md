@@ -1,4 +1,6 @@
-# A2 — Open interest and ΔOI history (BTCUSDT, USD-M)
+# A2 — Open interest / ΔOI (BTCUSDT, USD-M)
+
+> **A10 correction notice (2026-08-31):** Use `2026-08-31-a10-live-acquisition-consolidation.md` for final counts, duplicate/gap scope, timestamp eligibility, publication-lag, and rights claims. Pre-2020-09-01 remains null; sampled duplicate behavior must not be generalized without full enumeration.
 
 **Slice status:** COMPLETE
 **Audit window:** 2020-09-01 → 2024-12-31 (limited; pre-2020-09 not available on any public Binance archive)

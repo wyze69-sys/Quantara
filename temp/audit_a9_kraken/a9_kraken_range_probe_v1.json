@@ -1,0 +1,167 @@
+{
+  "kraken_support_page": "https://support.kraken.com/articles/360047124832-downloadable-historical-ohlcvt-open-high-low-close-volume-trades-data",
+  "operator_linked_google_drive_id": "1ptNqWYidLkhb2VAKuLCxmp2OXEfGO-AP",
+  "advertised_archive_size": "7.3G",
+  "remote_size_bytes": 7885068519,
+  "zip_member_count": 24056,
+  "xbtusd_candidates": [
+    "master_q4/XBTUSDR_60.csv",
+    "master_q4/XBTUSDT_60.csv",
+    "master_q4/XBTUSDQ_60.csv",
+    "master_q4/XBTUSD_60.csv",
+    "master_q4/XBTUSDC_60.csv",
+    "master_q4/XBTUSD1_60.csv",
+    "master_q4/XBTPYUSD_60.csv"
+  ],
+  "chosen_member": "master_q4/XBTUSD_60.csv",
+  "member_compress_size": 2237806,
+  "member_file_size": 5640237,
+  "member_crc32": "c351083a",
+  "member_sha256": "b45e7ce94911d4c1d13bf5c2e270c9219b81631292f7c40bab27e81f7f3f8297",
+  "row_count": 96381,
+  "first_row": [
+    "1381093200",
+    "122.0",
+    "122.0",
+    "122.0",
+    "122.0",
+    "0.1",
+    "1"
+  ],
+  "last_row": [
+    "1767222000",
+    "87584.2",
+    "87584.2",
+    "87500.1",
+    "87500.1",
+    "14.09024435",
+    "1299"
+  ],
+  "audit_2020_2024": {
+    "row_count": 43828,
+    "expected_hour_count": 43848,
+    "distinct_timestamp_count": 43828,
+    "duplicate_timestamp_count": 0,
+    "missing_hour_count": 20,
+    "missing_timestamps": [
+      1603558800,
+      1611936000,
+      1626991200,
+      1626994800,
+      1626998400,
+      1627002000,
+      1627045200,
+      1683489600,
+      1704704400,
+      1704708000,
+      1705770000,
+      1705773600,
+      1705777200,
+      1705780800,
+      1711926000,
+      1713067200,
+      1713070800,
+      1713074400,
+      1713078000,
+      1713081600
+    ],
+    "first_row": [
+      "1577836800",
+      "7168.3",
+      "7170.5",
+      "7153.8",
+      "7155.7",
+      "70.76177528",
+      "267"
+    ],
+    "last_row": [
+      "1735686000",
+      "93256.1",
+      "93515.0",
+      "93256.1",
+      "93370.9",
+      "57.51742574",
+      "1123"
+    ],
+    "yearly": {
+      "2020": {
+        "row_count": 8783,
+        "expected_hours": 8784,
+        "first_timestamp": "1577836800",
+        "last_timestamp": "1609455600"
+      },
+      "2021": {
+        "row_count": 8754,
+        "expected_hours": 8760,
+        "first_timestamp": "1609459200",
+        "last_timestamp": "1640991600"
+      },
+      "2022": {
+        "row_count": 8760,
+        "expected_hours": 8760,
+        "first_timestamp": "1640995200",
+        "last_timestamp": "1672527600"
+      },
+      "2023": {
+        "row_count": 8759,
+        "expected_hours": 8760,
+        "first_timestamp": "1672531200",
+        "last_timestamp": "1704063600"
+      },
+      "2024": {
+        "row_count": 8772,
+        "expected_hours": 8784,
+        "first_timestamp": "1704067200",
+        "last_timestamp": "1735686000"
+      }
+    }
+  },
+  "range_requests": [
+    {
+      "start": 7885068497,
+      "end": 7885068518,
+      "bytes": 22
+    },
+    {
+      "start": 7885068477,
+      "end": 7885068496,
+      "bytes": 20
+    },
+    {
+      "start": 7885068421,
+      "end": 7885068476,
+      "bytes": 56
+    },
+    {
+      "start": 7882536772,
+      "end": 7885068420,
+      "bytes": 2531649
+    },
+    {
+      "start": 4750749207,
+      "end": 4750749236,
+      "bytes": 30
+    },
+    {
+      "start": 4750749237,
+      "end": 4750749259,
+      "bytes": 23
+    },
+    {
+      "start": 4750749260,
+      "end": 4750749291,
+      "bytes": 32
+    },
+    {
+      "start": 4750749292,
+      "end": 4752987097,
+      "bytes": 2237806
+    }
+  ],
+  "bytes_fetched_total": 4769638,
+  "notes": [
+    "Kraken states interval timestamp is candle start and omits intervals with no trades.",
+    "Archive is first-party-linked but hosted on Google Drive and has no adjacent operator checksum sidecar.",
+    "Computed member SHA-256 anchors this retrieval; ZIP CRC32 is from central directory."
+  ]
+}
