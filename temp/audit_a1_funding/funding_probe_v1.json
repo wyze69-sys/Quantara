@@ -1,0 +1,326 @@
+{
+  "2019-09": {
+    "error": "<HTTPError 404: 'Not Found'>",
+    "checksum_file_error": "<HTTPError 404: 'Not Found'>"
+  },
+  "2019-10": {
+    "error": "<HTTPError 404: 'Not Found'>",
+    "checksum_file_error": "<HTTPError 404: 'Not Found'>"
+  },
+  "2019-12": {
+    "error": "<HTTPError 404: 'Not Found'>",
+    "checksum_file_error": "<HTTPError 404: 'Not Found'>"
+  },
+  "2020-01": {
+    "member": "BTCUSDT-fundingRate-2020-01.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1577836800000,
+    "first_ts_utc": "2020-01-01T00:00:00Z",
+    "last_ts_ms": 1580486400000,
+    "last_ts_utc": "2020-01-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799998,
+    "gap_max_ms": 28800002,
+    "gap_mean_ms": 28800000.0,
+    "rate_min": -0.00012383,
+    "rate_max": 0.00108193,
+    "rate_mean": 0.00019566397849462354,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2020-01.zip",
+    "zip_sha256": "7f81b2f3694d13779e7e896b69d60cd61e9444d7b9f9e90df761935e1c1b76e2",
+    "zip_bytes": 825,
+    "checksum_file": "7f81b2f3694d13779e7e896b69d60cd61e9444d7b9f9e90df761935e1c1b76e2  BTCUSDT-fundingRate-2020-01.zip"
+  },
+  "2020-06": {
+    "member": "BTCUSDT-fundingRate-2020-06.csv",
+    "row_count": 90,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1590969600000,
+    "first_ts_utc": "2020-06-01T00:00:00Z",
+    "last_ts_ms": 1593532800002,
+    "last_ts_utc": "2020-06-30T16:00:00.002000Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799993,
+    "gap_max_ms": 28800009,
+    "gap_mean_ms": 28800000.02247191,
+    "rate_min": -0.00018213,
+    "rate_max": 0.0007831,
+    "rate_mean": 8.292444444444451e-05,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2020-06.zip",
+    "zip_sha256": "30b3470ff98576578973d75e3c157a5cbf1778b11e4c26b4b4ff70a3cbb348ec",
+    "zip_bytes": 791,
+    "checksum_file": "30b3470ff98576578973d75e3c157a5cbf1778b11e4c26b4b4ff70a3cbb348ec  BTCUSDT-fundingRate-2020-06.zip"
+  },
+  "2020-12": {
+    "member": "BTCUSDT-fundingRate-2020-12.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1606780800000,
+    "first_ts_utc": "2020-12-01T00:00:00Z",
+    "last_ts_ms": 1609430400010,
+    "last_ts_utc": "2020-12-31T16:00:00.010000Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799967,
+    "gap_max_ms": 28800030,
+    "gap_mean_ms": 28800000.108695652,
+    "rate_min": -2.135e-05,
+    "rate_max": 0.00078228,
+    "rate_mean": 0.00022810344086021501,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2020-12.zip",
+    "zip_sha256": "d7390f90edf54cc4ad9bbe78e2f6b291ae06ad9539f591a2d0fce445873bbd63",
+    "zip_bytes": 852,
+    "checksum_file": "d7390f90edf54cc4ad9bbe78e2f6b291ae06ad9539f591a2d0fce445873bbd63  BTCUSDT-fundingRate-2020-12.zip"
+  },
+  "2021-01": {
+    "member": "BTCUSDT-fundingRate-2021-01.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1609459200002,
+    "first_ts_utc": "2021-01-01T00:00:00.002000Z",
+    "last_ts_ms": 1612108800000,
+    "last_ts_utc": "2021-01-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799982,
+    "gap_max_ms": 28800020,
+    "gap_mean_ms": 28799999.97826087,
+    "rate_min": 0.0001,
+    "rate_max": 0.00236482,
+    "rate_mean": 0.0006354949462365598,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2021-01.zip",
+    "zip_sha256": "cff916dc4b638ec3de97828e8911cd91cf7d7a3d0836ec0175869c374e66823d",
+    "zip_bytes": 981,
+    "checksum_file": "cff916dc4b638ec3de97828e8911cd91cf7d7a3d0836ec0175869c374e66823d  BTCUSDT-fundingRate-2021-01.zip"
+  },
+  "2021-06": {
+    "member": "BTCUSDT-fundingRate-2021-06.csv",
+    "row_count": 90,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1622505600001,
+    "first_ts_utc": "2021-06-01T00:00:00.001000Z",
+    "last_ts_ms": 1625068800005,
+    "last_ts_utc": "2021-06-30T16:00:00.005000Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799961,
+    "gap_max_ms": 28800033,
+    "gap_mean_ms": 28800000.04494382,
+    "rate_min": -0.00052905,
+    "rate_max": 0.00020566,
+    "rate_mean": 2.684822222222218e-05,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2021-06.zip",
+    "zip_sha256": "7b8d9bfb8816636b800764dafb2aa2307d19166c695bfa245adbf7d01d61f766",
+    "zip_bytes": 883,
+    "checksum_file": "7b8d9bfb8816636b800764dafb2aa2307d19166c695bfa245adbf7d01d61f766  BTCUSDT-fundingRate-2021-06.zip"
+  },
+  "2021-12": {
+    "member": "BTCUSDT-fundingRate-2021-12.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1638316800000,
+    "first_ts_utc": "2021-12-01T00:00:00Z",
+    "last_ts_ms": 1640966400000,
+    "last_ts_utc": "2021-12-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799969,
+    "gap_max_ms": 28800031,
+    "gap_mean_ms": 28800000.0,
+    "rate_min": -3.102e-05,
+    "rate_max": 0.00029146,
+    "rate_mean": 9.825408602150535e-05,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2021-12.zip",
+    "zip_sha256": "bf3ce484faf41d7dccfd38c5cc3d8de34d8297df30ab10784e874cc10fd1b310",
+    "zip_bytes": 815,
+    "checksum_file": "bf3ce484faf41d7dccfd38c5cc3d8de34d8297df30ab10784e874cc10fd1b310  BTCUSDT-fundingRate-2021-12.zip"
+  },
+  "2022-01": {
+    "member": "BTCUSDT-fundingRate-2022-01.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1640995200006,
+    "first_ts_utc": "2022-01-01T00:00:00.006000Z",
+    "last_ts_ms": 1643644800000,
+    "last_ts_utc": "2022-01-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799972,
+    "gap_max_ms": 28800028,
+    "gap_mean_ms": 28799999.93478261,
+    "rate_min": -0.00010186,
+    "rate_max": 0.0001,
+    "rate_mean": 5.379236559139785e-05,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2022-01.zip",
+    "zip_sha256": "22ee19079b620f5c6d820e7d7f8bafa7fde866d89bd664863b8bd527749c12cb",
+    "zip_bytes": 906,
+    "checksum_file": "22ee19079b620f5c6d820e7d7f8bafa7fde866d89bd664863b8bd527749c12cb  BTCUSDT-fundingRate-2022-01.zip"
+  },
+  "2022-12": {
+    "member": "BTCUSDT-fundingRate-2022-12.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1669852800001,
+    "first_ts_utc": "2022-12-01T00:00:00.001000Z",
+    "last_ts_ms": 1672502400000,
+    "last_ts_utc": "2022-12-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799982,
+    "gap_max_ms": 28800023,
+    "gap_mean_ms": 28799999.989130434,
+    "rate_min": -5.064e-05,
+    "rate_max": 0.0001,
+    "rate_mean": 4.554946236559139e-05,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2022-12.zip",
+    "zip_sha256": "4218c78331bcc4dbeb5768fa112242a880971c1f2cfd1d3f32aaa26ca34069af",
+    "zip_bytes": 982,
+    "checksum_file": "4218c78331bcc4dbeb5768fa112242a880971c1f2cfd1d3f32aaa26ca34069af  BTCUSDT-fundingRate-2022-12.zip"
+  },
+  "2023-01": {
+    "member": "BTCUSDT-fundingRate-2023-01.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1672531200000,
+    "first_ts_utc": "2023-01-01T00:00:00Z",
+    "last_ts_ms": 1675180800007,
+    "last_ts_utc": "2023-01-31T16:00:00.007000Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799979,
+    "gap_max_ms": 28800023,
+    "gap_mean_ms": 28800000.076086957,
+    "rate_min": -4.356e-05,
+    "rate_max": 0.00045847,
+    "rate_mean": 8.602569892473127e-05,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2023-01.zip",
+    "zip_sha256": "05e3df32f28d0d50f4c5a280adee9368b4a66fc68c6ddca1b3277087ac0d19f5",
+    "zip_bytes": 863,
+    "checksum_file": "05e3df32f28d0d50f4c5a280adee9368b4a66fc68c6ddca1b3277087ac0d19f5  BTCUSDT-fundingRate-2023-01.zip"
+  },
+  "2023-12": {
+    "member": "BTCUSDT-fundingRate-2023-12.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1701388800000,
+    "first_ts_utc": "2023-12-01T00:00:00Z",
+    "last_ts_ms": 1704038400000,
+    "last_ts_utc": "2023-12-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799999,
+    "gap_max_ms": 28800001,
+    "gap_mean_ms": 28800000.0,
+    "rate_min": 6.973e-05,
+    "rate_max": 0.0005517,
+    "rate_mean": 0.00018141634408602158,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2023-12.zip",
+    "zip_sha256": "8f02fdd2a2da261bbf13ab301c74bdb57fae005f19d5088e9ece5f8824c1a2a7",
+    "zip_bytes": 810,
+    "checksum_file": "8f02fdd2a2da261bbf13ab301c74bdb57fae005f19d5088e9ece5f8824c1a2a7  BTCUSDT-fundingRate-2023-12.zip"
+  },
+  "2024-01": {
+    "member": "BTCUSDT-fundingRate-2024-01.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1704067200000,
+    "first_ts_utc": "2024-01-01T00:00:00Z",
+    "last_ts_ms": 1706716800000,
+    "last_ts_utc": "2024-01-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799997,
+    "gap_max_ms": 28800003,
+    "gap_mean_ms": 28800000.0,
+    "rate_min": 2.154e-05,
+    "rate_max": 0.00065846,
+    "rate_mean": 0.00012034279569892463,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2024-01.zip",
+    "zip_sha256": "3e0d30870672aa8f0f937881056e3cfd55913ae5c780cd50b33f2763aa0ba58e",
+    "zip_bytes": 696,
+    "checksum_file": "3e0d30870672aa8f0f937881056e3cfd55913ae5c780cd50b33f2763aa0ba58e  BTCUSDT-fundingRate-2024-01.zip"
+  },
+  "2024-12": {
+    "member": "BTCUSDT-fundingRate-2024-12.csv",
+    "row_count": 93,
+    "header": [
+      "calc_time",
+      "funding_interval_hours",
+      "last_funding_rate"
+    ],
+    "first_ts_ms": 1733011200000,
+    "first_ts_utc": "2024-12-01T00:00:00Z",
+    "last_ts_ms": 1735660800000,
+    "last_ts_utc": "2024-12-31T16:00:00Z",
+    "interval_hours": [
+      8
+    ],
+    "gap_min_ms": 28799986,
+    "gap_max_ms": 28800013,
+    "gap_mean_ms": 28800000.0,
+    "rate_min": -4.2e-07,
+    "rate_max": 0.00072446,
+    "rate_mean": 0.00012959483870967725,
+    "url": "https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2024-12.zip",
+    "zip_sha256": "069409f525ebf6370ee1c7defe475167de4b97284c5ac8e68768652968cd3dc9",
+    "zip_bytes": 808,
+    "checksum_file": "069409f525ebf6370ee1c7defe475167de4b97284c5ac8e68768652968cd3dc9  BTCUSDT-fundingRate-2024-12.zip"
+  }
+}
