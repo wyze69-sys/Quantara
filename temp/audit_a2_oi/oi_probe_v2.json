@@ -1,0 +1,382 @@
+{
+  "2020-08-31": {
+    "date": "2020-08-31",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2020-08-31.zip",
+    "error": "<HTTPError 404: 'Not Found'>",
+    "checksum_file_error": "<HTTPError 404: 'Not Found'>"
+  },
+  "2020-09-01": {
+    "date": "2020-09-01",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2020-09-01.zip",
+    "zip_sha256": "9a9c0518bfb939032afe97a6b1708668ec833457743b1ba6ef448fb157722ae3",
+    "zip_bytes": 12191,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 576,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 288,
+      "sample_row": [
+        "2020-09-01 00:00:00",
+        "BTCUSDT",
+        "39080.23100000",
+        "456144339.23360443",
+        "1.17547937",
+        "1.23012681",
+        "1.35731217",
+        "0.78373373"
+      ],
+      "first_ts": "2020-09-01 00:00:00",
+      "last_ts": "2020-09-01 23:55:00"
+    },
+    "checksum_file": "9a9c0518bfb939032afe97a6b1708668ec833457743b1ba6ef448fb157722ae3  BTCUSDT-metrics-2020-09-01.zip"
+  },
+  "2020-09-02": {
+    "date": "2020-09-02",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2020-09-02.zip",
+    "zip_sha256": "d696c01e35bb901b660c6144bde8dc4627b5aa6c717786ad3da212c8add348a1",
+    "zip_bytes": 12257,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 576,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 288,
+      "sample_row": [
+        "2020-09-02 00:00:00",
+        "BTCUSDT",
+        "39371.78200000",
+        "469705752.97782000",
+        "1.20708237",
+        "1.24557238",
+        "1.32861161",
+        "1.15436857"
+      ],
+      "first_ts": "2020-09-02 00:00:00",
+      "last_ts": "2020-09-02 23:55:00"
+    },
+    "checksum_file": "d696c01e35bb901b660c6144bde8dc4627b5aa6c717786ad3da212c8add348a1  BTCUSDT-metrics-2020-09-02.zip"
+  },
+  "2020-12-31": {
+    "date": "2020-12-31",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2020-12-31.zip",
+    "zip_sha256": "684a123e6102a0d341258724fdef8bdc13ad03de430737f7115f602e46c15fab",
+    "zip_bytes": 12364,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 576,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 288,
+      "sample_row": [
+        "2020-12-31 00:00:00",
+        "BTCUSDT",
+        "34794.37200000",
+        "1005718169.18767405",
+        "1.52183301",
+        "1.18704849",
+        "1.60454370",
+        "1.41911957"
+      ],
+      "first_ts": "2020-12-31 00:00:00",
+      "last_ts": "2020-12-31 23:55:00"
+    },
+    "checksum_file": "684a123e6102a0d341258724fdef8bdc13ad03de430737f7115f602e46c15fab  BTCUSDT-metrics-2020-12-31.zip"
+  },
+  "2021-01-01": {
+    "date": "2021-01-01",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2021-01-01.zip",
+    "zip_sha256": "9c42e4fa6048b185439a3d744066fa1d2bf0637b3654da53bb8930d1a3da364a",
+    "zip_bytes": 12278,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 576,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 288,
+      "sample_row": [
+        "2021-01-01 00:00:00",
+        "BTCUSDT",
+        "34935.88100000",
+        "1011332738.14749436",
+        "1.59041180",
+        "1.22061180",
+        "1.60088917",
+        "0.44027971"
+      ],
+      "first_ts": "2021-01-01 00:00:00",
+      "last_ts": "2021-01-01 23:55:00"
+    },
+    "checksum_file": "9c42e4fa6048b185439a3d744066fa1d2bf0637b3654da53bb8930d1a3da364a  BTCUSDT-metrics-2021-01-01.zip"
+  },
+  "2021-12-31": {
+    "date": "2021-12-31",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2021-12-31.zip",
+    "zip_sha256": "d01ca93fc0c4e721f9d0b87ae226a692c3d33e2483b365da00b2874f389e82df",
+    "zip_bytes": 5678,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 287,
+      "distinct_timestamps": 287,
+      "duplicate_timestamp_rows": 0,
+      "sample_row": [
+        "2021-12-31 00:00:00",
+        "BTCUSDT",
+        "71881.78800000",
+        "3385622818.91440770",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "first_ts": "2021-12-31 00:00:00",
+      "last_ts": "2021-12-31 23:55:00"
+    },
+    "checksum_file": "d01ca93fc0c4e721f9d0b87ae226a692c3d33e2483b365da00b2874f389e82df  BTCUSDT-metrics-2021-12-31.zip"
+  },
+  "2022-01-01": {
+    "date": "2022-01-01",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2022-01-01.zip",
+    "zip_sha256": "1846df7dc4a6279afd20c010cb09ee271db8ffa9991c7acea7a73f0e00c0b2c5",
+    "zip_bytes": 5642,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 288,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 0,
+      "sample_row": [
+        "2022-01-01 00:00:00",
+        "BTCUSDT",
+        "74803.41000000",
+        "3456683790.32415250",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "first_ts": "2022-01-01 00:00:00",
+      "last_ts": "2022-01-01 23:55:00"
+    },
+    "checksum_file": "1846df7dc4a6279afd20c010cb09ee271db8ffa9991c7acea7a73f0e00c0b2c5  BTCUSDT-metrics-2022-01-01.zip"
+  },
+  "2022-12-31": {
+    "date": "2022-12-31",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2022-12-31.zip",
+    "zip_sha256": "5db838ab25d3beedf2c7b5e3cbb4a50383ef69cdbba1885aaa4f86f3fc7a4b9e",
+    "zip_bytes": 14355,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 288,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 0,
+      "sample_row": [
+        "2022-12-31 00:00:00",
+        "BTCUSDT",
+        "107700.36200000",
+        "1787944479.59820000",
+        "2.0847722414076633",
+        "1.0620021408",
+        "2.261014686248331",
+        "0.6388738495"
+      ],
+      "first_ts": "2022-12-31 00:00:00",
+      "last_ts": "2022-12-31 23:55:00"
+    },
+    "checksum_file": "5db838ab25d3beedf2c7b5e3cbb4a50383ef69cdbba1885aaa4f86f3fc7a4b9e  BTCUSDT-metrics-2022-12-31.zip"
+  },
+  "2023-01-01": {
+    "date": "2023-01-01",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2023-01-01.zip",
+    "zip_sha256": "9e6e8c092362c63194b99a5da8244cfcdbdb162662c3a356f23197d617f0993e",
+    "zip_bytes": 14337,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 288,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 0,
+      "sample_row": [
+        "2023-01-01 00:00:00",
+        "BTCUSDT",
+        "105692.75700000",
+        "1747893968.88750000",
+        "2.097981757398159",
+        "1.0820051693",
+        "2.22117548646657",
+        "0.9149287822"
+      ],
+      "first_ts": "2023-01-01 00:00:00",
+      "last_ts": "2023-01-01 23:55:00"
+    },
+    "checksum_file": "9e6e8c092362c63194b99a5da8244cfcdbdb162662c3a356f23197d617f0993e  BTCUSDT-metrics-2023-01-01.zip"
+  },
+  "2023-12-31": {
+    "date": "2023-12-31",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2023-12-31.zip",
+    "zip_sha256": "a97fb88e9a679d9eadd9f6c2588451f2c11aa09f828dc023c4ea4514025a5642",
+    "zip_bytes": 11571,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 288,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 0,
+      "sample_row": [
+        "2023-12-31 00:00:00",
+        "BTCUSDT",
+        "75464.99200000",
+        "3182622877.30944900",
+        "1.35774838",
+        "1.26266536",
+        "1.44352607",
+        "0.37409340"
+      ],
+      "first_ts": "2023-12-31 00:00:00",
+      "last_ts": "2023-12-31 23:55:00"
+    },
+    "checksum_file": "a97fb88e9a679d9eadd9f6c2588451f2c11aa09f828dc023c4ea4514025a5642  BTCUSDT-metrics-2023-12-31.zip"
+  },
+  "2024-01-01": {
+    "date": "2024-01-01",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2024-01-01.zip",
+    "zip_sha256": "08bd122b32cf7aa8b35e985c069117c17dc2ea4a138a66e5fb9a1064b290d6c1",
+    "zip_bytes": 11521,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 288,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 0,
+      "sample_row": [
+        "2024-01-01 00:00:00",
+        "BTCUSDT",
+        "74006.26600000",
+        "3131493738.89740000",
+        "1.36820310",
+        "1.25366800",
+        "1.50710938",
+        "1.31174499"
+      ],
+      "first_ts": "2024-01-01 00:00:00",
+      "last_ts": "2024-01-01 23:55:00"
+    },
+    "checksum_file": "08bd122b32cf7aa8b35e985c069117c17dc2ea4a138a66e5fb9a1064b290d6c1  BTCUSDT-metrics-2024-01-01.zip"
+  },
+  "2024-12-31": {
+    "date": "2024-12-31",
+    "url": "https://data.binance.vision/data/futures/um/daily/metrics/BTCUSDT/BTCUSDT-metrics-2024-12-31.zip",
+    "zip_sha256": "f335498dd75400c1360328f44a2ff82e383c44dd4894e6f6e4f1297d86b93d44",
+    "zip_bytes": 11346,
+    "parsed": {
+      "header": [
+        "create_time",
+        "symbol",
+        "sum_open_interest",
+        "sum_open_interest_value",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "count_long_short_ratio",
+        "sum_taker_long_short_vol_ratio"
+      ],
+      "row_count_total": 288,
+      "distinct_timestamps": 288,
+      "duplicate_timestamp_rows": 0,
+      "sample_row": [
+        "2024-12-31 00:00:00",
+        "BTCUSDT",
+        "90961.7660000000000000",
+        "8437213182.3896000000000000",
+        "1.98370867",
+        "2.12654400",
+        "2.03645573",
+        "1.40186500"
+      ],
+      "first_ts": "2024-12-31 00:00:00",
+      "last_ts": "2024-12-31 23:55:00"
+    },
+    "checksum_file": "f335498dd75400c1360328f44a2ff82e383c44dd4894e6f6e4f1297d86b93d44  BTCUSDT-metrics-2024-12-31.zip"
+  }
+}
