@@ -461,6 +461,13 @@ HEADERLESS_YEARS: tuple[int, ...] = tuple(
     sorted(EXTENDED_YEAR_HEADERLESS_CANONICAL_DIGESTS)
 )
 
+# Owner-authorized policy-v2 publication identities for the committed configs.
+# The policy-1 headerless anchors above remain frozen for non-perturbation tests.
+ACTIVATED_HEADERLESS_CANONICAL_DIGESTS = {
+    2020: "1fd90e844fd71417301b502bcc66c0be122b14b2d6c26a91f56ecccc22b68007",
+    2021: "a39208ba89d12e2730c25cc79e411f2912b776c3ea8aa477e2883aedca6d6e53",
+}
+
 # The single substitution that turns an approved year descriptor into its
 # headerless variant. Identical to the one used by make_headerless_descriptor in
 # tests/test_parsing.py, so the parse fixtures and these frozen digests cannot
@@ -574,7 +581,7 @@ def test_headerless_declaration_rejects_other_values_and_v1(tmp_path: Path) -> N
 
 @pytest.mark.parametrize("year", HEADERLESS_YEARS)
 def test_repository_headerless_year_descriptor_declares_the_variant(year: int) -> None:
-    """The committed 2020/2021 configs carry the declaration and stay policy 1."""
+    """Committed 2020/2021 configs declare the variant and exact approval."""
     from quantara.manifests import HEADERLESS_PARSER_VERSION, parser_version_for
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -583,9 +590,12 @@ def test_repository_headerless_year_descriptor_declares_the_variant(year: int) -
     )
     assert descriptor.csv_header_absent is True
     assert parser_version_for(descriptor) == HEADERLESS_PARSER_VERSION
-    assert descriptor.quality_policy_version == "1"
-    assert descriptor.quality_approval is None
+    assert descriptor.quality_policy_version == "2"
+    assert descriptor.quality_approval == (
+        "configs/quality/approvals/"
+        f"binance-usdm-btcusdt-1m-{year}-zero-volume.v1.yaml"
+    )
     assert (
         descriptor_hash(descriptor.canonical_semantics())
-        == EXTENDED_YEAR_HEADERLESS_CANONICAL_DIGESTS[year]
+        == ACTIVATED_HEADERLESS_CANONICAL_DIGESTS[year]
     )

@@ -23,5 +23,6 @@ source:
   csv_header: absent
 schema_version: binance_usdm_kline_1m_v1
 timestamp_semantics: closed_interval_v1
-quality_policy_version: "1"
+quality_policy_version: "2"
+quality_approval: configs/quality/approvals/binance-usdm-btcusdt-1m-2021-zero-volume.v1.yaml
 legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml

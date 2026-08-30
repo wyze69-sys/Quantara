@@ -903,21 +903,18 @@ def test_repository_headerless_year_approval_record_loads(year: int) -> None:
 
 
 @pytest.mark.parametrize("year", sorted(HEADERLESS_YEAR_APPROVALS))
-def test_headerless_year_approval_is_not_consumed_by_the_dataset_config(
+def test_headerless_year_approval_is_activated_by_the_dataset_config(
     year: int,
 ) -> None:
-    """The record exists; the amendment does not activate it.
-
-    The 2020/2021 dataset descriptors stay at quality_policy_version "1", so the
-    pipeline never loads these records and both years remain WARN_BLOCKED. The
-    amendment authorizes parseability, not publication -- this test is what makes
-    that boundary fail loudly if someone flips the policy without a decision.
-    """
+    """The owner-authorized publication consumes each exact content-bound record."""
     from quantara.descriptor import load_descriptor
 
     repo_root = Path(__file__).resolve().parents[1]
     descriptor = load_descriptor(
         repo_root / "configs" / "datasets" / f"binance-usdm-btcusdt-1m-{year}.yaml"
     )
-    assert descriptor.quality_policy_version == "1"
-    assert descriptor.quality_approval is None
+    assert descriptor.quality_policy_version == "2"
+    assert descriptor.quality_approval == (
+        "configs/quality/approvals/"
+        f"binance-usdm-btcusdt-1m-{year}-zero-volume.v1.yaml"
+    )
