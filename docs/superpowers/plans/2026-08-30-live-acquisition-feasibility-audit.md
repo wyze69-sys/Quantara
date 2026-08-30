@@ -33,7 +33,7 @@ A10 consolidate.
 | --- | --- | --- | --- | --- |
 | A1 | BTCUSDT USD-M funding rate | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a1-funding-rate.md` + `temp/audit_a1_funding/funding_probe_v1.json` | KEEP — primary archive complete 2020-01 → 2024-12, 8h settlement, ±33 ms jitter, `.CHECKSUM` matches every probed month |
 | A2 | OI / ΔOI | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a2-open-interest.md` + `temp/audit_a2_oi/oi_probe_v1.json` + `temp/audit_a2_oi/oi_probe_v2.json` | KEEP with caveats — `metrics` archive 2020-09-01 → 2024-12-31 at 5-min; 2020-01 → 2020-08 is a real gap on Binance public archives; dedup the 2×288 anomaly in 2020-09 → 2021-01 |
-| A3 | Mark / index | pending | — | — |
+| A3 | Mark / index | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a3-mark-index.md` + `temp/audit_a3_mark_index/mark_index_probe_v1.json` | KEEP — both `markPriceKlines` and `indexPriceKlines` monthly archives 2020-01 → 2024-12, 1m OHLCV; **same headerless→headered format transition on 2022-12-01 as the base klines** — apply existing `csv_header: absent` allowlist path to the two new dataset ids |
 | A4 | Perp-spot basis | pending | — | — |
 | A5 | Liquidations | pending | — | — |
 | A6 | Options IV / skew / OI | pending | — | — |
