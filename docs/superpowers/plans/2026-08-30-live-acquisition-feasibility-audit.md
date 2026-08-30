@@ -36,7 +36,7 @@ A10 consolidate.
 | A3 | Mark / index | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a3-mark-index.md` + `temp/audit_a3_mark_index/mark_index_probe_v1.json` | KEEP — both `markPriceKlines` and `indexPriceKlines` monthly archives 2020-01 → 2024-12, 1m OHLCV; **same headerless→headered format transition on 2022-12-01 as the base klines** — apply existing `csv_header: absent` allowlist path to the two new dataset ids |
 | A4 | Perp-spot basis | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a4-basis.md` + `temp/audit_a4_basis/basis_probe_v1.json` | KEEP — `premiumIndexKlines` archive is Binance's native TWA perp-vs-index basis 1m OHLCV (decimal fraction), 2020-01 → 2024-12; spot 1m archive extends back to 2017-08 for any future fallback; same headerless→headered transition on 2022-12-01 |
 | A5 | Liquidations | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a5-liquidations.md` + `temp/audit_a5_liquidations/liquidation_probe_v1.json` | DROP — no Binance public liquidation archive (6/6 paths 404); live `/fapi/v1/allForceOrders` retains only 7 days; `@forceOrder` WS throttled to 1/sec/symbol since 2021-04-27; vendor archives inherit the cap and are not auditable to first-party source |
-| A6 | Options IV / skew / OI | pending | — | — |
+| A6 | Options IV / skew / OI | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a6-options.md` + `temp/audit_a6_options/options_probe_v1.json` | PARTIAL KEEP with severe gap — BVOL index 2023-06-20 → 2026-08-29 (1,141 days, one 1-day gap 2024-06-30); EOH summary 2023-05-18 → 2023-10-23 (147 days only); 2020-01-01 → 2023-05-17 has **zero** first-party options history |
 | A7 | ETHUSDT perpetual | pending | — | — |
 | A8 | BTCUSDT spot | pending | — | — |
 | A9 | Second BTC venue | pending | — | — |
