@@ -6,7 +6,11 @@ from decimal import Decimal
 
 import pytest
 
-from conftest import VALID_DESCRIPTOR_YAML, write_text
+from conftest import (
+    VALID_DESCRIPTOR_YAML,
+    extended_year_1m_descriptor_text,
+    write_text,
+)
 from quantara.descriptor import load_descriptor
 from quantara.parsing import (
     DecimalOverflow,
@@ -21,6 +25,27 @@ from quantara.parsing import (
 
 def make_descriptor(tmp_path):
     return load_descriptor(write_text(tmp_path / "cfg", VALID_DESCRIPTOR_YAML))
+
+
+def make_headerless_descriptor(tmp_path, year: int = 2020):
+    """Amendment 2026-08-30: an allow-listed year declaring csv_header absent."""
+    text = extended_year_1m_descriptor_text(year).replace(
+        "    - data.binance.vision",
+        "    - data.binance.vision\n  csv_header: absent",
+    )
+    return load_descriptor(
+        write_text(tmp_path / f"headerless-{year}", text, name=f"cfg-{year}.yaml")
+    )
+
+
+HEADERLESS_ROW_1 = (
+    "1577836800000,7195.24,7196.25,7183.14,7186.68,74.55700000000000000,"
+    "1577836859999,536101.14,318,26.80000000000000000,192674.13,0"
+)
+HEADERLESS_ROW_2 = (
+    "1577836860000,7186.68,7191.00,7180.00,7188.00,51.20000000000000000,"
+    "1577836919999,367920.55,201,20.10000000000000000,144480.10,0"
+)
 
 
 def csv_text(*rows: str, header: str | None = None) -> bytes:
@@ -192,3 +217,112 @@ def test_nonzero_ignore_is_kept_verbatim(tmp_path) -> None:
     patched = ROW_1[: ROW_1.rindex(",")] + ",7"
     rows = parse_rows(decode_member(csv_text(patched)), make_descriptor(tmp_path))
     assert rows[0].source_ignore == "7"
+# ---------------------------------------------------------------------------
+# Amendment 2026-08-30 (headerless source variant), governing spec §3.3.
+# The 2020-01 … 2021-12 official monthly archives carry no header line. A v2
+# descriptor may declare source.csv_header: absent for those two allow-listed
+# identities; the first line is then a data row bound positionally to the same
+# frozen 12 field names in the same order.
+# ---------------------------------------------------------------------------
+
+
+def headerless_csv(*rows: str) -> bytes:
+    return ("\n".join(rows) + "\n").encode("utf-8")
+
+
+def test_headerless_first_line_is_parsed_as_data(tmp_path) -> None:
+    descriptor = make_headerless_descriptor(tmp_path)
+    assert descriptor.csv_header_absent is True
+    rows = parse_rows(
+        decode_member(headerless_csv(HEADERLESS_ROW_1, HEADERLESS_ROW_2)), descriptor
+    )
+    assert len(rows) == 2
+    assert rows[0].open_time == 1577836800000
+    assert rows[1].open_time == 1577836860000
+
+
+def test_headerless_binds_all_twelve_fields_positionally(tmp_path) -> None:
+    descriptor = make_headerless_descriptor(tmp_path)
+    row = parse_rows(decode_member(headerless_csv(HEADERLESS_ROW_1)), descriptor)[0]
+    assert row.open_time == 1577836800000
+    assert str(row.open) == "7195.24"
+    assert str(row.high) == "7196.25"
+    assert str(row.low) == "7183.14"
+    assert str(row.close) == "7186.68"
+    assert str(row.base_asset_volume) == "74.55700000000000000"
+    assert row.close_time == 1577836859999
+    assert str(row.quote_asset_volume) == "536101.14"
+    assert row.trade_count == 318
+    assert str(row.taker_buy_base_volume) == "26.80000000000000000"
+    assert str(row.taker_buy_quote_volume) == "192674.13"
+    assert row.source_ignore == "0"
+
+
+def test_headerless_declared_but_header_present_is_rejected(tmp_path) -> None:
+    """Declared absence that turns out to be presence must fail loudly."""
+    descriptor = make_headerless_descriptor(tmp_path)
+    with pytest.raises(SourceHeaderMismatch, match="first line is the exact"):
+        parse_rows(decode_member(csv_text(HEADERLESS_ROW_1)), descriptor)
+
+
+def test_headered_descriptor_still_requires_the_header(tmp_path) -> None:
+    """The converse: an undeclared variant on headerless bytes is rejected."""
+    descriptor = make_descriptor(tmp_path)
+    assert descriptor.csv_header_absent is False
+    with pytest.raises(SourceHeaderMismatch, match="header mismatch"):
+        parse_rows(decode_member(headerless_csv(ROW_1)), descriptor)
+
+
+def test_headerless_empty_member_is_rejected(tmp_path) -> None:
+    descriptor = make_headerless_descriptor(tmp_path)
+    with pytest.raises(SourceHeaderMismatch, match="no data rows"):
+        parse_rows(decode_member(b""), descriptor)
+
+
+def test_headerless_wrong_field_count_reports_line_one(tmp_path) -> None:
+    """Line numbering starts at 1 on the headerless path, not 2."""
+    descriptor = make_headerless_descriptor(tmp_path)
+    truncated = ",".join(HEADERLESS_ROW_1.split(",")[:11])
+    with pytest.raises(SourceHeaderMismatch, match="line 1: expected 12 fields"):
+        parse_rows(decode_member(headerless_csv(truncated)), descriptor)
+
+
+def test_headerless_second_line_wrong_field_count_reports_line_two(tmp_path) -> None:
+    descriptor = make_headerless_descriptor(tmp_path)
+    truncated = ",".join(HEADERLESS_ROW_2.split(",")[:11])
+    with pytest.raises(SourceHeaderMismatch, match="line 2: expected 12 fields"):
+        parse_rows(decode_member(headerless_csv(HEADERLESS_ROW_1, truncated)), descriptor)
+
+
+def test_headerless_accepts_crlf_and_trailing_blank_lines(tmp_path) -> None:
+    descriptor = make_headerless_descriptor(tmp_path)
+    payload = headerless_csv(HEADERLESS_ROW_1, HEADERLESS_ROW_2).replace(b"\n", b"\r\n")
+    rows = parse_rows(decode_member(payload) + "\n\n", descriptor)
+    assert len(rows) == 2
+
+
+def test_headerless_still_enforces_period_and_timestamp_invariants(tmp_path) -> None:
+    descriptor = make_headerless_descriptor(tmp_path)
+    outside = HEADERLESS_ROW_1.replace("1577836800000", "1609459200000", 1).replace(
+        "1577836859999", "1609459259999", 1
+    )  # 2021-01-01T00:00Z, outside the 2020 half-open period
+    with pytest.raises(MalformedTimestamp):
+        parse_rows(decode_member(headerless_csv(outside)), descriptor)
+    bad_close = HEADERLESS_ROW_1.replace("1577836859999", "1577836860000")
+    with pytest.raises(MalformedTimestamp):
+        parse_rows(decode_member(headerless_csv(bad_close)), descriptor)
+
+
+def test_headerless_rejects_bom_like_the_default_path(tmp_path) -> None:
+    with pytest.raises(SourceHeaderMismatch):
+        decode_member(b"\xef\xbb\xbf" + headerless_csv(HEADERLESS_ROW_1))
+
+
+def test_headerless_2021_identity_is_also_allow_listed(tmp_path) -> None:
+    descriptor = make_headerless_descriptor(tmp_path, year=2021)
+    assert descriptor.csv_header_absent is True
+    row_2021 = HEADERLESS_ROW_1.replace("1577836800000", "1609459200000", 1).replace(
+        "1577836859999", "1609459259999", 1
+    )
+    rows = parse_rows(decode_member(headerless_csv(row_2021)), descriptor)
+    assert rows[0].open_time == 1609459200000

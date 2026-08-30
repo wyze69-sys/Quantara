@@ -20,15 +20,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 __all__ = [
+    "HEADERLESS_PARSER_VERSION",
     "PARSER_VERSION",
     "attempt_id_now",
     "build_dataset_manifest",
     "environment_evidence",
     "new_attempt_manifest",
+    "parser_version_for",
     "write_json",
 ]
 
 PARSER_VERSION = "binance_kline_csv_v1"
+# Amendment 2026-08-30 (headerless source variant). Parse policy differs, so
+# parser identity must differ, but only for descriptors that actually declare
+# the variant. Every already-published dataset keeps PARSER_VERSION verbatim,
+# so no published identity, content hash, or commit address moves.
+HEADERLESS_PARSER_VERSION = "binance_kline_csv_v1_headerless"
 PUBLICATION_PROTOCOL_VERSION = "v1"
 TERMINAL_RESULTS = ("PUBLISHED", "VERIFIED_NO_OP", "QUARANTINED", "FAILED", "BLOCKED")
 
@@ -68,6 +75,13 @@ def environment_evidence(repo_root: Path) -> dict:
     except Exception:  # pragma: no cover - git may be unavailable
         evidence["git_head"] = None
     return evidence
+
+
+def parser_version_for(descriptor) -> str:
+    """Resolve parser identity from the descriptor's declared header policy."""
+    if getattr(descriptor, "csv_header_absent", False):
+        return HEADERLESS_PARSER_VERSION
+    return PARSER_VERSION
 
 
 def build_dataset_manifest(**fields) -> dict:

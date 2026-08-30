@@ -17,6 +17,10 @@ period:
 source:
   allowed_hosts:
     - data.binance.vision
+  # Amendment 2026-08-30 (headerless source variant): the 2020-01 … 2021-12
+  # official monthly archives carry no header line; the first CSV line is
+  # already a data row. Allow-listed for this identity only.
+  csv_header: absent
 schema_version: binance_usdm_kline_1m_v1
 timestamp_semantics: closed_interval_v1
 quality_policy_version: "1"

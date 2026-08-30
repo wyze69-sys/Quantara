@@ -827,3 +827,97 @@ def test_derived_effective_quality_blocks_without_record() -> None:
         approval_record=None,
     )
     assert decision.effective_state == "WARN_BLOCKED"
+
+
+# --- Amendment 2026-08-30: headerless-year approval records --------------------
+
+# Observed at implementation time by reparsing the retained official archives
+# under the headerless source variant. Frozen here so a silent drift in the
+# 2020/2021 raw bytes, the parser path, or the quality identity cannot pass.
+HEADERLESS_YEAR_APPROVALS = {
+    2020: {
+        "canonical_content_hash": (
+            "429e7ad880aa15b9b11888c4a1b4ec386ad114cbd67bc1b935486d77c287bb38"
+        ),
+        "schema_fingerprint": (
+            "e4f64e3ba5beec25fba9f8b83320a68b3ddf5b8f848a2229f54bb02730f5d551"
+        ),
+        "quality_identity_sha256": (
+            "4dbe4fdf22eb4ee7fd1ff635f191fb2a05a06d5a817d685c56a9ae1b5c05668e"
+        ),
+        "count": 2,
+        "canonical_finding_sha256": (
+            "087f3e42d319788d75ab4e3d8d21507cbdca7d7a26418aa962e1abfae66625a7"
+        ),
+        "record_sha256": (
+            "0089482c012568fac59ae7117f3fde30742db22d1baf5408e035bbb9e4130e27"
+        ),
+    },
+    2021: {
+        "canonical_content_hash": (
+            "c6f03f939777151a5d989b9f8476bbff57fd780b28c63bd3489e742207fcf310"
+        ),
+        "schema_fingerprint": (
+            "8e26376df705c7144895b9afedf65a5c7143007ad4f9551762f6fdda12adf482"
+        ),
+        "quality_identity_sha256": (
+            "846e0fce09988e630184290a150c8abaab909e1bd7c6409548bc12bfd4d40ed1"
+        ),
+        "count": 59,
+        "canonical_finding_sha256": (
+            "557c6b7e3bbdb5eba2a5071d4831a4a98efa9b09ae8725fd9303c9b08253636c"
+        ),
+        "record_sha256": (
+            "2e2e78eb88e7a971e781d425264b9b0fd19163ae25d32f8f28cb3c8abbc89130"
+        ),
+    },
+}
+
+
+@pytest.mark.parametrize("year", sorted(HEADERLESS_YEAR_APPROVALS))
+def test_repository_headerless_year_approval_record_loads(year: int) -> None:
+    """The 2020/2021 records must load, self-authenticate, and stay frozen."""
+    expected = HEADERLESS_YEAR_APPROVALS[year]
+    repo_root = Path(__file__).resolve().parents[1]
+    record = load_approval_record(
+        "configs/quality/approvals/"
+        f"binance-usdm-btcusdt-1m-{year}-zero-volume.v1.yaml",
+        repo_root=repo_root,
+    )
+    assert record.schema == APPROVAL_SCHEMA
+    assert record.record_id == f"binance-usdm-btcusdt-1m-{year}-zero-volume-v1"
+    assert record.dataset_id == f"binance_usdm_btcusdt_klines_1m_{year}"
+    assert record.canonical_content_hash == expected["canonical_content_hash"]
+    assert record.schema_fingerprint == expected["schema_fingerprint"]
+    assert record.quality_identity_sha256 == expected["quality_identity_sha256"]
+    assert record.quality_policy_version == "2"
+    assert len(record.source_sha256) == 12
+    assert len(record.approved_findings) == 1
+    finding = record.approved_findings[0]
+    assert finding.check_id == "zero_volume_candle"
+    assert finding.count == expected["count"]
+    assert finding.canonical_finding_sha256 == expected["canonical_finding_sha256"]
+    assert record.approver == "258711354+wyze69-sys@users.noreply.github.com"
+    assert record.record_sha256 == expected["record_sha256"]
+    record.verify_self_hash()
+
+
+@pytest.mark.parametrize("year", sorted(HEADERLESS_YEAR_APPROVALS))
+def test_headerless_year_approval_is_not_consumed_by_the_dataset_config(
+    year: int,
+) -> None:
+    """The record exists; the amendment does not activate it.
+
+    The 2020/2021 dataset descriptors stay at quality_policy_version "1", so the
+    pipeline never loads these records and both years remain WARN_BLOCKED. The
+    amendment authorizes parseability, not publication -- this test is what makes
+    that boundary fail loudly if someone flips the policy without a decision.
+    """
+    from quantara.descriptor import load_descriptor
+
+    repo_root = Path(__file__).resolve().parents[1]
+    descriptor = load_descriptor(
+        repo_root / "configs" / "datasets" / f"binance-usdm-btcusdt-1m-{year}.yaml"
+    )
+    assert descriptor.quality_policy_version == "1"
+    assert descriptor.quality_approval is None

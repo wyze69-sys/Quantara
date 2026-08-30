@@ -179,7 +179,9 @@ def test_v2_month_matrix_rejects_invalid_ranges(
 
 
 def test_v2_rejects_unknown_source_and_top_level_keys(tmp_path: Path) -> None:
-    with pytest.raises(DescriptorError, match="exactly 'allowed_hosts'"):
+    # Amendment 2026-08-30: 'csv_header' is the only key admitted alongside
+    # 'allowed_hosts'; every other source key is still rejected.
+    with pytest.raises(DescriptorError, match="may only add 'csv_header'"):
         load_descriptor(
             _write(
                 tmp_path / "source",
@@ -440,3 +442,150 @@ def test_repository_extended_year_descriptor_matches_approved_contract(
             "configs/quality/approvals/"
             f"binance-usdm-btcusdt-1m-{year}-zero-volume.v1.yaml"
         )
+
+
+# --- Amendment 2026-08-30: headerless source variant --------------------------
+
+# Frozen JCS canonical-semantics digests for the two allow-listed year
+# descriptors WITH source.csv_header: absent declared. These are new anchors,
+# not replacements: because csv_header enters canonical semantics only when it
+# is declared, the undeclared form keeps the digests already frozen in
+# EXTENDED_YEAR_CANONICAL_DIGESTS above. Both tables are asserted together so
+# neither form can drift without failing here.
+EXTENDED_YEAR_HEADERLESS_CANONICAL_DIGESTS = {
+    2020: "f6f7f579b4b3563581ec53ead3eb37faedf3f03b733715ad91489420fef00cf8",
+    2021: "c3ed017c8eed270fc02ccbaec568841f0f007bd371ed234f3348ca5d106bac77",
+}
+
+HEADERLESS_YEARS: tuple[int, ...] = tuple(
+    sorted(EXTENDED_YEAR_HEADERLESS_CANONICAL_DIGESTS)
+)
+
+# The single substitution that turns an approved year descriptor into its
+# headerless variant. Identical to the one used by make_headerless_descriptor in
+# tests/test_parsing.py, so the parse fixtures and these frozen digests cannot
+# describe different documents.
+_HEADERLESS_HOST_ANCHOR = "    - data.binance.vision"
+_HEADERLESS_DECLARATION = "    - data.binance.vision\n  csv_header: absent"
+
+
+def _headerless_year_1m_text(year: int) -> str:
+    """Render an approved year descriptor that declares the headerless variant."""
+    text = _extended_year_1m_text(year)
+    assert text.count(_HEADERLESS_HOST_ANCHOR) == 1
+    return text.replace(_HEADERLESS_HOST_ANCHOR, _HEADERLESS_DECLARATION)
+
+
+@pytest.mark.parametrize("year", HEADERLESS_YEARS)
+def test_headerless_year_descriptor_frozen_digest(tmp_path: Path, year: int) -> None:
+    """The declared variant loads, resolves the variant parser, and is frozen."""
+    from quantara.manifests import HEADERLESS_PARSER_VERSION, parser_version_for
+
+    descriptor = load_descriptor(
+        _write(
+            tmp_path / f"headerless-{year}",
+            _headerless_year_1m_text(year),
+            name=f"binance-usdm-btcusdt-1m-{year}.yaml",
+        )
+    )
+    assert descriptor.csv_header_absent is True
+    assert descriptor.dataset_id == f"binance_usdm_btcusdt_klines_1m_{year}"
+    assert descriptor.months == tuple(f"{year}-{month:02d}" for month in range(1, 13))
+    assert descriptor.expected_row_count == EXTENDED_YEAR_EXPECTED_ROWS[year]
+    assert descriptor.quality_policy_version == "1"
+    assert descriptor.quality_approval is None
+    assert parser_version_for(descriptor) == HEADERLESS_PARSER_VERSION
+
+    digest = descriptor_hash(descriptor.canonical_semantics())
+    assert digest == EXTENDED_YEAR_HEADERLESS_CANONICAL_DIGESTS[year]
+    # The declaration is load-bearing: it must not hash to the undeclared form.
+    assert digest != EXTENDED_YEAR_CANONICAL_DIGESTS[year]
+
+
+@pytest.mark.parametrize("year", EXTENDED_YEARS)
+def test_amendment_does_not_perturb_undeclared_year_digests(
+    tmp_path: Path, year: int
+) -> None:
+    """Non-perturbation proof: omitting csv_header reproduces the frozen values.
+
+    This is the guarantee that matters for every already-published identity.
+    Adding the optional key to the grammar must not move the JCS bytes of any
+    descriptor that does not declare it — including 2022 and 2023, which are
+    published, and including 2020 and 2021 in their pre-amendment form.
+    """
+    from quantara.manifests import PARSER_VERSION, parser_version_for
+
+    descriptor = load_descriptor(
+        _write(
+            tmp_path / f"undeclared-{year}",
+            _extended_year_1m_text(year),
+            name=f"binance-usdm-btcusdt-1m-{year}.yaml",
+        )
+    )
+    assert descriptor.csv_header_absent is False
+    assert parser_version_for(descriptor) == PARSER_VERSION
+    assert (
+        descriptor_hash(descriptor.canonical_semantics())
+        == EXTENDED_YEAR_CANONICAL_DIGESTS[year]
+    )
+
+
+def test_headerless_declaration_is_allow_listed_to_2020_and_2021(
+    tmp_path: Path,
+) -> None:
+    """Only the two pre-registered identities may declare the variant."""
+    for year in (2022, 2023):
+        with pytest.raises(DescriptorError, match="allow-listed"):
+            load_descriptor(
+                _write(
+                    tmp_path / f"not-allow-listed-{year}",
+                    _headerless_year_1m_text(year),
+                    name=f"binance-usdm-btcusdt-1m-{year}.yaml",
+                )
+            )
+
+    # The 2024 quarter identity is equally excluded (inline host list form).
+    inline_anchor = "  allowed_hosts: [data.binance.vision]"
+    assert VALID_V2_DESCRIPTOR_YAML.count(inline_anchor) == 1
+    text = VALID_V2_DESCRIPTOR_YAML.replace(
+        inline_anchor, f"{inline_anchor}\n  csv_header: absent"
+    )
+    with pytest.raises(DescriptorError, match="allow-listed"):
+        load_descriptor(_write(tmp_path / "not-allow-listed-q1", text))
+
+
+def test_headerless_declaration_rejects_other_values_and_v1(tmp_path: Path) -> None:
+    """Header presence is expressed by omission; no other encoding is admitted."""
+    bad_values = ("present", '"absent "', "null", "true", "[absent]", '""')
+    for index, value in enumerate(bad_values):
+        text = _extended_year_1m_text(2020).replace(
+            _HEADERLESS_HOST_ANCHOR,
+            f"{_HEADERLESS_HOST_ANCHOR}\n  csv_header: {value}",
+        )
+        with pytest.raises(DescriptorError, match="csv_header"):
+            load_descriptor(_write(tmp_path / f"bad-value-{index}", text))
+
+    v1_text = VALID_DESCRIPTOR_YAML.replace(
+        "  allowed_hosts:", "  csv_header: absent\n  allowed_hosts:"
+    )
+    with pytest.raises(DescriptorError, match="csv_header"):
+        load_descriptor(_write(tmp_path / "v1-rejects", v1_text))
+
+
+@pytest.mark.parametrize("year", HEADERLESS_YEARS)
+def test_repository_headerless_year_descriptor_declares_the_variant(year: int) -> None:
+    """The committed 2020/2021 configs carry the declaration and stay policy 1."""
+    from quantara.manifests import HEADERLESS_PARSER_VERSION, parser_version_for
+
+    repo_root = Path(__file__).resolve().parents[1]
+    descriptor = load_descriptor(
+        repo_root / "configs" / "datasets" / f"binance-usdm-btcusdt-1m-{year}.yaml"
+    )
+    assert descriptor.csv_header_absent is True
+    assert parser_version_for(descriptor) == HEADERLESS_PARSER_VERSION
+    assert descriptor.quality_policy_version == "1"
+    assert descriptor.quality_approval is None
+    assert (
+        descriptor_hash(descriptor.canonical_semantics())
+        == EXTENDED_YEAR_HEADERLESS_CANONICAL_DIGESTS[year]
+    )

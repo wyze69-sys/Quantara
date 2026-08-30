@@ -1,6 +1,9 @@
 """Exact kline parsing and numeric policy.
 
-Validates the exact ordered 12-name UTF-8 header contract; parses unsigned
+Validates the exact ordered 12-name UTF-8 header contract (or, under the
+2026-08-30 headerless-source amendment, verifies that a descriptor declaring
+``source.csv_header: absent`` really has no header line and binds the same
+frozen 12 field positions in the same order); parses unsigned
 base-10 epoch-millisecond timestamps directly to integers; parses numeric
 fields through decimal.Decimal only (binary floats are never constructed);
 enforces the decimal128(38,18) representability budget exactly per spec §6.5
@@ -144,19 +147,45 @@ def parse_timestamp_ms(text: str, field: str) -> int:
 def parse_rows(text: str, descriptor: DatasetDescriptor) -> list[SourceRow]:
     start_ms = int(descriptor.start_utc.timestamp() * 1000)
     end_ms = int(descriptor.end_utc.timestamp() * 1000)
+    header_absent = bool(getattr(descriptor, "csv_header_absent", False))
 
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=",")
     try:
-        header = next(reader)
+        first = next(reader)
     except StopIteration as exc:
-        raise SourceHeaderMismatch("member has no header row") from exc
-    if tuple(header) != HEADER:
         raise SourceHeaderMismatch(
-            f"header mismatch: expected {HEADER}, got {tuple(header)}"
-        )
+            "member has no data rows" if header_absent else "member has no header row"
+        ) from exc
+
+    if header_absent:
+        # Amendment 2026-08-30: declared absence must actually be absence.
+        # A first line that IS the frozen header means provider drift and
+        # fails as loudly as the converse does on the default path.
+        if tuple(first) == HEADER:
+            raise SourceHeaderMismatch(
+                "descriptor declares source.csv_header 'absent' but the member's "
+                "first line is the exact 12-name header row"
+            )
+        first_data_row: list[str] | None = first
+        first_line_number = 1
+    else:
+        if tuple(first) != HEADER:
+            raise SourceHeaderMismatch(
+                f"header mismatch: expected {HEADER}, got {tuple(first)}"
+            )
+        first_data_row = None
+        first_line_number = 2
+
+    def _data_rows():
+        if first_data_row is not None:
+            yield first_line_number, first_data_row
+            offset = first_line_number + 1
+        else:
+            offset = first_line_number
+        yield from enumerate(reader, start=offset)
 
     rows: list[SourceRow] = []
-    for line_number, fields in enumerate(reader, start=2):
+    for line_number, fields in _data_rows():
         if not fields:
             continue
         if len(fields) != len(HEADER):

@@ -42,11 +42,11 @@ from quantara.hashing import (
 )
 from quantara.jcs import canonicalize
 from quantara.manifests import (
-    PARSER_VERSION,
     attempt_id_now,
     build_dataset_manifest,
     environment_evidence,
     new_attempt_manifest,
+    parser_version_for,
     write_json,
 )
 from quantara.parsing import decode_member, parse_rows
@@ -525,7 +525,7 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
         ),
         "descriptor_sha256": descriptor_sha,
         "schema_fingerprint": fingerprint,
-        "parser_version": PARSER_VERSION,
+        "parser_version": parser_version_for(descriptor),
         "canonical_content_hash": content_hash,
         "quality_identity": report.identity(),
         "object_refs": object_refs,
@@ -650,8 +650,15 @@ def run_pipeline(  # noqa: C901, PLR0915 - one explicit linear flow per spec §1
             if descriptor.schema != V2_SCHEMA
             else member_shas
         ),
-        source_header=list(decode_member(members[0]).splitlines()[0].split(",")),
-        parser_version=PARSER_VERSION,
+        # Amendment 2026-08-30: under the headerless variant the member's
+        # first line is a data row, so publishing it as header evidence
+        # would be a fabricated field. Record the declared absence instead.
+        source_header=(
+            None
+            if descriptor.csv_header_absent
+            else list(decode_member(members[0]).splitlines()[0].split(","))
+        ),
+        parser_version=parser_version_for(descriptor),
         schema_version=descriptor.schema_version,
         schema_fingerprint=fingerprint,
         timestamp_semantics=descriptor.timestamp_semantics,

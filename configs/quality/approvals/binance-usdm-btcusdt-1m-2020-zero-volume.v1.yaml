@@ -1,0 +1,34 @@
+# Immutable quality warning approval record (2020, headerless source variant).
+# Binds the full-year 1m lane to exactly the reviewed zero-volume
+# no-trade candles present in the official Binance Vision archives.
+# Recorded under the 2026-08-30 headerless-source-variant amendment; the
+# 2020 descriptor is parsed with source.csv_header: absent.
+schema: quantara.quality-warning-approval/v1
+record_id: binance-usdm-btcusdt-1m-2020-zero-volume-v1
+dataset_id: binance_usdm_btcusdt_klines_1m_2020
+canonical_content_hash: 429e7ad880aa15b9b11888c4a1b4ec386ad114cbd67bc1b935486d77c287bb38
+schema_fingerprint: e4f64e3ba5beec25fba9f8b83320a68b3ddf5b8f848a2229f54bb02730f5d551
+source_sha256:
+  - b4e13ea185ba96c413ac9167cfbb6e238eb5eae119a7a77f41f4c61c5e099d03
+  - f32b20168ea590cd7d04a2995bc5ec500ea06331c8174f7fd14f29c1078e5ed2
+  - 15790b4b031cbc5f59cae30e523fb8341588d279fe3839ba1224c7fe8a6bc929
+  - f45228183c21030fc3a787109eada99187d9ba8c4d5d7ea5c178967150fa7467
+  - bc5bdae217f9ef6a32ffcc7653e3d45e007a2d9b2e93b752bdc7805254446821
+  - 91f18492445c0a9609d70bd4603c73c8588a88c06105ade34082417f8b2e7e6d
+  - 4cb7dcf6e1adb17e8ab8787c459f3f645b7070633f530485f0f93dd45a9de693
+  - 7596de0f26df44d782713475f97af34f27a287faf084c73bdcc61819215b060a
+  - 9f2d575ffc17a14320bc08a99d51a5580fd7f058f1495cfec598fbbd959792c2
+  - f35bc01dc1bba142c87033b33055c34a0ba37c2a2abd6c115af6a9c4f238dd03
+  - 8eb55b2a547c35d792f88186168774804346426b82289bc9b1633406c0ff9e40
+  - 72cfa1e9aeb851871af0168eb7ee22d334b5efb3aa4a76d7382754dac5e885d8
+quality_policy_version: "2"
+quality_identity_sha256: 4dbe4fdf22eb4ee7fd1ff635f191fb2a05a06d5a817d685c56a9ae1b5c05668e
+approved_findings:
+  - check_id: zero_volume_candle
+    count: 2
+    canonical_finding_sha256: 087f3e42d319788d75ab4e3d8d21507cbdca7d7a26418aa962e1abfae66625a7
+approver: 258711354+wyze69-sys@users.noreply.github.com
+decision_time_utc: "2026-08-30T08:41:00Z"
+rationale: official source contains 2 no-trade candles on 2020-09-27 UTC (11:13 and 11:14, trade_count 0); rows are preserved, all hard invariants pass, and approval is internal-analysis-only.
+scope: exact full-year 2020 BTCUSDT USD-M 1m canonical content only, as parsed under the headerless source variant; no wildcard or future-data scope.
+record_sha256: 0089482c012568fac59ae7117f3fde30742db22d1baf5408e035bbb9e4130e27

@@ -25,6 +25,8 @@ from quantara.jcs import canonicalize
 
 __all__ = [
     "APPROVED_INTERNAL_OPERATIONS",
+    "HEADERLESS_CSV_HEADER_VALUE",
+    "HEADERLESS_SOURCE_DATASET_IDS",
     "RIGHTS_OPERATIONS",
     "DatasetDescriptor",
     "DescriptorError",
@@ -41,6 +43,21 @@ class DescriptorError(QuantaraError):
 
 V1_SCHEMA = "quantara.dataset-descriptor/v1"
 V2_SCHEMA = "quantara.dataset-descriptor/v2"
+
+# Amendment 2026-08-30 (headerless source variant). The exact 12-name header
+# contract of slice 001 §3.3 stays the default: presence is expressed by
+# omitting the key, so each state has exactly one representation. Only the
+# literal string below is accepted, and only for the two allow-listed dataset
+# identities whose official monthly archives are genuinely headerless
+# (2020-01 … 2021-12, boundary byte-verified). Widening this allow-list
+# requires its own amendment.
+HEADERLESS_CSV_HEADER_VALUE = "absent"
+HEADERLESS_SOURCE_DATASET_IDS: frozenset[str] = frozenset(
+    {
+        "binance_usdm_btcusdt_klines_1m_2020",
+        "binance_usdm_btcusdt_klines_1m_2021",
+    }
+)
 
 COMMON_APPROVED_IDENTITIES: dict[str, str] = {
     "provider": "binance",
@@ -275,6 +292,7 @@ class DatasetDescriptor:
     quality_policy_version: str
     legal_record: str
     quality_approval: str | None = None
+    csv_header_absent: bool = False
 
     @property
     def expected_row_count(self) -> int:
@@ -299,6 +317,11 @@ class DatasetDescriptor:
         else:
             semantics["months"] = list(self.months)
             source = {"allowed_hosts": list(self.allowed_hosts)}
+            # Declared only when present, so every descriptor that omits the
+            # key keeps its previously published JCS bytes byte-for-byte.
+            if self.csv_header_absent:
+                source["csv_header"] = HEADERLESS_CSV_HEADER_VALUE
+
         semantics.update(
             {
                 "period": {
@@ -407,9 +430,21 @@ def _parse_months(raw: Any, start: datetime, end: datetime) -> tuple[str, ...]:
     return months
 
 
-def _validate_allowed_hosts(source: dict[str, Any]) -> tuple[str, ...]:
-    if set(source) != {"allowed_hosts"}:
-        _reject("v2 source must contain exactly 'allowed_hosts'")
+def _validate_allowed_hosts(
+    source: dict[str, Any], dataset_id: Any = None
+) -> tuple[tuple[str, ...], bool]:
+    """Validate the v2 source block and resolve the header declaration.
+
+    Amendment 2026-08-30: ``csv_header`` is the only optional key. It is
+    accepted solely as the literal ``"absent"`` and solely for the allow-listed
+    headerless identities. Header presence has exactly one representation —
+    omitting the key — so no redundant encoding can drift.
+    """
+    permitted = {"allowed_hosts", "csv_header"}
+    if not set(source) <= permitted or "allowed_hosts" not in source:
+        _reject(
+            "v2 source must contain 'allowed_hosts' and may only add 'csv_header'"
+        )
     hosts = source["allowed_hosts"]
     if (
         not isinstance(hosts, list)
@@ -419,7 +454,24 @@ def _validate_allowed_hosts(source: dict[str, Any]) -> tuple[str, ...]:
         )
     ):
         _reject("source.allowed_hosts must be a non-empty list of hostnames")
-    return tuple(hosts)
+
+    csv_header_absent = False
+    if "csv_header" in source:
+        value = source["csv_header"]
+        if not isinstance(value, str) or value != HEADERLESS_CSV_HEADER_VALUE:
+            _reject(
+                "source.csv_header may only equal "
+                f"{HEADERLESS_CSV_HEADER_VALUE!r}; header presence is expressed "
+                "by omitting the key"
+            )
+        if dataset_id not in HEADERLESS_SOURCE_DATASET_IDS:
+            _reject(
+                "source.csv_header is permitted only for the allow-listed "
+                f"headerless identities {sorted(HEADERLESS_SOURCE_DATASET_IDS)!r}, "
+                f"not {dataset_id!r}"
+            )
+        csv_header_absent = True
+    return tuple(hosts), csv_header_absent
 
 
 def _v2_identity_table_for(dataset_id: Any) -> dict[str, str]:
@@ -489,7 +541,11 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:  # noqa: C901, PLR09
     source = document["source"]
     if not isinstance(source, dict):
         _reject("source must be a mapping")
+    csv_header_absent = False
     if schema == V1_SCHEMA:
+        # Amendment 2026-08-30: the headerless variant is a v2-only concept.
+        if "csv_header" in source:
+            _reject("v1 descriptor must not specify source.csv_header")
         months = (start.strftime("%Y-%m"),)
         archive_url, checksum_url, allowed_hosts = _validate_urls(
             source, symbol, interval, months[0]
@@ -504,7 +560,9 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:  # noqa: C901, PLR09
         member_patterns = (expected_member_pattern,)
     else:
         months = _parse_months(document["months"], start, end)
-        allowed_hosts = _validate_allowed_hosts(source)
+        allowed_hosts, csv_header_absent = _validate_allowed_hosts(
+            source, document.get("dataset_id")
+        )
         archive_urls = tuple(
             ARCHIVE_URL_TEMPLATE.format(symbol=symbol, interval=interval, month=month)
             for month in months
@@ -626,6 +684,7 @@ def load_descriptor(path: Path | str) -> DatasetDescriptor:  # noqa: C901, PLR09
         quality_policy_version=quality_policy_version,
         legal_record=legal_record,
         quality_approval=quality_approval,
+        csv_header_absent=csv_header_absent,
     )
 
 
