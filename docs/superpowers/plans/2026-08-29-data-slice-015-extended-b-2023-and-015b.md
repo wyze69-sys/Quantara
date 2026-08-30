@@ -1,8 +1,20 @@
 # Slice 015-extended-b — Acquire 2023 + 015b Multi-Year Validation on 2022+2023+2024
 
-**Status:** Proposed plan; awaiting owner review and approval
-**Date:** 2026-08-29
+**Status:** COMPLETE — all gates G1–G5 closed. Verdict:
+STOP-regime-conditioning (B5) with a REDESIGN flag from 2022.
+Result: `docs/research/015b-multi-year-results-2022-2023-2024.md`
+**Date:** 2026-08-29 (closed 2026-08-30)
 **Starting HEAD:** `14717883564073e6df6757702eefab7c76d228d3` (main, clean, synced with origin)
+
+**Executed deviation (owner-approved, "Path A"):** G4 §4's single concatenated
+26,304-row run at `min_train_size=8,760` / 243 folds is **not executable** — the
+frozen `load_validation_descriptor` rejects `min_train_size: 8760` as
+`unsupported_parameter` and rejects any multi-year period, and the 012 KILL
+commit's recorded `fold_count: 117` proves the frozen model used
+`min_train_size=336`. The plan's "012 unchanged" and "min_train_size=8,760"
+requirements contradict each other. Executed instead as three independent
+per-year runs at the genuinely frozen parameters: **349 folds
+(116 + 116 + 117)**, all at one code revision `47e4026`. See report §0.1.
 **Provenance:** this slice implements the GPT-recommended path out of the 015-extended
 report's three options. The 2020-2021 headerless-archive blocker (see
 `docs/research/per-year-feature-distribution-2020-2022.md` §9) is real and

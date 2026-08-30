@@ -1,0 +1,18 @@
+schema: quantara.training-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_1h_2023_training_ridge_v1
+dataset_type: model_training
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_1h_2023
+parent_descriptor: configs/datasets/binance-usdm-btcusdt-1h-2023-validation-wf-v1.yaml
+period: { start: "2023-01-01T00:00:00Z", end: "2024-01-01T00:00:00Z" }
+model: { family: ridge_linear, lambda: "1", solver: gauss_elimination_partial_pivot }
+standardization: train_window_zscore
+baselines: [majority_class_train_window, sign_f_ret_1]
+metrics: [pearson_ic, directional_accuracy, mse]
+features: [f_ret_1, f_roc_60, f_rvol_20, f_volratio_20]
+target: l_fwdret_24
+training_set: { name: btcusdt_core_v1_ridge_v1, version: "1" }
+schema_version: quantara_model_training_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v3.yaml

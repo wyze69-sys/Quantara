@@ -1,0 +1,15 @@
+schema: quantara.validation-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_1h_2023_validation_wf_v1
+dataset_type: validation_folds
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_1h_2023
+parent_descriptor: configs/datasets/binance-usdm-btcusdt-1h-2023-research-core-v1.yaml
+period: { start: "2023-01-01T00:00:00Z", end: "2024-01-01T00:00:00Z" }
+feature_set: { name: btcusdt_core_v1, version: "1" }
+scheme: anchored_walkforward_v1
+fold_set: { name: btcusdt_core_v1_wf72_v1, version: "1" }
+parameters: { test_size: 72, min_train_size: 336 }
+schema_version: quantara_validation_folds_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml

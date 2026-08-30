@@ -1,0 +1,13 @@
+schema: quantara.research-descriptor/v1
+dataset_id: binance_usdm_btcusdt_klines_1h_2023_research_core_v1
+dataset_type: research_table
+provider: binance
+instrument_id: binance:usd_m_futures:BTCUSDT:perpetual
+base_dataset_id: binance_usdm_btcusdt_klines_1h_2023
+base_descriptor: configs/datasets/binance-usdm-btcusdt-1h-2023-derived.yaml
+period: { start: "2023-01-01T00:00:00Z", end: "2024-01-01T00:00:00Z" }
+feature_set: { name: btcusdt_core_v1, version: "1" }
+parameters: { roc_window: 60, vol_window: 20, volume_window: 20, label_horizon: 24 }
+schema_version: quantara_research_featureset_v1
+quality_policy_version: "1"
+legal_record: configs/legal/binance-usdm-provider-rights.v2.yaml
