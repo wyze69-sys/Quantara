@@ -95,6 +95,18 @@ open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_vol
 
 The file must decode as UTF-8 without a byte-order mark. Comma is the only delimiter. LF and CRLF record endings are accepted. Fields may use ordinary RFC 4180 quoting, but after CSV parsing the 12 header values must match the ordered values above exactly; whitespace is not trimmed and reordered, missing, extra, duplicated, or case-changed names are rejected.
 
+> **Amendment 2026-08-30 (headerless source variant).** The exact-header contract
+> above remains the default and applies verbatim wherever a descriptor does not
+> declare otherwise. A v2 descriptor may declare `source.csv_header: absent`,
+> permitted only for the allow-listed 2020 and 2021 BTCUSDT 1m identities, in
+> which case the member's first line is a data row and fields bind positionally to
+> the same frozen 12-name tuple in the same order. Declared absence that turns out
+> to be presence is rejected, as is the converse. Parser identity becomes
+> `binance_kline_csv_v1_headerless` for that path and is unchanged everywhere else,
+> so no published identity moves. See
+> `docs/superpowers/specs/2026-08-30-headerless-source-variant-amendment-design.md`.
+
+
 For this fixed source contract, `open_time` and `close_time` must be unsigned base-10 Unix epoch-millisecond integers. They are parsed directly as integers without floating-point conversion. Signs, decimal points, exponent notation, non-decimal digits, and microsecond or second units are rejected. The approved `[start, end)` membership test applies to `open_time_utc`. Each source `close_time` must equal `open_time + 59,999` milliseconds.
 
 ## 4. Scope
