@@ -1,0 +1,26 @@
+[
+  {
+    "url": "https://data.binance.vision/data/futures/um/monthly/liquidations/BTCUSDT/",
+    "error": "<HTTPError 404: 'Not Found'>"
+  },
+  {
+    "url": "https://data.binance.vision/data/futures/um/daily/liquidations/BTCUSDT/",
+    "error": "<HTTPError 404: 'Not Found'>"
+  },
+  {
+    "url": "https://data.binance.vision/data/futures/um/monthly/forceOrders/BTCUSDT/",
+    "error": "<HTTPError 404: 'Not Found'>"
+  },
+  {
+    "url": "https://data.binance.vision/data/futures/um/daily/forceOrders/BTCUSDT/",
+    "error": "<HTTPError 404: 'Not Found'>"
+  },
+  {
+    "url": "https://data.binance.vision/data/futures/um/monthly/liqOrders/BTCUSDT/",
+    "error": "<HTTPError 404: 'Not Found'>"
+  },
+  {
+    "url": "https://data.binance.vision/data/futures/um/daily/liqOrders/BTCUSDT/",
+    "error": "<HTTPError 404: 'Not Found'>"
+  }
+]

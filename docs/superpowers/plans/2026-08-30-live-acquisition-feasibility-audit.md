@@ -35,7 +35,7 @@ A10 consolidate.
 | A2 | OI / ΔOI | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a2-open-interest.md` + `temp/audit_a2_oi/oi_probe_v1.json` + `temp/audit_a2_oi/oi_probe_v2.json` | KEEP with caveats — `metrics` archive 2020-09-01 → 2024-12-31 at 5-min; 2020-01 → 2020-08 is a real gap on Binance public archives; dedup the 2×288 anomaly in 2020-09 → 2021-01 |
 | A3 | Mark / index | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a3-mark-index.md` + `temp/audit_a3_mark_index/mark_index_probe_v1.json` | KEEP — both `markPriceKlines` and `indexPriceKlines` monthly archives 2020-01 → 2024-12, 1m OHLCV; **same headerless→headered format transition on 2022-12-01 as the base klines** — apply existing `csv_header: absent` allowlist path to the two new dataset ids |
 | A4 | Perp-spot basis | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a4-basis.md` + `temp/audit_a4_basis/basis_probe_v1.json` | KEEP — `premiumIndexKlines` archive is Binance's native TWA perp-vs-index basis 1m OHLCV (decimal fraction), 2020-01 → 2024-12; spot 1m archive extends back to 2017-08 for any future fallback; same headerless→headered transition on 2022-12-01 |
-| A5 | Liquidations | pending | — | — |
+| A5 | Liquidations | **COMPLETE** | `docs/superpowers/plans/2026-08-30-a5-liquidations.md` + `temp/audit_a5_liquidations/liquidation_probe_v1.json` | DROP — no Binance public liquidation archive (6/6 paths 404); live `/fapi/v1/allForceOrders` retains only 7 days; `@forceOrder` WS throttled to 1/sec/symbol since 2021-04-27; vendor archives inherit the cap and are not auditable to first-party source |
 | A6 | Options IV / skew / OI | pending | — | — |
 | A7 | ETHUSDT perpetual | pending | — | — |
 | A8 | BTCUSDT spot | pending | — | — |
