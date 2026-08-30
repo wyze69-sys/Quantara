@@ -381,6 +381,15 @@ That question is addressed by the pre-registered phase-partitioned AUC test
 (`docs/research/015c-phase-auc-prereg.md`), which must be committed before the
 statistic is computed.
 
+> **NOW RESOLVED — see `docs/research/015c-phase-auc-results.md`.** The test ran
+> and returned TERMINATE: phase-partitioned mean AUC 0.494528445186731114, with
+> a one-sided 95% bootstrap lower bound of −0.025092879246826405 and two of three
+> years below 0.50. No ranking information survives. 015c §6 additionally
+> locates this report's artifact exactly — it is the **72-bar windowing**, not
+> the label overlap. Within-fold AUC of 0.574 (2023) and 0.611 (2024) collapses
+> to 0.492 and 0.502 when the window is removed, which is the direct explanation
+> for §1's positive mean IC in exactly those two years.
+
 **Data-snooping limit.** 2022–2024 were used to diagnose these defects and to
 choose the replacement measurement. They can no longer serve as confirmatory
 evidence. A pass on the phase-AUC test licenses one pre-registered attempt with

@@ -3,6 +3,16 @@
 **Status:** COMPLETE — all gates G1–G5 closed. Verdict:
 STOP-regime-conditioning (B5) with a REDESIGN flag from 2022.
 Result: `docs/research/015b-multi-year-results-2022-2023-2024.md`
+
+**Post-closure follow-on (2026-08-30):** the closed report was audited and
+corrected — see its §9. The `SD > 0.20` stability gate is **retracted** (it
+measures fold geometry, not skill), and `p = 0.0000` is restated as
+`p <= 1/(B+1)`. The B5 next-step recorded above is **superseded**: B5 would have
+selected on IC measured under artifact-prone geometry. The replacement test —
+pre-registered in `docs/research/015c-phase-auc-prereg.md` and answered in
+`docs/research/015c-phase-auc-results.md` — returned **TERMINATE** for the
+OHLCV-only 24h-direction line, and located this slice's artifact as the 72-bar
+fold windowing rather than the 24h label overlap.
 **Date:** 2026-08-29 (closed 2026-08-30)
 **Starting HEAD:** `14717883564073e6df6757702eefab7c76d228d3` (main, clean, synced with origin)
 
