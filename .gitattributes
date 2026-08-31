@@ -1,0 +1,3 @@
+# Dataset and protocol YAML files include legacy raw-byte identity pins.
+# Keep their checkout bytes stable even when core.autocrlf=true.
+*.yaml text eol=lf
