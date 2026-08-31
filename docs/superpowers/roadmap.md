@@ -1,8 +1,8 @@
 # Quantara Roadmap — Protocol v1 Evidence Program
 
 **Status date:** 2026-08-31
-**Current branch:** `protocol-v1-p00-freeze`
-**Current gate:** P00 accepted; P01 is next
+**Current packet branch:** `protocol-v1-p01-validator`
+**Current gate:** P00 and P01 accepted; P02 is next
 **Authoritative routing index:** [`plans/2026-08-31-protocol-v1-freeze-and-canonicalization-master-plan.md`](plans/2026-08-31-protocol-v1-freeze-and-canonicalization-master-plan.md)
 
 ## 1. Honest current state
@@ -41,8 +41,10 @@ Zcode does not execute an entire stage, self-accept, push, merge, or auto-advanc
   - Frozen semantic SHA-256: `91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a`
   - Frozen Markdown SHA-256: `9aaa9d76557d76ced7a5c0cff20a02dbb7f735f555a8e696c3289dfe3963ec68`
   - Text-reference hash basis: UTF-8 with CRLF/CR normalized to LF before SHA-256.
-- **P01 — Machine-readable protocol verification tools:** `NEXT`
-- **P02 — 2025 tamper-protection and access guard:** `BLOCKED ON P01 ACCEPTANCE`
+- **P01 — Machine-readable protocol verification tools:** `ACCEPTED`
+  - Accepted implementation commit: `7cd6890954993bb53d4f3054316b24666ff40539`.
+  - Independent audit: 836 adversarial mutations rejected; 950-test full suite passed.
+- **P02 — 2025 tamper-protection and access guard:** `NEXT`
 
 No source implementation, feature generation, model training, or 2025 access may bypass this stage.
 

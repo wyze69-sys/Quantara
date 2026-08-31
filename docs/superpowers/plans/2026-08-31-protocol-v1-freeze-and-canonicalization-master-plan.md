@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Zcode Execution Plan Index
 
-**Status:** IN PROGRESS — P00 accepted; P01 is next
+**Status:** IN PROGRESS — P00 and P01 accepted; P02 is next
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Implementation worker:** Zcode
@@ -37,11 +37,11 @@ publication graph, and protocol compliance. Only Hermes can return ACCEPTED.
 ## First prompt
 
 ```text
-Read D:\PROJECT\Quantara\docs\superpowers\plans\2026-08-31-protocol-v1-stage-1-scientific-freeze.md and execute P01 only.
+Read D:\PROJECT\Quantara\docs\superpowers\plans\2026-08-31-protocol-v1-stage-1-scientific-freeze.md and execute P02 only.
 
-Use a dedicated branch/worktree. Preserve all pre-existing untracked files. Follow the P01 file
-allowlist and tests-first order. Run every P01 acceptance command. Commit locally only; do not push
-or merge. Do not start P02. Do not acquire data, generate features, train models, or access 2025.
+Use a dedicated branch/worktree. Preserve all pre-existing untracked files. Follow the P02 file
+allowlist and tests-first order. Run every P02 acceptance command. Commit locally only; do not push
+or merge. Do not start Stage 2. Do not acquire data, generate features, train models, or access 2025.
 Return COMPLETE / BLOCKED / INCOMPLETE with raw commands, outputs, changed files, hashes, and
 remaining risks. STOP after the report.
 ```
