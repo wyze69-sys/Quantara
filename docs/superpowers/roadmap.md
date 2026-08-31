@@ -1,8 +1,8 @@
 # Quantara Roadmap — Protocol v1 Evidence Program
 
 **Status date:** 2026-08-31
-**Current packet branch:** `protocol-v1-p01-validator`
-**Current gate:** P00 and P01 accepted; P02 is next
+**Current packet branch:** `protocol-v1-p02-guardrails`
+**Current gate:** Stage 1 accepted; Stage 2 is next but has not started
 **Authoritative routing index:** [`plans/2026-08-31-protocol-v1-freeze-and-canonicalization-master-plan.md`](plans/2026-08-31-protocol-v1-freeze-and-canonicalization-master-plan.md)
 
 ## 1. Honest current state
@@ -44,7 +44,10 @@ Zcode does not execute an entire stage, self-accept, push, merge, or auto-advanc
 - **P01 — Machine-readable protocol verification tools:** `ACCEPTED`
   - Accepted implementation commit: `7cd6890954993bb53d4f3054316b24666ff40539`.
   - Independent audit: 836 adversarial mutations rejected; 950-test full suite passed.
-- **P02 — 2025 tamper-protection and access guard:** `NEXT`
+- **P02 — 2025 tamper-protection and access guard:** `ACCEPTED`
+  - Zcode implementation commit: `914b8fb0417350e13f6fac26c7d42ddc945ffe46`.
+  - Hermes correction commit: `2301b961494e0427cd4c7d0016f9a1699b52388a` (independent process-configured trust root).
+  - Independent audit: 9/9 scientific mutations rejected before data access; forged self-authentication rejected; 992-test full suite passed.
 
 No source implementation, feature generation, model training, or 2025 access may bypass this stage.
 
@@ -52,7 +55,7 @@ No source implementation, feature generation, model training, or 2025 access may
 
 **Purpose:** Establish the common descriptor, schema, provenance, quality, gap-mask, manifest, publication, and audit infrastructure, then prove it against one complete real series before scaling.
 
-**Status:** `BLOCKED ON STAGE 1 ACCEPTANCE`
+**Status:** `NEXT — NOT STARTED`
 
 ### Stage 3 — Remaining 12 source series: S02–S13
 

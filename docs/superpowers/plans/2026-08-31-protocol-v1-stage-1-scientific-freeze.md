@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 1: Scientific Protocol Freeze
 
-**Status:** IN PROGRESS — P00 and P01 accepted; P02 is next
+**Status:** COMPLETE — P00, P01, and P02 accepted; Stage 2 has not started
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -386,6 +386,8 @@ pre-existing warning`; scoped Ruff and `git diff --check` passed; P00 artifacts 
 **Commit:** `feat(protocol): validate and hash Protocol v1`
 ### P02 — Protocol tamper and 2025 guard tests
 
+**Status:** `ACCEPTED` at implementation commit `914b8fb0417350e13f6fac26c7d42ddc945ffe46` with Hermes correction commit `2301b961494e0427cd4c7d0016f9a1699b52388a`.
+
 **Depends on:** P01 accepted.
 
 **Create:** `tests/test_protocol_guardrails.py`.
@@ -398,6 +400,18 @@ authenticated, hash-bound local gate-result artifact says every v1 criterion pas
 
 **Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol.py tests/test_protocol_guardrails.py`
 **Phase gate:** `.venv/Scripts/python.exe -m pytest -n 4`
+
+**Hermes audit evidence:** the original Zcode implementation exposed a caller-supplied HMAC key and was
+therefore `CORRECTION_REQUIRED`: a caller could create its own trust root and self-authorize. Hermes
+added an independent process-configured trust root and a red/green regression test in commit `2301b961494e0427cd4c7d0016f9a1699b52388a`.
+The final audit rejected all nine required scientific mutations before simulated data access, rejected a
+forged self-signed gate artifact, accepted only a valid hash-bound all-pass artifact, preserved semantic
+SHA-256 `91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a`, and changed only the
+P02 allowlist plus these acceptance records. P00/P01 artifacts remained unchanged. P00–P02 focused
+contracts passed `75 passed`; scoped Ruff and `git diff --check` passed; the full phase suite passed
+`992 passed, 1 pre-existing warning` in `588.17s`. Data acquisition/publication checks were not
+applicable because P02 changes no source, canonical data, manifests, or current pointers.
+
 **Commit:** `test(protocol): enforce freeze and sealed-2025 guardrails`
 ## 11. Phase-gate audit requirements
 
@@ -428,4 +442,5 @@ remains unfinished. A green unit test alone is never COMPLETE.
 
 ## First action
 
-Execute **P02 only** and stop for Hermes audit.
+Stage 1 is `COMPLETE`. Do not start Stage 2 without explicit authorization; when authorized, route
+**D00 only** to Zcode in a new dedicated branch/worktree and stop for Hermes audit.

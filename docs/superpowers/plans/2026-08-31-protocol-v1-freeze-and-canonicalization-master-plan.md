@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Zcode Execution Plan Index
 
-**Status:** IN PROGRESS — P00 and P01 accepted; P02 is next
+**Status:** STAGE 1 ACCEPTED — Stage 2 is next but has not started
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Implementation worker:** Zcode
@@ -34,14 +34,9 @@ Never tell Zcode to execute a stage or all four plans. Give one packet id only. 
 and stops. Hermes independently checks the diff, tests, live data execution, hashes, quality,
 publication graph, and protocol compliance. Only Hermes can return ACCEPTED.
 
-## First prompt
+## Next routing state
 
-```text
-Read D:\PROJECT\Quantara\docs\superpowers\plans\2026-08-31-protocol-v1-stage-1-scientific-freeze.md and execute P02 only.
-
-Use a dedicated branch/worktree. Preserve all pre-existing untracked files. Follow the P02 file
-allowlist and tests-first order. Run every P02 acceptance command. Commit locally only; do not push
-or merge. Do not start Stage 2. Do not acquire data, generate features, train models, or access 2025.
-Return COMPLETE / BLOCKED / INCOMPLETE with raw commands, outputs, changed files, hashes, and
-remaining risks. STOP after the report.
-```
+Stage 1 is accepted. No execution prompt is active in this index. Stage 2 is next but must not start
+without explicit authorization. When authorized, give Zcode **D00 only** from
+`2026-08-31-protocol-v1-stage-2-data-platform-btc-funding.md` in a new dedicated branch/worktree;
+commit locally, do not push or merge, and stop for Hermes audit.
