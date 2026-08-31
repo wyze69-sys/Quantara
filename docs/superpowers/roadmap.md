@@ -1,222 +1,87 @@
-# Quantara Roadmap — From Research Foundation to Final Product
+# Quantara Roadmap — Protocol v1 Evidence Program
 
-**Status:** Living document. Reflects repo state at 2026-08-29 (HEAD `1b19202`,
-16 slice executions, 154 commits, 36 production modules, 836 collected tests /
-14 integration deselected).
-**Read this if you ask "how many slices are left?" — the answer is here, and it
-depends on which product you mean.**
+**Status date:** 2026-08-31
+**Current branch:** `protocol-v1-p00-freeze`
+**Current gate:** P00 accepted; P01 is next
+**Authoritative routing index:** [`plans/2026-08-31-protocol-v1-freeze-and-canonicalization-master-plan.md`](plans/2026-08-31-protocol-v1-freeze-and-canonicalization-master-plan.md)
 
----
+## 1. Honest current state
 
-## 1. Two definitions of "final product"
+Quantara already has a verified archive-to-canonical pipeline and canonical BTCUSDT perpetual OHLCV covering 2020–2024. The former four-feature OHLCV 24-hour-direction line was terminated after preregistered multi-year evidence: it did not beat the required baselines. That negative result is final for that modeling line; it is not a reason to weaken the evidence standard.
 
-The project has two honest targets, and they are very different sizes:
+The active program is now **Protocol v1**: freeze the scientific question first, canonicalize exactly the frozen raw inventory, build a point-in-time hourly research table, and run one locked multi-year experiment. A profitable or positive result is not promised. A defensible null result is a valid completion state.
 
-| Target | Definition | Status |
-|---|---|---|
-| **P1 — Research evidence base** | Offline, verified archive → canonical → research features/labels → walk-forward validation → trained models with calibrated probabilities and honest evaluation. The current bounded product per the README. | ~2 slices from done |
-| **P2 — Live trading product** | Everything in P1 **plus** live data feeds, live signal generation, backtesting with costs, portfolio/risk, and order execution. The README explicitly defers this ("Live collection, forecasting models, backtesting, portfolio construction, and order execution require separate design and verification gates"). | 40+ slices from done |
+## 2. Frozen scope
 
-This roadmap plans **P2** (the full program). P1 falls out of Phase A/B as a
-side effect of the first few slices.
+The canonical Protocol v1 inventory is fixed to:
 
----
+- Existing BTCUSDT perpetual traded-price OHLCV, 2020–2024.
+- BTC settled funding, open interest, mark price, index price, native premium, Binance spot, and Kraken XBT/USD spot.
+- ETH perpetual traded price, settled funding, open interest, mark price, index price, and native premium.
 
-## 2. Where we are — completed and audited (001–012)
+No additional datasets enter before the locked experiment completes. In particular, liquidations, options, long/short ratios, taker ratios, altcoins, order books, macro, on-chain, sentiment, news, and new technical-indicator searches are excluded.
 
-All 16 executions (counting sub-slices 003a-2, 010a, 010b) are committed,
-audited, and accepted, except 012 which is implemented + real-run but awaiting
-final gates and push.
+Native premium is the preregistered futures-dislocation feature. Constructed mark/index basis remains diagnostic. ETH open interest starts on 2021-12-01, is never zero-filled, and belongs only in the identical-common-sample M3b ablation.
 
-| Slice | Delivered |
-|---|---|
-| 001 | Archive-to-canonical acquisition for Binance USD-M `BTCUSDT` 1m, Jan 2024. Immutable content-addressed store, rights gates, quality-gated publication. |
-| 002 | Multi-timeframe derivation (1h, 1d) from canonical 1m; milestone-truthfulness hardening. |
-| 003a | Rights record v2 — `analyze_internal` approved pending counsel; anti-laundering freeze tests. |
-| 003a-2 | `pytest-xdist -n 4` adoption (suite 25m39s → 7m17s serial→parallel). |
-| 003b | Research table: causal features `f_ret_1`, `f_roc_60`, `f_rvol_20`, `f_volratio_20`; labels `l_fwdret_24`, `l_fwddir_24`; lineage-bound, leakage-resistant. |
-| 004 | Walk-forward validation folds: 117 folds, `{test_size:72, min_train:336, embargo:24}`. |
-| 005 | Temporal expansion Q1 2024. |
-| 006 | Dual-IC feature evaluation (information coefficient lane). |
-| 007 | Performance baseline + streaming Python (canonical hash 21.2s → measured improvement). |
-| 008 | Rust/PyO3 kernel: canonical content hash (measured hotspot, byte-identical differential). |
-| 009 | Rust kernel: Q18 decimal rendering. |
-| 010 | Full-year 2024 expansion: 8,784 research rows; +010a/010b reviewed zero-volume warning approvals. |
-| 011 | First model lane: exact-decimal ridge walk-forward; 8,400 predictions; IC −0.141, directional accuracy 0.5148 vs majority baseline 0.5349 (lost to baseline). |
-| 012 | Logistic probability head (IRLS, exact Decimal) with pre-registered kill criteria. Real run: **KILL_CRITERIA_FAILED** (exit 4, no publication) — IC 0.1786 ✓, log-loss 0.6955 ✓, accuracy 0.5151 ✗ (bar 0.5349), Brier 0.2511 ✗ (bar 0.25). Implemented; awaiting T6 final gates + push. |
+## 3. Execution and acceptance model
 
-**Honest headline of the research so far:** the four features carry real
-signal (probability calibration is informative: IC 0.18, log-loss near the
-no-information floor) but the direction calls do not yet beat "predict the
-majority class." That is a legitimate, publishable research result — and it is
-exactly why the remaining program below is large: finding *tradeable* edge is
-open-ended research, not a fixed number of slices.
+Work advances through one bounded packet at a time:
 
----
+> Zcode implementation → local commit and evidence → Hermes independent audit → correction if required → `ACCEPTED` → next packet
 
-## 3. Immediately next (slices 013–014)
+Zcode does not execute an entire stage, self-accept, push, merge, or auto-advance. Hermes verifies the actual diff, tests, runtime behavior, hashes, quality decisions, publication graph, and protocol compliance. The durable repository rules are in [`AGENTS.md`](../../AGENTS.md).
 
-### 013 — Binance Vision derivatives backfill *(named, facts verified in 012 §3)*
+## 4. Four-stage program
 
-- Acquire funding-rate archives (monthly ZIPs, **2020-01** → present, ~808 B/mo)
-  and daily metrics (open interest, taker long/short ratios, **2020-09-01** →
-  present, 2,188 files, ~30 MB total — light).
-- New retained lanes under existing v3 rights; no rights change.
-- **Size:** M (data-acquisition slice, ~30 MB, but 6 years × 2 data shapes = new
-  descriptors, validation, quality, integration).
+### Stage 1 — Scientific freeze: P00–P02
 
-### 014 — Derivatives feature expansion
+**Purpose:** Make the scientific semantics and the 2025 blind seal mechanically enforceable before data work expands.
 
-- Add funding-rate, open-interest, and long/short-ratio features to the
-  research table (basis/positioning are the classic missing signal families).
-- **Size:** M. **Dependency:** 013. Rights: `analyze_internal` — no change.
+- **P00 — Protocol v1 specification and contract:** `ACCEPTED`
+  - Frozen semantic SHA-256: `91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a`
+  - Frozen Markdown SHA-256: `9aaa9d76557d76ced7a5c0cff20a02dbb7f735f555a8e696c3289dfe3963ec68`
+  - Text-reference hash basis: UTF-8 with CRLF/CR normalized to LF before SHA-256.
+- **P01 — Machine-readable protocol verification tools:** `NEXT`
+- **P02 — 2025 tamper-protection and access guard:** `BLOCKED ON P01 ACCEPTANCE`
 
-### 014.5 — README refresh *(small, overdue)*
+No source implementation, feature generation, model training, or 2025 access may bypass this stage.
 
-- README still reads "FOUNDATION-STAGE — SPECIFIED, NOT IMPLEMENTED" from the
-  001 era, which is now false. Update to reflect the implemented pipeline.
-- **Size:** S. Could fold into any nearby docs commit.
+### Stage 2 — Shared data platform plus BTC funding vertical slice: D00–D07, S01
 
----
+**Purpose:** Establish the common descriptor, schema, provenance, quality, gap-mask, manifest, publication, and audit infrastructure, then prove it against one complete real series before scaling.
 
-## 4. The full program (P2) — ordered phases
+**Status:** `BLOCKED ON STAGE 1 ACCEPTANCE`
 
-Each entry: **name** — what it delivers — why — gate/size.
+### Stage 3 — Remaining 12 source series: S02–S13
 
-### Phase A — Data depth (make the evidence base wide enough to trust)
+**Purpose:** Canonicalize each remaining frozen source separately, using source-specific acquire/normalize/publish packets and an independent acceptance gate for every series.
 
-The 2024-only, single-asset, four-feature base is a proof of concept, not a
-research corpus. A model trained on one year of one asset cannot demonstrate
-generalization.
+**Status:** `BLOCKED ON STAGE 2 ACCEPTANCE`
 
-| # | Slice | Delivers | Why | Gate/Size |
-| --- | --- | --- | --- | --- |
-| A1 | 013 | Vision derivatives backfill | funding/OI/positioning data 2020–2026 | v3 rights ✓ / M |
-| A2 | 014 | Derivatives features | funding, OI, long/short features on research table | analyze ✓ / M |
-| A3 | 015 | 2023 backfill | second training year (walk-forward cross-year) | v3 ✓ / M |
-| A4 | 016 | 2025 acquisition + holdout | honest out-of-sample year never touched by training | v3 ✓ / M |
-| A5 | 017 | Multi-instrument (ETHUSDT first) | generalization across assets; same pipeline, new descriptors | v3 ✓ / M |
-| A6 | 018 | 2022 backfill (if A3/A5 show promise) | deeper history for regimes (bear/COVID era) | v3 ✓ / M |
-| A7 | — | Higher-timeframe research tables (4h/1d) | strategy-relevant horizons, lower noise | v3 ✓ / S–M |
+No source may be zero-filled, silently interpolated, or promoted with unresolved quality warnings.
 
-### Phase B — Modeling edge (turn signal into decisions)
+### Stage 4 — Point-in-time research and locked evaluation: H00–H07, E00–E04
 
-Open-ended by nature. The slices below are the *named* candidates; each is one
-bounded TDD slice, but the loop "feature idea → train → evaluate → kill/promote"
-repeats as long as the kill criteria keep failing or improving.
+**Purpose:** Build the authenticated hourly feature/label table, rehearse only on the 2020–2021 design period, then run the locked 2022–2024 experiment.
 
-| # | Slice | Delivers | Why | Gate/Size |
-| --- | --- | --- | --- | --- |
-| B1 | 019 | Multi-horizon labels (12h/48h) | horizon robustness; 24h-only labels are a single point | analyze ✓ / M |
-| B2 | 020 | Formal feature selection (IC-ranked, dual-IC from 006) | cut noise features before spending modeling budget | analyze ✓ / S |
-| B3 | 021 | Ensemble: ridge + logistic blend | probability blending, not new model class | model_train (approved pending counsel) ✓ / S |
-| B4 | 022 | Threshold optimization (p̂ → direction map ≠ 0.5) | accuracy bar is beaten at the *decision* layer, not the fit layer | model_train ✓ / S |
-| B5 | 023 | Regime conditioning (vol/trend gating) | edge may exist only in regimes; 012's IC 0.18 hints at this | analyze + model_train / M |
-| B6 | 024 | Drift monitoring + retraining cadence | live-feasible models must know when they decay | model_train / M |
-| B7 | 025 | Non-linear family *only if* the Decimal contract survives | gradient-boosted exact-decimal trees (design question — the exact-Decimal, no-float contract is the project's identity; a tree port is a major design amendment, not a code change) | ⛔ design gate / L |
+**Status:** `BLOCKED ON STAGE 3 ACCEPTANCE`
 
-### Phase C — Decision-grade evaluation (make results trustworthy enough to act on)
+The 2025 window remains blind-sealed. It may be evaluated exactly once only if the frozen 2022–2024 gate passes and all protocol preconditions authorize release.
 
-012 proved the evaluation lane works. The next step is making it *decision-grade*:
-a number you'd put money behind.
+## 5. Acceptance end states
 
-| # | Slice | Delivers | Why | Gate/Size |
-| --- | --- | --- | --- | --- |
-| C1 | 026 | Cost-aware metrics (fees, slippage, funding carry) | a 51.5% accuracy model is profitable or not *after* costs; raw accuracy hides this | analyze ✓ / M |
-| C2 | 027 | Statistical significance suite (bootstrap CIs, multiple-testing correction) | 117 folds ≠ 117 independent samples; honest n | analyze ✓ / M |
-| C3 | 028 | Strategy backtest engine (signal → position → P&L, walk-forward, costs) | the bridge between "model metrics" and "would this make money" | analyze + model_train / L |
-| C4 | 029 | Benchmark suite (buy-and-hold, momentum, carry) | every strategy must be compared to not-trading | analyze ✓ / S |
+Protocol v1 is complete when one of these evidence-backed outcomes is reached:
 
-### Phase D — Live product (the P2 payoff — fully gated)
+1. The locked candidate clears every preregistered gate, followed by the authorized single 2025 evaluation.
+2. The candidate fails a gate and the program reports the null result without accessing 2025.
+3. A data-quality, provenance, legal-use, or seal-integrity failure blocks the experiment and is reported honestly.
 
-⛔ **Every slice in this phase is blocked until the owner makes the live-trading
-decision.** Today the rights record blocks `model_train_internal` pending
-counsel, and the README + artifact disclaimers say "no live trading, no
-performance claim, no commercial use." Choosing P2 means consciously amending
-that posture (rights v4 + counsel review), not drifting into it.
+Failure to find predictive edge is not an engineering failure. Bypassing the protocol, surrendering multiple years of evidence to a single point, or opening 2025 early would be.
 
-| # | Slice | Delivers | Why | Gate/Size |
-| --- | --- | --- | --- | --- |
-| D1 | 030 | Live data feed (WebSocket ingestion) | new architecture: streaming ingestion vs today's fetch-once-exit | ⛔ live decision / L |
-| D2 | 031 | Live signal service | periodic model inference on fresh bars | ⛔ live decision / M |
-| D3 | 032 | Paper trading + backtest-live reconciliation | prove the live path matches backtests before real money | ⛔ live decision / M |
-| D4 | 033 | Order execution (broker integration) | actual orders, API keys, latency, failure handling | ⛔ live decision + counsel / L |
-| D5 | 034 | Risk management (position sizing, limits, circuit breakers) | the layer that keeps a bad model from being a catastrophe | ⛔ live decision / L |
-| D6 | 035 | Monitoring + alerting | unattended processes must fail loudly | ⛔ live decision / M |
-| D7 | 036 | Portfolio allocation (multi-strategy/asset) | diversification is the only free lunch | ⛔ live decision / M |
-| D8 | 037 | API/UI layer *if* customer-facing | commercial posture — a separate rights decision | ⛔ commercial decision / L |
+## 6. Deferred product work
 
-### Phase E — Governance and hardening (spans everything)
+Live collection, signal serving, backtesting with execution costs, portfolio construction, order execution, customer-facing APIs, and commercial deployment are outside Protocol v1. They require separate scientific, legal-use, security, and production-readiness decisions after this evidence program concludes.
 
-| # | Slice | Delivers | Why | Gate/Size |
-| --- | --- | --- | --- | --- |
-| E1 | 038 | Rights v4 (live/commercial posture) + counsel review | P2 is impossible without it; two-part amendment (record + `APPROVED_INTERNAL_OPERATIONS` reclassification + tests) | ⛔ owner + counsel / S–M |
-| E2 | 039 | Deployment/ops (process management, restart, secrets) | live systems need a home | ⛔ live decision / M |
-| E3 | 040 | Packaging/docs for external users | only if commercial; else private-research posture stays | ⛔ commercial decision / M |
+## 7. Superseded roadmap material
 
----
-
-## 5. The slice count, made honest
-
-- **Named remaining:** 013 (plus 012's final gates).
-- **P1 research-complete:** ~2 slices (012 wrap + 013), with 014 as the natural
-  third.
-- **P2 full program:** 24 named future slices (013–040) ≈ **40+ total
-  executions** counting the 16 done — and the model-research loop (B) is
-  genuinely open-ended, so the real number is "at least 24, likely more."
-
-**Timeline feel** (this machine, current slice cadence of ~1–3 slices/day with
-full audit discipline):
-
-- Phase A: ~1.5–2 weeks
-- Phase B: ~2–4 weeks (research loop dominates)
-- Phase C: ~1–2 weeks
-- Phase D: ~1–2 months *if* the live decision is made
-- Phase E: interleaved
-
----
-
-## 6. Decision gates (owner choices that change the roadmap)
-
-1. ⛔ **Live vs offline** — the single biggest fork. Offline research can reach
-   P1 and stop; P2 requires counsel + rights v4 + real infrastructure.
-2. ⛔ **Multi-asset vs single-asset** — A5+ only if generalization matters to
-   you.
-3. ⛔ **Commercial vs private** — D8/E3 and the whole "customer-facing" posture
-   hang on this.
-4. ⛔ **Model class boundary** — B7 (non-linear models) forces a design
-   amendment to the exact-Decimal contract; not a default yes.
-
----
-
-## 7. Definition of done per phase
-
-- **Phase A done:** research base covers ≥2 years, ≥2 assets, derivatives
-  features, and one held-out year never seen by training.
-- **Phase B done:** at least one model beats all causal baselines (accuracy,
-  IC, log-loss, Brier) *and* clears cost-aware evaluation in Phase C — or the
-  program is honestly concluded "no tradeable edge found" with the evidence
-  published either way.
-- **Phase C done:** any strategy claim is expressed as walk-forward P&L after
-  costs with significance bounds and benchmark comparison.
-- **Phase D done (if chosen):** a monitored, risk-limited, paper-validated
-  execution path with documented reconciliation.
-- **Phase E done:** governance matches reality; nothing runs on a posture the
-  records don't authorize.
-
----
-
-## 8. Honest caveats
-
-- **No fixed slice count guarantees a profitable model.** The kill criteria
-  exist precisely so the project can publish an honest negative result (012 is
-  the first such). The roadmap's job is to make every attempt cheap and every
-  verdict trustworthy, not to promise edge.
-- **The integrity discipline is the product.** Exact Decimal, immutable
-  evidence, rights gates, and full audits are what make Quantara's claims
-  defensible — and they make each slice more expensive than in a normal
-  project. That is the price of the "correctness-first" identity in the README.
-- **012's result is the roadmap's reason to exist.** IC 0.18 with
-  below-baseline accuracy says: signal exists, decision layer doesn't exploit
-  it yet. Threshold/regime/cost work (B4, B5, C1) is the most promising
-  immediate direction — and none of it requires the live decision.
+The former slice-013/014 expansion and broad P2 roadmap are superseded for the duration of Protocol v1. Specifically, their long/short-ratio, taker-ratio, ordinary-2025-holdout, and open-ended dataset/model expansion directions are not authorized by the current frozen protocol.
