@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 2: Canonical Data Platform and BTC Funding Reference Slice
 
-**Status:** READY FOR ZCODE EXECUTION — not implemented
+**Status:** BLOCKED — P01 and P02 must be accepted before D00
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -315,48 +315,6 @@ Common focused tests:
 .venv/Scripts/python.exe -m pytest -q -m integration tests/test_integration_series_<slug>.py
 ```
 
-## 8. Uniform source-packet protocol
-
-Each source packet S01–S13 has three stops:
-
-1. **A — source-contract verification and real boundary artifacts:** tests first; run one earliest and
-   one latest audited artifact through a temporary data root; no production pointer. Shared
-   infrastructure is already frozen by D00–D07, so a required production-code change blocks A.
-2. **B — full inventory and provisional quality:** fetch every frozen file, verify every checksum,
-   enumerate all timestamps/gaps/duplicates, and emit a proposed quality report. Do not publish a
-   warning-bearing dataset.
-3. **C — audited approval and publication:** only after Hermes independently verifies B. If a
-   designed-gap/duplicate approval is required, Hermes supplies or approves its exact record.
-   Zcode then publishes, verifies the commit graph, reruns to `VERIFIED_NO_OP`, and reports hashes.
-
-A, B, and C are separate commits and separate Zcode invocations. Any failed period stops the
-source; do not continue and hide it in aggregate counts.
-
-Source-packet file allowlist:
-
-- `<slug>` is one of `btc_funding`, `btc_oi`, `btc_mark`, `btc_index`, `btc_premium`, `btc_spot`,
-  `eth_perp`, `eth_funding`, `eth_oi`, `eth_mark`, `eth_index`, `eth_premium`, or `kraken_spot`.
-- A may create only `tests/test_series_<slug>.py` and
-  `tests/test_integration_series_<slug>.py`; it may write disposable runtime evidence under
-  `temp/protocol_v1_audits/<series_id>/`. If shared production code or a descriptor must change,
-  return `BLOCKED`; Hermes will issue a separate D-series correction packet.
-- B creates or updates only
-  `docs/superpowers/audits/protocol-v1/<series_id>-inventory-and-quality.md` plus disposable runtime
-  evidence. It may not create an approval or move a production pointer.
-- C consumes an exact Hermes-approved quality record, performs publication, and updates only the
-  permanent audit report plus source-specific regression expectations. Publication artifacts live
-  under the configured data root and are not staged into Git unless an already-tracked repository
-  policy explicitly requires it. A Git commit is still required for the permanent audit evidence.
-- No source packet may modify `protocol.py`, the frozen protocol YAML/spec, model code, another
-  source descriptor/test, or any old BTC kline-v1 file.
-
-Common focused tests:
-
-```text
-.venv/Scripts/python.exe -m pytest -q tests/test_series_<slug>.py tests/test_series_pipeline.py
-.venv/Scripts/python.exe -m pytest -q -m integration tests/test_integration_series_<slug>.py
-```
-
 ## Stage 2 reference-source packet
 
 ### S01 — BTC settled funding
@@ -400,4 +358,4 @@ remains unfinished. A green unit test alone is never COMPLETE.
 
 ## First action
 
-Execute **D00 only** and stop for Hermes audit.
+After Stage 1 P00–P02 are accepted, execute **D00 only** and stop for Hermes audit.

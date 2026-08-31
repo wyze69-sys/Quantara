@@ -14,6 +14,10 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Local protocol audit scratch and reviewer briefs
+/temp/protocol_v1_audits/
+/temp/*.md
+
 # Editor and operating-system artifacts
 .vscode/
 .idea/

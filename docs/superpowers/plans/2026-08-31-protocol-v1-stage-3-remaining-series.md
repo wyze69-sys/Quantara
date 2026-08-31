@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 3: Remaining Twelve Source Series
 
-**Status:** READY FOR ZCODE EXECUTION — not implemented
+**Status:** BLOCKED — Stage 2 is not yet accepted
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -264,4 +264,4 @@ remains unfinished. A green unit test alone is never COMPLETE.
 
 ## First action
 
-Execute **S02-A only** and stop for Hermes audit.
+After Stage 2 is accepted, execute **S02-A only** and stop for Hermes audit.

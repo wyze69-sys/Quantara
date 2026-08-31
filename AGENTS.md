@@ -5,7 +5,7 @@ These instructions apply to the entire repository. A more specific `AGENTS.md` m
 ## Roles and execution boundary
 
 - **Zcode is the bounded implementation worker.** Give it exactly one packet ID from an approved plan per invocation.
-- **Hermes is the independent specification, audit, correction, verification, and acceptance owner.** Executor self-review is evidence, not acceptance.
+- **Hermes owns specification, independent audit, verification, and acceptance.** Executor self-review is evidence, not acceptance.
 - Zcode must commit locally and stop after the assigned packet. It must not push, merge, or begin another packet.
 - A packet may advance only after Hermes independently returns `ACCEPTED`. A green executor report is not sufficient.
 - Pushes, pull requests, merges, stage transitions, and scientific scope changes require owner authorization. An explicit instruction to finish the work includes normal commit, push, and remote verification; it never authorizes bypassing scientific gates or merging without review.
@@ -19,7 +19,7 @@ These instructions apply to the entire repository. A more specific `AGENTS.md` m
 5. Run every packet gate and report raw commands, outputs, changed files, hashes, and residual risks.
 6. Commit only the packet allowlist locally and stop.
 7. Hermes independently inspects the diff and trust boundaries, reruns the gates, performs required live/fresh-checkout verification, and returns `ACCEPTED`, `CORRECTION REQUIRED`, or `BLOCKED`.
-8. Correct and re-audit until accepted. Do not auto-advance.
+8. If correction is required, Hermes writes bounded correction requirements, Zcode implements and commits them locally, and Hermes re-audits. Do not auto-advance. If the owner explicitly routes implementation to Hermes-direct instead, a separate independent reviewer must audit it before acceptance.
 
 The routing index for the current program is `docs/superpowers/plans/2026-08-31-protocol-v1-freeze-and-canonicalization-master-plan.md`.
 
@@ -42,7 +42,8 @@ The routing index for the current program is `docs/superpowers/plans/2026-08-31-
 - Never claim completion from plausible output, mocked behavior, or an executor summary. Run the real verification command and inspect its exit status.
 - For runtime-facing changes, run live end-to-end verification in addition to unit tests.
 - For checkout-sensitive contracts, verify in a fresh checkout using Windows-compatible line endings.
-- Hash text references only according to the frozen basis: decode as UTF-8, normalize CRLF and CR to LF, then compute SHA-256.
+- Committed YAML checks out with LF according to `.gitattributes` because legacy descriptors have raw-byte identity pins. Protocol v1 text references are additionally hash-normalized as specified below.
+- Hash Protocol v1 text references only according to the frozen basis: decode as UTF-8, normalize CRLF and CR to LF, then compute SHA-256.
 - Do not treat two mutually editable files that mirror each other as independent evidence. Stable trust anchors must be outside the mutable pair.
 - If verification is incomplete, report `INCOMPLETE` or `BLOCKED`; never substitute fabricated artifacts or results.
 

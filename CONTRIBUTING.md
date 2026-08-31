@@ -24,6 +24,7 @@ For the current Protocol v1 program:
 
 - Zcode implements exactly one assigned packet and stops after a local commit and evidence report.
 - Hermes independently audits the diff, trust boundaries, tests, live behavior, hashes, quality state, and protocol compliance.
+- When correction is required, Hermes defines the bounded correction and Zcode implements it; Hermes then re-audits. Hermes-direct implementation requires a separate independent audit before acceptance.
 - Executor self-review and green tests do not grant acceptance.
 - No later packet or stage starts until the preceding dependency is independently accepted.
 - Governance, CI, or documentation changes must remain separate from an already accepted scientific packet.

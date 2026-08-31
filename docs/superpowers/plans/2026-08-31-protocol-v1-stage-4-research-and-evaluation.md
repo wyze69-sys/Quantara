@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 4: Point-in-Time Research Table and Locked Evaluation
 
-**Status:** READY FOR ZCODE EXECUTION — not implemented
+**Status:** BLOCKED — Stage 3 is not yet accepted
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -330,7 +330,8 @@ For every packet:
 2. Record starting HEAD and `git status --porcelain=v1 -uall`.
 3. Preserve all pre-existing untracked `temp/*.md`; do not stage, delete, rename, or rewrite them.
 4. Read packet dependencies and stop if an earlier packet lacks Hermes `ACCEPTED` status.
-5. Write failing tests first and include the observed red output.
+5. Write failing tests first and include the observed red output, except E03/E04 are explicitly
+   result-only packets: they may not author tests and must rerun the already-accepted pre-run gates.
 6. Implement only the packet allowlist.
 7. Run focused tests, then the packet integration command if named.
 8. Run `git diff --check` and inspect `git diff --stat` plus the complete diff.
@@ -340,7 +341,8 @@ For every packet:
 11. Report exact commands, outputs, files, hashes, row/gap/duplicate counts, and status.
 
 Any unexpected source drift, rights ambiguity, conflicting duplicate, checksum failure, unapproved
-quality warning, 2025 access, or need to expand scope is `BLOCKED`, not permission to improvise.
+quality warning, unauthorized or premature 2025 access, or need to expand scope is `BLOCKED`, not
+permission to improvise.
 
 The existing default suite has a long runtime. Use focused tests during a packet and
 `.venv/Scripts/python.exe -m pytest -n 4` only at phase gates. Ruff formatting has known pre-existing failures; run
@@ -350,103 +352,211 @@ ruff only on changed Python files and never reformat unrelated files.
 
 ### H00 — Point-in-time hourly alignment substrate
 
-**Create:** `src/quantara/protocol_hourly.py`, `tests/test_protocol_hourly.py`.
+**Depends on:** Stage 3 accepted.
+
+**Create only:** `src/quantara/protocol_hourly.py`, `tests/test_protocol_hourly.py`.
 
 Build an hourly origin index from canonical BTC perpetual data. Join each source backward on
 `eligibility_ts`; emit source age, validity, and gap-crossing masks. Test equality rejection,
 forward/nearest rejection, unfinished bars, duplicate conflicts, source prehistory, all A8/Kraken
 gaps, and ETH OI prehistory. No features or labels yet.
 
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_hourly.py`
 **Commit:** `feat(protocol): build point-in-time hourly alignment`
+
 ### H01 — Target and B0/B1/B2 inputs
 
-**Create:** `src/quantara/protocol_labels.py`, `tests/test_protocol_labels.py`.
-**Modify:** `src/quantara/protocol_features.py` may be created for RV functions only.
+**Depends on:** H00 accepted.
+
+**Create only:** `src/quantara/protocol_labels.py`, `tests/test_protocol_labels.py`.
+**May also create:** `src/quantara/protocol_features.py` for RV functions only.
 
 Implement hourly log returns, RV windows, sigma, Z, design-only Q80, binary target, label validity,
 and no-2022 threshold proof. Freeze independent golden vectors with values rendered to 18 decimal
 places. Do not fit a model.
 
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_labels.py`
 **Commit:** `feat(protocol): build frozen target and HAR inputs`
+
 ### H02 — M1 BTC derivatives features
+
+**Depends on:** H01 accepted.
+
+**Modify only:** `src/quantara/protocol_features.py`.
+**Create only:** `tests/test_protocol_features.py`.
 
 Implement exactly funding 24h sum, dlog OI 24h, and native premium 1h mean. Diagnostic mark/index
 basis may be emitted into a separate diagnostics artifact but cannot appear in the model matrix.
 Test gap invalidation, settlement strictness, OI common-start behavior, and column allowlist.
 
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_features.py`
 **Commit:** `feat(protocol): add frozen BTC derivatives family`
+
 ### H03 — M2 Binance spot divergence
+
+**Depends on:** H02 accepted.
+
+**Modify only:** `src/quantara/protocol_features.py`, `tests/test_protocol_features.py`.
 
 Add exactly `log(BTC perpetual close / Binance BTC spot close)` when both aligned bars and required
 windows are valid. Test every A8 gap boundary and no interpolation.
 
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_features.py`
 **Commit:** `feat(protocol): add frozen Binance spot divergence`
+
 ### H04 — M3 ETH family excluding OI
+
+**Depends on:** H03 accepted.
+
+**Modify only:** `src/quantara/protocol_features.py`, `tests/test_protocol_features.py`.
 
 Add exactly the five M3 columns in §4.3. Test that no ETH OI column or missingness indicator exists.
 All BTC-only and BTC+ETH comparisons must expose an identical-timestamp mask.
 
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_features.py`
 **Commit:** `feat(protocol): add frozen ETH cross-market family`
+
 ### H05 — M3b ETH OI common-sample ablation
+
+**Depends on:** H04 accepted.
+
+**Modify only:** `src/quantara/protocol_features.py`, `tests/test_protocol_features.py`.
 
 Add exactly ETH dlog OI 24h. The comparison mask begins no earlier than 2021-12-02 after lookback and
 uses identical rows for both models. Test that prehistory cannot encode a calendar regime.
 
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_features.py`
 **Commit:** `feat(protocol): add secondary ETH OI ablation`
+
 ### H06 — M4 Kraken family
+
+**Depends on:** H05 accepted.
+
+**Modify only:** `src/quantara/protocol_features.py`, `tests/test_protocol_features.py`.
 
 Add exactly the four Kraken features in §4.3. Test the explicit USD-versus-USDT quote-identity
 disclosure, same-origin validity, 20 audited missing hours, no forward fill, and identical comparison
 rows. Do not add an external FX or stablecoin series.
 
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_features.py`
 **Commit:** `feat(protocol): add frozen Kraken cross-venue family`
+
 ### H07 — Immutable research-table publication
 
-Publish the hourly table, validity masks, diagnostics, protocol hash, parent dataset commit hashes,
-feature allowlists, and label contract through a new immutable lane. Verify exact read-back,
-lineage closure, no-op rerun, and absence of 2025.
+**Depends on:** H06 accepted.
 
+**Create only:** `src/quantara/protocol_run.py`, `tests/test_protocol_run.py`.
+
+Publish the hourly table, validity masks, diagnostics, protocol hash, parent dataset commit hashes,
+feature allowlists, and label contract through a new immutable lane. Call the accepted Protocol v1
+publication APIs without modifying the Stage 2/3 source modules. Verify exact read-back, lineage
+closure, no-op rerun, and absence of 2025.
+
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_run.py`
 **Phase gate:** `.venv/Scripts/python.exe -m pytest -n 4` plus a real indexed-repository E2E run.
 **Commit:** `feat(protocol): publish Protocol v1 hourly research table`
-
-## 10. Evaluation packets
 
 ## Stage 4 evaluation packets
 
 ### E00 — Frozen folds, models, calibration, and metrics
 
-**Create:** `src/quantara/protocol_models.py`, `src/quantara/protocol_evaluation.py`, corresponding
-tests.
+**Depends on:** H07 accepted.
+
+**Create only:** `src/quantara/protocol_models.py`, `src/quantara/protocol_evaluation.py`,
+`tests/test_protocol_models.py`, `tests/test_protocol_evaluation.py`.
 
 Implement B0–M4 only, exact-Decimal logistic IRLS only, and the frozen constants from P00. Apply
 training-only z-score standardization, exact outer folds, purge, prediction alignment, Brier, log
 loss, AUC diagnostics, calibration diagnostics, and family masks. There is no hyperparameter search,
 clipping, post-hoc calibration, or tree model in Protocol v1.
+
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_models.py tests/test_protocol_evaluation.py`
+**Commit:** `feat(protocol): implement frozen model and metric ladder`
+
 ### E01 — Paired bootstrap, Holm correction, and decision engine
+
+**Depends on:** E00 accepted.
+
+**Modify only:** `src/quantara/protocol_evaluation.py`, `tests/test_protocol_evaluation.py`.
 
 Implement deterministic 168h/2,000-resample paired bootstrap with seed 20260831, within-year
 resampling then pooling, Holm correction across the ETH and Kraken optional-family tests, the
 mandatory M2-versus-B2 gate, per-year guardrails, and a pure decision engine returning PASS/FAIL
 plus every reason. Golden-test with synthetic vectors where each gate fails independently.
+
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_evaluation.py`
+**Commit:** `feat(protocol): enforce locked statistical decision gate`
+
 ### E02 — Design-period rehearsal only
 
-Run the complete pipeline on eligible 2020–2021 origins with fake held-out blocks solely to prove
-runtime, artifacts, determinism, and guardrails. Do not report 2022–2024 scores. Any formula or code
-change after E02 requires a protocol amendment and a new semantic hash before E03.
+**Depends on:** E01 accepted.
+
+**Modify only:** `src/quantara/protocol_run.py`, `src/quantara/cli.py`,
+`tests/test_protocol_run.py`.
+**Create only:** `tests/test_protocol_cli.py`, `tests/test_integration_protocol_rehearsal.py`,
+`docs/superpowers/audits/protocol-v1/design-period-rehearsal.md`.
+
+Complete the frozen evaluation orchestrator and add a backward-compatible `protocol-run` CLI route
+with exactly the `locked-2022-2024` and `conditional-2025` modes used below. The route requires
+explicit data and new-empty output roots, preserves every legacy descriptor invocation, validates
+the protocol/seal before dispatch, and fails closed on unknown modes or unsatisfied guards. Test the
+CLI red-to-green, including legacy compatibility, dirty/incorrect commit rejection, E03-FAIL denial,
+and prevention of a second 2025 run.
+
+Then run the full pipeline on eligible 2020–2021 origins with synthetic held-out blocks solely to
+prove runtime, artifacts, determinism, and guardrails. Do not compute or report 2022–2024 scores.
+After E02 acceptance, any formula or code change requires a protocol amendment and a new semantic
+hash before E03.
+
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol_run.py tests/test_protocol_cli.py tests/test_protocol_evaluation.py`
+**Integration gate:** `.venv/Scripts/python.exe -m pytest -q -m integration tests/test_integration_protocol_rehearsal.py`
+**Phase gate:** `.venv/Scripts/python.exe -m pytest -n 4`
+**Commit:** `test(protocol): complete result-blind design rehearsal`
+
 ### E03 — Locked 2022–2024 execution
 
-Run once from a clean accepted commit. Write fold predictions and aggregate metrics atomically so a
+**Depends on:** E02 accepted and a clean accepted commit with unchanged semantic hash.
+
+**Create only:** `docs/superpowers/audits/protocol-v1/locked-2022-2024-result.md`.
+**Prohibited:** Any source, test, configuration, protocol, or model change. Runtime result artifacts
+remain under the configured ignored data/output root and are referenced by cryptographic identity.
+
+Run once from a new empty output root. Write fold predictions and aggregate metrics atomically so a
 crash cannot expose a selectively inspectable partial result. Preserve every prediction, loss, fold
-fit, standardization fit, bootstrap draw seed, environment hash, protocol hash, dataset-parent hash,
-and gate reason. A mechanical failure with no completed score may be corrected only through an
+fit, standardization fit, bootstrap seed, environment hash, protocol hash, dataset-parent hash, and
+gate reason. A mechanical failure with no completed score may be corrected only through a separate,
 audited, result-blind amendment that leaves scientific semantics unchanged. Once a completed
 2022–2024 score artifact exists, do not change code or protocol and rerun based on its result. Report
 PASS or FAIL honestly.
+
+**Pre-run identity gate:** `git status --porcelain=v1 -uno` is empty; `git rev-parse HEAD`
+equals the accepted E02 commit; the Protocol v1 semantic hash and all accepted dataset-parent hashes
+match their authenticated manifests; and the output root is new and empty.
+**Pre-run test gate:** `.venv/Scripts/python.exe -m pytest -n 4`
+**Locked command:** `.venv/Scripts/quantara.exe protocol-run --mode locked-2022-2024 --data-root <accepted-data-root> --output-root <new-empty-output-root>`
+**Commit:** `results(protocol): record locked 2022-2024 verdict`
+
 ### E04 — Conditional one-time 2025 evaluation
 
-If and only if E03’s complete gate is PASS, validate the sealed-integrity manifest and execute 2025
-once. Otherwise the guard must deny execution. Record `REPLICATED` or `DID_NOT_REPLICATE`; no second
-run after redesign.
+**Depends on:** E03 accepted. Before invocation, `git rev-parse HEAD` must equal the exact accepted
+E03 result commit; `git status --porcelain=v1 -uno` must be empty; the executable source tree must
+match accepted E02; the Protocol v1 semantic hash, accepted dataset-parent hashes, and sealed 2025
+manifest must all verify unchanged; and the output root must be new and empty. Execution access
+additionally requires E03's complete verdict to be `PASS`; otherwise only the denial path may run.
+
+**Create only:** `docs/superpowers/audits/protocol-v1/conditional-2025-result.md`.
+**Prohibited:** Any source, test, configuration, protocol, model, threshold, or feature change.
+Runtime result artifacts remain under the configured ignored data/output root.
+
+Validate every precondition and invoke the guard exactly once. If E03 did not pass, the command must
+exit `4`, emit `DENIED_AS_DESIGNED`, create no 2025 prediction/metric artifact, and leave only the
+denial evidence needed for the report; this is the successful denial-path gate. If E03 passed, the
+command may read 2025 only after all validations succeed, must exit `0`, and records exactly one
+`REPLICATED` or `DID_NOT_REPLICATE` artifact. Any other exit or partial artifact is `BLOCKED` and
+cannot be retried once 2025 outcome access began. No second run after redesign.
+
+**Guarded command:** `.venv/Scripts/quantara.exe protocol-run --mode conditional-2025 --data-root <accepted-data-root> --output-root <new-empty-output-root>`
+**Commit:** `results(protocol): record conditional 2025 verdict`
 ## 11. Phase-gate audit requirements
 
 Hermes performs these after P02, D07, each source C packet, H07, E02, E03, and E04:
@@ -458,8 +568,8 @@ Hermes performs these after P02, D07, each source C packet, H07, E02, E03, and E
 5. Verify source hashes, row counts, gaps, duplicates, exact Decimal paths, and manifests.
 6. Verify all current pointers and authenticated graph closure.
 7. Verify old BTC kline/research/training identities did not move.
-8. Search for forbidden 2025 reads, forward/nearest joins, fills, floats, feature columns, and source
-   fallbacks.
+8. Search for unauthorized or premature 2025 reads, forward/nearest joins, fills, floats, feature
+   columns, and source fallbacks.
 9. Confirm `HEAD` remains unpushed until acceptance.
 10. Return `ACCEPTED`, `CORRECTION_REQUIRED`, or `BLOCKED` with evidence.
 
@@ -468,12 +578,12 @@ Hermes performs these after P02, D07, each source C packet, H07, E02, E03, and E
 **COMPLETE:** H00–H07 are accepted; E00–E02 pass; E03 has exactly one completed locked 2022–2024 result; E04 is either correctly denied or executed exactly once after a complete PASS, with all artifacts hash-bound.
 
 **BLOCKED:** Any scientific ambiguity, rights failure, integrity mismatch, unexplained source drift,
-quality finding without Hermes approval, protocol-hash mismatch, forbidden 2025 access, or need to
-expand scope.
+quality finding without Hermes approval, protocol-hash mismatch, unauthorized or premature 2025
+access, or need to expand scope.
 
 **INCOMPLETE:** Code or documents exist but any required test, live run, audit, commit, or acceptance
 remains unfinished. A green unit test alone is never COMPLETE.
 
 ## First action
 
-Execute **H00 only** and stop for Hermes audit.
+After Stage 3 is accepted, execute **H00 only** and stop for Hermes audit.
