@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 1: Scientific Protocol Freeze
 
-**Status:** IN PROGRESS — P00 accepted; P01 is next
+**Status:** IN PROGRESS — P00 and P01 accepted; P02 is next
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -354,6 +354,8 @@ PyYAML and independent literal expectations only; it must not import the future 
 **Stop:** Hermes must compare the two representations and explicitly mark P00 `ACCEPTED`.
 ### P01 — Protocol loader, validator, and semantic hash
 
+**Status:** `ACCEPTED` at commit `7cd6890954993bb53d4f3054316b24666ff40539`.
+
 **Depends on:** P00 accepted.
 
 **Create:** `src/quantara/protocol.py`, `tests/test_protocol.py`.
@@ -370,7 +372,17 @@ Tests first:
 - The semantic hash equals P00’s independent fixture.
 - Existing CLI routes and all existing descriptor tests remain unchanged.
 
-**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol.py tests/test_cli.py`
+**Focused gate:** `.venv/Scripts/python.exe -m pytest -q tests/test_protocol.py`
+
+**Conditional CLI gate:** If this packet modifies `src/quantara/cli.py`, it must also create and run
+`tests/test_cli.py`. The accepted implementation did not modify the CLI; Hermes verified its Git blob
+identity was unchanged from the packet parent and ran the complete existing test suite instead.
+
+**Hermes audit evidence:** independent fixture hash
+`91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a`; 836 adversarial semantic
+mutations rejected; focused P01 plus P00 contract tests `33 passed`; full suite `950 passed, 1
+pre-existing warning`; scoped Ruff and `git diff --check` passed; P00 artifacts unchanged.
+
 **Commit:** `feat(protocol): validate and hash Protocol v1`
 ### P02 — Protocol tamper and 2025 guard tests
 
@@ -416,4 +428,4 @@ remains unfinished. A green unit test alone is never COMPLETE.
 
 ## First action
 
-Execute **P00 only** and stop for Hermes audit.
+Execute **P02 only** and stop for Hermes audit.
