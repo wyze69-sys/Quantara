@@ -26,6 +26,15 @@ AUTHENTICATION_KEY = bytes(range(32))
 ALL_CRITERIA = {str(index): True for index in range(1, 8)}
 
 
+@pytest.fixture(autouse=True)
+def trusted_gate_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure the independently supplied local trust root for each test."""
+    monkeypatch.setenv(
+        "QUANTARA_PROTOCOL_V1_GATE_HMAC_KEY",
+        AUTHENTICATION_KEY.hex(),
+    )
+
+
 @pytest.fixture(scope="module")
 def frozen_document() -> dict[str, object]:
     value = yaml.safe_load(PROTOCOL_PATH.read_text(encoding="utf-8"))
@@ -142,7 +151,30 @@ def test_score_2025_requires_authenticated_hash_bound_all_pass_artifact() -> Non
         FROZEN_SEMANTIC_SHA256,
         "score_2025",
         gate_result_artifact=_signed_artifact(),
-        authentication_key=AUTHENTICATION_KEY,
+    )
+
+
+def test_gate_authentication_uses_an_independent_trust_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller must not be able to authenticate an artifact with its own key."""
+    forged_key = b"x" * 32
+    monkeypatch.setenv(
+        "QUANTARA_PROTOCOL_V1_GATE_HMAC_KEY",
+        AUTHENTICATION_KEY.hex(),
+    )
+
+    with pytest.raises(ProtocolGuardError):
+        guard_protocol_operation(
+            FROZEN_SEMANTIC_SHA256,
+            "score_2025",
+            gate_result_artifact=_signed_artifact(key=forged_key),
+        )
+
+    guard_protocol_operation(
+        FROZEN_SEMANTIC_SHA256,
+        "score_2025",
+        gate_result_artifact=_signed_artifact(),
     )
 
 
@@ -164,17 +196,22 @@ def test_wrong_hash_malformed_types_and_unsupported_operations_are_rejected(
         guard_protocol_operation(protocol_hash, operation)  # type: ignore[arg-type]
 
 
-def test_score_2025_fails_closed_without_external_authentication_material() -> None:
+def test_score_2025_fails_closed_without_external_authentication_material(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     artifact = _signed_artifact()
-    for kwargs in (
-        {},
-        {"gate_result_artifact": artifact},
-        {"authentication_key": AUTHENTICATION_KEY},
-    ):
-        with pytest.raises(ProtocolGuardError):
-            guard_protocol_operation(
-                FROZEN_SEMANTIC_SHA256, "score_2025", **kwargs  # type: ignore[arg-type]
-            )
+
+    monkeypatch.delenv("QUANTARA_PROTOCOL_V1_GATE_HMAC_KEY")
+    with pytest.raises(ProtocolGuardError, match="requires.*to be configured"):
+        guard_protocol_operation(
+            FROZEN_SEMANTIC_SHA256,
+            "score_2025",
+            gate_result_artifact=artifact,
+        )
+
+    monkeypatch.setenv("QUANTARA_PROTOCOL_V1_GATE_HMAC_KEY", AUTHENTICATION_KEY.hex())
+    with pytest.raises(ProtocolGuardError, match="requires an authenticated gate result"):
+        guard_protocol_operation(FROZEN_SEMANTIC_SHA256, "score_2025")
 
 
 @pytest.mark.parametrize(
@@ -194,7 +231,6 @@ def test_score_2025_rejects_incomplete_or_nonpassing_criteria(criteria: object) 
             FROZEN_SEMANTIC_SHA256,
             "score_2025",
             gate_result_artifact=_signed_artifact(criteria=criteria),
-            authentication_key=AUTHENTICATION_KEY,
         )
 
 
@@ -215,7 +251,6 @@ def test_malformed_artifacts_are_rejected(artifact: bytes) -> None:
             FROZEN_SEMANTIC_SHA256,
             "score_2025",
             gate_result_artifact=artifact,
-            authentication_key=AUTHENTICATION_KEY,
         )
 
 
@@ -229,7 +264,6 @@ def test_unknown_payload_keys_are_rejected() -> None:
             FROZEN_SEMANTIC_SHA256,
             "score_2025",
             gate_result_artifact=artifact,
-            authentication_key=AUTHENTICATION_KEY,
         )
 
 
@@ -247,7 +281,6 @@ def test_artifact_is_bound_to_frozen_hash_and_score_operation(artifact: bytes) -
             FROZEN_SEMANTIC_SHA256,
             "score_2025",
             gate_result_artifact=artifact,
-            authentication_key=AUTHENTICATION_KEY,
         )
 
 
@@ -260,7 +293,6 @@ def test_invalid_mac_and_artifact_supplied_key_cannot_authenticate() -> None:
             FROZEN_SEMANTIC_SHA256,
             "score_2025",
             gate_result_artifact=forged_artifact,
-            authentication_key=AUTHENTICATION_KEY,
         )
 
 
@@ -274,16 +306,22 @@ def test_artifact_must_be_immutable_bytes_snapshot_not_a_path(tmp_path: Path) ->
                 FROZEN_SEMANTIC_SHA256,
                 "score_2025",
                 gate_result_artifact=ambiguous_input,  # type: ignore[arg-type]
-                authentication_key=AUTHENTICATION_KEY,
             )
 
 
-@pytest.mark.parametrize("key", [b"short", bytearray(AUTHENTICATION_KEY), "secret"])
-def test_authentication_key_must_be_external_strong_immutable_bytes(key: object) -> None:
+@pytest.mark.parametrize(
+    "encoded_key",
+    ["short", "x" * 64, "00" * 31, "00" * 33],
+    ids=["too-short", "non-hex", "31-bytes", "33-bytes"],
+)
+def test_configured_authentication_key_must_be_exactly_32_hex_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    encoded_key: str,
+) -> None:
+    monkeypatch.setenv("QUANTARA_PROTOCOL_V1_GATE_HMAC_KEY", encoded_key)
     with pytest.raises(ProtocolGuardError):
         guard_protocol_operation(
             FROZEN_SEMANTIC_SHA256,
             "score_2025",
             gate_result_artifact=_signed_artifact(),
-            authentication_key=key,  # type: ignore[arg-type]
         )

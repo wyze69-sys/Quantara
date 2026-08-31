@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ _GATE_PAYLOAD_KEYS = frozenset(
 )
 _GATE_CRITERION_IDS = frozenset(str(index) for index in range(1, 8))
 _GATE_ARTIFACT_TYPE = "quantara-protocol-v1-gate-result"
+_GATE_HMAC_KEY_ENV = "QUANTARA_PROTOCOL_V1_GATE_HMAC_KEY"
 
 
 class _UniqueKeySafeLoader(yaml.SafeLoader):
@@ -134,6 +136,30 @@ def _canonical_gate_payload(payload: dict[str, object]) -> bytes:
     ).encode("utf-8")
 
 
+def _load_gate_authentication_key() -> bytes:
+    """Load the independent local trust root from process configuration."""
+    encoded_key = os.environ.get(_GATE_HMAC_KEY_ENV)
+    if encoded_key is None:
+        raise ProtocolGuardError(
+            f"score_2025 requires {_GATE_HMAC_KEY_ENV} to be configured"
+        )
+    if len(encoded_key) != 64:
+        raise ProtocolGuardError(
+            f"{_GATE_HMAC_KEY_ENV} must contain exactly 32 bytes as hexadecimal"
+        )
+    try:
+        authentication_key = bytes.fromhex(encoded_key)
+    except ValueError as exc:
+        raise ProtocolGuardError(
+            f"{_GATE_HMAC_KEY_ENV} is not valid hexadecimal"
+        ) from exc
+    if len(authentication_key) != 32:
+        raise ProtocolGuardError(
+            f"{_GATE_HMAC_KEY_ENV} must decode to exactly 32 bytes"
+        )
+    return authentication_key
+
+
 def _verify_gate_result_artifact(
     artifact: object,
     authentication_key: object,
@@ -203,15 +229,15 @@ def guard_protocol_operation(
     operation: str,
     *,
     gate_result_artifact: bytes | None = None,
-    authentication_key: bytes | None = None,
 ) -> None:
     """Authorize a frozen-protocol operation, failing closed before data access.
 
     The five inventory/integrity checks allowed while 2025 is sealed require the
     frozen semantic hash. ``score_2025`` additionally requires an immutable byte
-    snapshot of a strict local gate-result artifact authenticated with a caller-
-    supplied key. Accepting bytes rather than a path removes path resolution and
-    check/use races; the key is deliberately absent from the artifact and module.
+    snapshot of a strict local gate-result artifact authenticated against a trust
+    root loaded independently from process configuration. Accepting bytes rather
+    than a path removes path resolution and check/use races; the key is deliberately
+    absent from the artifact, function arguments, and module source.
     """
     if not isinstance(protocol_hash, str) or protocol_hash != FROZEN_SEMANTIC_SHA256:
         raise ProtocolGuardError("operation requires the frozen Protocol v1 hash")
@@ -219,17 +245,17 @@ def guard_protocol_operation(
         raise ProtocolGuardError("operation name must be a string")
 
     if operation in _PRE_GATE_OPERATIONS:
-        if gate_result_artifact is not None or authentication_key is not None:
+        if gate_result_artifact is not None:
             raise ProtocolGuardError("pre-gate checks do not accept gate credentials")
         return
     if operation != "score_2025":
         raise ProtocolGuardError(f"unsupported Protocol v1 operation: {operation!r}")
-    if gate_result_artifact is None or authentication_key is None:
+    if gate_result_artifact is None:
         raise ProtocolGuardError("score_2025 requires an authenticated gate result")
 
     _verify_gate_result_artifact(
         gate_result_artifact,
-        authentication_key,
+        _load_gate_authentication_key(),
         protocol_hash,
     )
 
