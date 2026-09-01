@@ -1,6 +1,6 @@
 # Protocol v1.1 — Master Plan (Successor Freeze)
 
-**Status:** IN PROGRESS — C1 is `NEXT`; C2–C5 not started
+**Status:** IN PROGRESS — C1 `ACCEPTED` and merged (PR #5, merge commit `9a9196e`); C2 is `NEXT`; C3–C5 not started
 **Date:** 2026-09-01
 **Predecessor:** Protocol v1, frozen at semantic SHA-256
 `91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a`
@@ -26,7 +26,7 @@ auto-advance.
 
 | Packet | Scope | Audit findings repaired | Status |
 | --- | --- | --- | --- |
-| C1 | Version identity, lineage/supersession record, `T+2ms` ordering, nearest-rank Q80, exact purge inequality | B1, B2, B3, item 14 | `NEXT` |
+| C1 | Version identity, lineage/supersession record, `T+2ms` ordering, nearest-rank Q80, exact purge inequality | B1, B2, B3, item 14 | `ACCEPTED` (PR #5, `9a9196e`) |
 | C2 | Year-stratified 168-clock-hour moving-block bootstrap, null-centred p-value, percentile CI, exact PRNG, 20,000 resamples, golden fixtures | B4 | not started |
 | C3 | Exact-Decimal IRLS binding, both-class and calibration-failure rules, `M2K` naming, three fixed optional hypotheses under ordinary Holm, selection-evidence labelling | B5, B6, item 7 | not started |
 | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed 2026 target-only endpoint buffer, one-year 2025 `REPLICATED` gate | B7, B8, B9, HIGH OI finding | not started |
