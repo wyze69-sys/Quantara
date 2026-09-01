@@ -411,8 +411,9 @@ point_in_time:
   funding_eligibility: >-
     For settled funding with settlement time F, nominal eligibility_ts = F + 1 ms.
   oi_eligibility: >-
-    For a five-minute OI row with interval-start timestamp O, nominal eligibility_ts
-    = O + 5 minutes.
+    For a five-minute OI row with provider timestamp O under
+    oi_timestamp_resolution role UNRESOLVED_CONSERVATIVE, nominal eligibility_ts =
+    O + 5 minutes.
   kraken_eligibility: >-
     For Kraken hourly OHLCVT with interval-start timestamp K, nominal eligibility_ts
     = K + 1 hour.
@@ -664,7 +665,9 @@ sealed_2025:
   on_gate_pass: run exactly one frozen 2025 evaluation
   failure_outcome: DID_NOT_REPLICATE
   failure_rule: never redesign and retest on 2025
-  successor_buffer_and_replication_rule: DEFERRED_PACKET_C4
+  successor_buffer_and_replication_rule: IMPLEMENTED_PACKET_C4
+  buffer_contract: target_endpoint_buffer_2026
+  replication_contract: replication_gate_2025
 audit_reference_hash_basis: utf8_text_normalized_to_lf_before_sha256
 audit_references:
   a7_report:
@@ -712,7 +715,7 @@ deferred_change_set:
     status: IMPLEMENTED_PACKET_C3
   C4:
     owner_packet: C4
-    status: DEFERRED
+    status: IMPLEMENTED_PACKET_C4
   C5:
     owner_packet: C5
     status: DEFERRED
@@ -721,3 +724,225 @@ standing_rejections:
   sigma_denominator_floor: REJECTED
   arbitrary_98_percent_coverage_cutoff: REJECTED
   new_feature_search: REJECTED
+oi_timestamp_resolution:
+  oi_timestamp_role: UNRESOLVED_CONSERVATIVE
+  oi_provider_field: create_time
+  oi_eligibility_ts: O + 5 minutes
+  semantic_claim_permitted: false
+  provider_timestamp_preservation: >-
+    Preserve create_time natively; do not relabel it as interval_open_ts or
+    interval_close_ts while its archive-specific semantics remain unresolved.
+  both_readings_safety: >-
+    If O denotes the start of a five-minute interval, O + 5 minutes is exactly its
+    completion; if O denotes the end, the same rule is five minutes conservative.
+    The arithmetic is causally safe under both readings.
+  latest_eligible_at_hourly_boundary: >-
+    Under eligibility_ts < prediction_ts = T + 2 ms, the latest eligible row has
+    O = T - 5 minutes.
+  resolution_obligation: >-
+    Before OI canonicalization, perform an archive-specific create_time semantics
+    check and record measured or cited evidence in the source contract; until then
+    the role remains UNRESOLVED_CONSERVATIVE.
+  disclosed_limitation: >-
+    Every result report using an OI feature must disclose the unresolved provider
+    timestamp semantics and the conservative eligibility treatment.
+  kraken_asymmetry: >-
+    Kraken documents candle timestamps as interval starts; its timestamp role and
+    K + 1 hour eligibility remain frozen and must not be harmonized with OI.
+  kraken_timestamp_role: DOCUMENTED_INTERVAL_START
+  kraken_eligibility_ts: K + 1 hour
+final_refit:
+  retained_candidate: frozen C3 retention graph result
+  paired_comparator: B2
+  prerequisite: frozen 2022-2024 gate has passed
+  refit_train_start: '2020-09-01 00:00:00.000 UTC'
+  refit_origin_rule: O + 24h <= 2025-01-01 00:00:00.000 UTC
+  refit_last_origin: '2024-12-31 00:00:00.000 UTC'
+  refit_last_label_close: '2024-12-31 23:59:59.999 UTC'
+  nominal_origin_count: 37969
+  excluded_tail_count: 23
+  excluded_tail_range: '2024-12-31 01:00 .. 2024-12-31 23:00 UTC'
+  identical_sample_rule: >-
+    Refit the retained candidate and paired B2 on the same origin set: the retained
+    candidate's point-in-time complete-case origins. B2 receives no larger sample.
+  standardization_refit_rule: >-
+    Recompute z-score means and population standard deviations on exactly the final
+    refit rows; carry no standardization from any fold.
+  unchanged_parameters:
+    - target_k
+    - feature_set
+    - ridge_lambda
+    - ETA_CLAMP
+    - MU_CLAMP
+    - max_iterations
+    - estimator_entry_point
+    - probability_treatment
+  target_k_rule: >-
+    Keep the value frozen from the pre-2022 design set; never recompute k in the
+    final refit.
+  nominal_vs_eligible: >-
+    37969 is the nominal hourly-origin count satisfying the purge inequality; the
+    realized point-in-time complete-case count is smaller and unknown until execution.
+  fail_closed_causes_source: fail_closed_causes
+  fit_failure_propagation: >-
+    Never drop a fold, year, or candidate from pooling after a final fit failure.
+  failure:
+    state: FINAL_FIT_FAILURE
+    terminal_for_run: true
+    tuning_feature_lambda_estimator_or_row_retry: FORBIDDEN
+    evaluation_2025: FORBIDDEN
+    did_not_replicate_reporting: FORBIDDEN_BECAUSE_NO_2025_SCORE_EXISTS
+target_endpoint_buffer_2026:
+  purpose: >-
+    Supply 24-hour label endpoints for the 23 calendar-2025 origins whose labels
+    end in 2026.
+  scope: BTCUSDT perpetual traded-price klines only
+  state: SEALED
+  role: target_only
+  permitted_series: [btcusdt_perp_ohlcv]
+  origin_count_supported: 8760
+  buffer_dependent_origins: 23
+  first_dependent_origin: '2025-12-31 01:00:00.000 UTC'
+  last_dependent_origin: '2025-12-31 23:00:00.000 UTC'
+  required_1h_bar_count: 23
+  first_1h_bar_open: '2026-01-01 00:00:00.000 UTC'
+  last_1h_bar_open: '2026-01-01 22:00:00.000 UTC'
+  first_1h_bar_close: '2026-01-01 00:59:59.999 UTC'
+  last_1h_bar_close: '2026-01-01 22:59:59.999 UTC'
+  required_1m_row_count: 1380
+  first_1m_open: '2026-01-01 00:00:00.000 UTC'
+  last_1m_open: '2026-01-01 22:59:00.000 UTC'
+  buffer_end_inclusive_ms: 1767308399999
+  refused_bar_open_ms: 1767308400000
+  allowed_pre_gate_checks: [file_inventory, cryptographic_hashes, parser_compatibility, expected_boundaries, mechanical_corruption]
+  forbidden_operations: [labels, feature_distributions, model_scores, conditional_outcome_inspection, protocol_adaptation]
+  target_only_proof: >-
+    Because prediction_ts = T + 2 ms and the join is strict, every eligible feature
+    row for a 2025 origin has eligibility_ts <= T + 1 ms; no 2026 row of any series
+    can be a feature for a 2025 origin.
+  forbidden_2026_content:
+    - feature_origins
+    - funding
+    - open_interest
+    - mark_price
+    - index_price
+    - native_premium
+    - binance_spot
+    - kraken
+    - any_eth_series
+  hard_end_boundary: >-
+    Refuse any 1h bar with open at or after 2026-01-01 23:00:00.000 UTC; emitting
+    that bar is a contract violation, not an ignorable extra row.
+  truncation_rule: >-
+    After parsing and before aggregation, discard every 1m row whose open is
+    outside [2026-01-01 00:00:00.000, 2026-01-01 22:59:00.000] UTC inclusive.
+  discarded_rows_rule: Count and report discarded rows; never use them for any purpose.
+  derivation:
+    transformation: multi_timeframe_aggregation
+    source_interval: 1m
+    target_interval: 1h
+    complete_contiguous_minutes_per_bar: 60
+    close_time_ms: open + 3600000 - 1
+    nominal_available_ms: open + 3600000
+    incomplete_group: HARD_FAILURE_INCOMPLETE_GROUP
+    padding_interpolation_or_short_bar: FORBIDDEN
+    canonical_target_close_semantics: UNCHANGED_FROM_FROZEN_LANE
+  cannot_widen: >-
+    The permitted extent is exactly the 23 stated bars; acquiring more 2026 data
+    for convenience is a contract violation even if extra rows would not be used.
+  missing_data_rule: >-
+    A missing required buffer bar invalidates and excludes the affected origin as
+    an incomplete case; shorter horizons, nearest bars, and 1d substitution are forbidden.
+replication_gate_2025:
+  scope: >-
+    Complete retained candidate versus paired B2 on all point-in-time complete-case
+    eligible calendar-2025 origins.
+  criteria:
+    - id: 1
+      rule: pooled BSS_B2(candidate) >= 0.02
+      threshold: '0.02'
+    - id: 2
+      rule: two-sided 95% bootstrap CI lower bound for BS_B2 - BS_candidate > 0
+      threshold: '> 0'
+    - id: 3
+      rule: abs(mean(p - y)) <= 0.02
+      threshold: '0.02'
+    - id: 4
+      rule: calibration slope is within the frozen C3 helper default band
+      threshold: frozen C3 defaults
+    - id: 5
+      rule: calibration regression is defined and converges
+      threshold: 'true'
+  outcome_on_success: REPLICATED
+  outcome_on_failure: DID_NOT_REPLICATE
+  run_count_permitted: 1
+  dropped_multi_year_criteria:
+    - multi_year_id: 3
+      reason: at least two improving years is unattainable in one calendar year
+    - multi_year_id: 4
+      reason: the one-year BSS threshold of 0.02 implies the minus-0.02 worst-year bound
+    - multi_year_id: 7
+      reason: the one-year absolute-bias bound of 0.02 implies the 0.04 yearly bound
+  rejected_alternatives:
+    gemini_weaker_gate: REJECTED_1.5_PERCENT_0.03_0.75_TO_1.25
+    gpt_one_year_bias_threshold: REJECTED_0.04
+    claude_literal_seven_condition_reuse: REJECTED_ARITHMETICALLY_IMPOSSIBLE
+  inference_reuse:
+    implementation: src/quantara/bootstrap_b4.py
+    new_inference_code: FORBIDDEN
+    resamples: 20000
+    block_hours: 168
+    circularity: non_circular
+    p_value: frozen null-centred one-sided p-value
+    interval: frozen nearest-rank two-sided 95% percentile interval
+    paired_valid_fail_closed_below: 168
+  bootstrap_geometry:
+    H_2025: 8760
+    block_hours: 168
+    n_blocks: 53
+    concatenated_hours: 8904
+    eligible_block_starts: 0 .. 8592
+    distinct_eligible_starts: 8593
+    ci_rank_lower_at_b_20000: 500
+    ci_rank_upper_at_b_20000: 19500
+  comparison_id:
+    pattern: REPLICATION_2025|<MODEL>_vs_B2
+    models:
+      M2: REPLICATION_2025|M2_vs_B2
+      M2K: REPLICATION_2025|M2K_vs_B2
+      M3: REPLICATION_2025|M3_vs_B2
+      M4: REPLICATION_2025|M4_vs_B2
+    seeds_2025:
+      M2: 13432793617478683004
+      M2K: 17576365771105646995
+      M3: 15946086953525544617
+      M4: 3803725181447297110
+  calibration_reuse:
+    implementation: estimator_c3.fit_calibration
+    lambda: '0'
+    probability_clamp_lower: '0.000000000001'
+    probability_clamp_upper: '0.999999999999'
+    probability_clamp_rule: clamp_mu is mandatory before taking the logarithm
+    slope: calibration_slope = beta_z / sd_x
+    intercept: calibration_intercept = beta_0 - beta_z * mu_x / sd_x
+    slope_band_source: estimator_c3.calibration_slope_passes defaults
+    slope_band_applies_to: raw-logit calibration_slope, never beta_z
+    failure_conditions_source: calibration.failure_conditions
+    failure_condition_count: 6
+    criterion_5_rule: satisfied only when the calibration fit is defined and converges
+    new_tolerance: FORBIDDEN
+  claim_scope: >-
+    REPLICATED means the complete retained frozen model replicated aggregate
+    probability-forecast improvement versus paired B2 in calendar 2025; it does
+    not establish replication of any individual ETH or Kraken feature.
+  component_claim_rule: >-
+    A block claim requires its own frozen parent comparison to satisfy the same
+    five criteria; the component chain is scored once as claim-specific diagnostics.
+  coverage_reporting:
+    required: [candidate_eligible_rows, candidate_eligible_percentage, exclusion_reasons, longest_missing_run]
+    minimum_coverage_threshold: NONE_BY_DESIGN
+    applicability: candidate-complete timestamps only
+outcome_states:
+  - FINAL_FIT_FAILURE
+  - REPLICATED
+  - DID_NOT_REPLICATE

@@ -1,0 +1,95 @@
+{
+  "comparison_ids": {
+    "M2": {
+      "comparison_id": "REPLICATION_2025|M2_vs_B2",
+      "seed_2025": 13432793617478683004
+    },
+    "M2K": {
+      "comparison_id": "REPLICATION_2025|M2K_vs_B2",
+      "seed_2025": 17576365771105646995
+    },
+    "M3": {
+      "comparison_id": "REPLICATION_2025|M3_vs_B2",
+      "seed_2025": 15946086953525544617
+    },
+    "M4": {
+      "comparison_id": "REPLICATION_2025|M4_vs_B2",
+      "seed_2025": 3803725181447297110
+    }
+  },
+  "buffer_geometry": {
+    "origin_count_2025": 8760,
+    "first_origin_ms": 1735689600000,
+    "last_origin_ms": 1767222000000,
+    "last_label_close_ms": 1767308399999,
+    "buffer_dependent_origin_count": 23,
+    "first_buffer_dependent_origin_ms": 1767142800000,
+    "last_buffer_dependent_origin_ms": 1767222000000,
+    "required_1h_bar_count": 23,
+    "first_1h_bar_open_ms": 1767225600000,
+    "last_1h_bar_open_ms": 1767304800000,
+    "refused_1h_bar_open_ms": 1767308400000,
+    "required_1m_row_count": 1380,
+    "first_1m_open_ms": 1767225600000,
+    "last_1m_open_ms": 1767308340000,
+    "buffer_end_inclusive_ms": 1767308399999
+  },
+  "refit_geometry": {
+    "first_origin_ms": 1598918400000,
+    "last_origin_ms": 1735603200000,
+    "nominal_origin_count": 37969,
+    "naive_origin_count": 37992,
+    "excluded_tail_count": 23
+  },
+  "bootstrap_geometry_2025": {
+    "nominal_hours": 8760,
+    "block_hours": 168,
+    "n_blocks": 53,
+    "concatenated_hours": 8904,
+    "largest_eligible_block_start": 8592,
+    "distinct_eligible_block_starts": 8593,
+    "resamples": 20000,
+    "ci_rank_lower": 500,
+    "ci_rank_upper": 19500,
+    "synthetic_observed_mean": "1/1000",
+    "synthetic_ci_lower": "1/1000",
+    "synthetic_ci_upper": "1/1000",
+    "synthetic_p_value_at_b_200": "1/201"
+  },
+  "worked_decisions": {
+    "replicated": {
+      "evidence": {
+        "bss_b2": "0.02",
+        "ci_lower": "0.001",
+        "probability_bias": "-0.02",
+        "calibration_slope": "0.8",
+        "calibration_defined_and_converged": true
+      },
+      "criteria": {
+        "bss_b2_at_least_0_02": true,
+        "ci_lower_above_zero": true,
+        "absolute_probability_bias_at_most_0_02": true,
+        "calibration_slope_in_frozen_band": true,
+        "calibration_defined_and_converged": true
+      },
+      "outcome": "REPLICATED"
+    },
+    "did_not_replicate": {
+      "evidence": {
+        "bss_b2": "0.019",
+        "ci_lower": "0.001",
+        "probability_bias": "0",
+        "calibration_slope": "1",
+        "calibration_defined_and_converged": true
+      },
+      "criteria": {
+        "bss_b2_at_least_0_02": false,
+        "ci_lower_above_zero": true,
+        "absolute_probability_bias_at_most_0_02": true,
+        "calibration_slope_in_frozen_band": true,
+        "calibration_defined_and_converged": true
+      },
+      "outcome": "DID_NOT_REPLICATE"
+    }
+  }
+}

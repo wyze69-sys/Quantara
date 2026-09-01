@@ -209,10 +209,11 @@ def test_v11_yaml_has_no_floats_duplicate_top_level_keys_or_missing_deferred_pac
     assert deferred["C2"]["status"] == "IMPLEMENTED_PACKET_C2"
     assert deferred["C3"]["owner_packet"] == "C3"
     assert deferred["C3"]["status"] == "IMPLEMENTED_PACKET_C3"
-    for packet in ("C4", "C5"):
-        item = deferred[packet]
-        assert item["owner_packet"] == packet
-        assert item["status"] == "DEFERRED"
+    assert deferred["C4"] == {
+        "owner_packet": "C4",
+        "status": "IMPLEMENTED_PACKET_C4",
+    }
+    assert deferred["C5"] == {"owner_packet": "C5", "status": "DEFERRED"}
 
 
 def test_v11_estimator_and_optional_family_are_bound_by_packet_c3() -> None:
@@ -330,3 +331,100 @@ def test_v11_spec_records_intentional_lineage_and_future_experiment_boundary() -
     assert "separately preregistered successor experiment" in spec_text
     assert "no scoring of any period" in spec_text
     assert "no 2025 access" in spec_text
+
+
+def test_v11_c4_contract_literals_and_terminal_states_are_exact() -> None:
+    document = _load_v11()
+    assert len(document) == 46
+    assert document["protocol_status"] == "DRAFT_UNFROZEN_SUCCESSOR"
+    assert document["frozen_semantic_sha256"] == UNASSIGNED_V11_HASH
+
+    resolution = document["oi_timestamp_resolution"]
+    assert resolution["oi_timestamp_role"] == "UNRESOLVED_CONSERVATIVE"
+    assert resolution["oi_provider_field"] == "create_time"
+    assert resolution["oi_eligibility_ts"] == "O + 5 minutes"
+    assert resolution["semantic_claim_permitted"] is False
+    assert resolution["kraken_timestamp_role"] == "DOCUMENTED_INTERVAL_START"
+    assert resolution["kraken_eligibility_ts"] == "K + 1 hour"
+
+    final_refit = document["final_refit"]
+    assert final_refit["retained_candidate"] == "frozen C3 retention graph result"
+    assert final_refit["paired_comparator"] == "B2"
+    assert final_refit["refit_train_start"] == "2020-09-01 00:00:00.000 UTC"
+    assert final_refit["refit_origin_rule"] == "O + 24h <= 2025-01-01 00:00:00.000 UTC"
+    assert final_refit["refit_last_origin"] == "2024-12-31 00:00:00.000 UTC"
+    assert final_refit["refit_last_label_close"] == "2024-12-31 23:59:59.999 UTC"
+    assert final_refit["nominal_origin_count"] == 37969
+    assert final_refit["excluded_tail_count"] == 23
+    assert final_refit["failure"]["state"] == "FINAL_FIT_FAILURE"
+
+    buffer_contract = document["target_endpoint_buffer_2026"]
+    assert buffer_contract["state"] == "SEALED"
+    assert buffer_contract["role"] == "target_only"
+    assert buffer_contract["permitted_series"] == ["btcusdt_perp_ohlcv"]
+    assert buffer_contract["origin_count_supported"] == 8760
+    assert buffer_contract["buffer_dependent_origins"] == 23
+    assert buffer_contract["required_1h_bar_count"] == 23
+    assert buffer_contract["required_1m_row_count"] == 1380
+    assert buffer_contract["buffer_end_inclusive_ms"] == 1767308399999
+    assert buffer_contract["refused_bar_open_ms"] == 1767308400000
+    sealed = document["sealed_2025"]
+    assert buffer_contract["allowed_pre_gate_checks"] == sealed["allowed_pre_gate_checks"]
+    assert buffer_contract["forbidden_operations"] == sealed["forbidden_operations"]
+
+    gate = document["replication_gate_2025"]
+    assert [criterion["id"] for criterion in gate["criteria"]] == [1, 2, 3, 4, 5]
+    assert [criterion["threshold"] for criterion in gate["criteria"]] == [
+        "0.02",
+        "> 0",
+        "0.02",
+        "frozen C3 defaults",
+        "true",
+    ]
+    assert gate["outcome_on_failure"] == "DID_NOT_REPLICATE"
+    assert gate["run_count_permitted"] == 1
+    assert gate["bootstrap_geometry"]["H_2025"] == 8760
+    assert gate["bootstrap_geometry"]["block_hours"] == 168
+    assert gate["bootstrap_geometry"]["n_blocks"] == 53
+    assert gate["bootstrap_geometry"]["concatenated_hours"] == 8904
+    assert gate["bootstrap_geometry"]["eligible_block_starts"] == "0 .. 8592"
+    assert gate["bootstrap_geometry"]["distinct_eligible_starts"] == 8593
+    assert gate["bootstrap_geometry"]["ci_rank_lower_at_b_20000"] == 500
+    assert gate["bootstrap_geometry"]["ci_rank_upper_at_b_20000"] == 19500
+    assert gate["comparison_id"]["seeds_2025"] == {
+        "M2": 13432793617478683004,
+        "M2K": 17576365771105646995,
+        "M3": 15946086953525544617,
+        "M4": 3803725181447297110,
+    }
+    calibration_reuse = gate["calibration_reuse"]
+    assert calibration_reuse["lambda"] == "0"
+    assert calibration_reuse["probability_clamp_lower"] == "0.000000000001"
+    assert calibration_reuse["probability_clamp_upper"] == "0.999999999999"
+    assert calibration_reuse["slope"] == "calibration_slope = beta_z / sd_x"
+    assert calibration_reuse["intercept"] == (
+        "calibration_intercept = beta_0 - beta_z * mu_x / sd_x"
+    )
+    assert calibration_reuse["slope_band_source"] == (
+        "estimator_c3.calibration_slope_passes defaults"
+    )
+    assert calibration_reuse["failure_condition_count"] == 6
+    assert gate["coverage_reporting"]["minimum_coverage_threshold"] == "NONE_BY_DESIGN"
+
+    sealed = document["sealed_2025"]
+    assert sealed["successor_buffer_and_replication_rule"] == "IMPLEMENTED_PACKET_C4"
+    assert sealed["buffer_contract"] == "target_endpoint_buffer_2026"
+    assert sealed["replication_contract"] == "replication_gate_2025"
+    assert document["outcome_states"] == [
+        "FINAL_FIT_FAILURE",
+        "REPLICATED",
+        "DID_NOT_REPLICATE",
+    ]
+
+
+def test_v11_c4_spec_status_is_implemented_while_c5_stays_deferred() -> None:
+    spec_text = V11_SPEC_PATH.read_text(encoding="utf-8")
+    assert (
+        "| Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 |" in spec_text
+    )
+    assert "| Coverage and final freeze | `DEFERRED` | C5 |" in spec_text
