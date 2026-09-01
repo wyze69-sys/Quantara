@@ -205,9 +205,39 @@ def test_v11_yaml_has_no_floats_duplicate_top_level_keys_or_missing_deferred_pac
 
     deferred = document["deferred_change_set"]
     assert set(deferred) == {"C2", "C3", "C4", "C5"}
-    for packet, item in deferred.items():
+    assert deferred["C2"]["owner_packet"] == "C2"
+    assert deferred["C2"]["status"] == "IMPLEMENTED_PACKET_C2"
+    for packet in ("C3", "C4", "C5"):
+        item = deferred[packet]
         assert item["owner_packet"] == packet
         assert item["status"] == "DEFERRED"
+
+
+def test_v11_bootstrap_b4_contract_is_frozen_by_packet_c2() -> None:
+    bootstrap = _load_v11()["validation"]["bootstrap"]
+    assert bootstrap["block_hours"] == 168
+    assert bootstrap["resamples"] == 20000
+    assert bootstrap["circularity"] == "non_circular"
+    assert bootstrap["eligible_start_range"] == "0 ... H_y - L"
+    assert bootstrap["blocks_per_year"] == "n_blocks_y = ceil(H_y / L)"
+    assert bootstrap["interval"]["method"] == (
+        "raw-bootstrap percentile nearest-rank without interpolation"
+    )
+    assert bootstrap["interval"]["rank_formula"] == "j(q) = ceil(q * B)"
+    assert bootstrap["p_value"]["null_centering"] == (
+        "d0_t = d_t - D_obs on paired-valid hours; nulls stay null"
+    )
+    assert bootstrap["p_value"]["formula"] == (
+        "p = (1 + count(D0*_b >= D_obs)) / (B + 1)"
+    )
+    assert bootstrap["fail_closed"]["observed_year"] == (
+        "fewer than 168 paired-valid observations in any required year"
+    )
+    assert bootstrap["fail_closed"]["replicate_year"] == (
+        "no paired-valid observation in any required year for a replicate"
+    )
+    assert bootstrap["successor_repair_status"] == "IMPLEMENTED_PACKET_C2"
+    assert bootstrap["supersedes_v1_inference"] is True
 
 
 def test_v11_spec_records_intentional_lineage_and_future_experiment_boundary() -> None:

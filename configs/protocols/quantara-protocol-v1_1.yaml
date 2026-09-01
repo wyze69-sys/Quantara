@@ -428,14 +428,84 @@ validation:
     outputs: [calibration_intercept, calibration_slope]
     note: Diagnostic only; these calculations do not alter predictions.
   bootstrap:
-    method: paired moving-block bootstrap over hourly loss differentials
+    method: frozen year-stratified paired non-circular moving-block bootstrap
+    estimand:
+      paired_difference: d_t = loss_comparator,t - loss_candidate,t
+      positive_direction: favours candidate
+      observed_statistic: D_obs = pooled hourly mean over paired-valid d_t
+    nominal_grid:
+      construction: complete nominal hourly UTC grid separately for each calendar year
+      hours_formula: H_y = UTC hours from January 1 of year y to January 1 of year y+1
+      paired_valid_storage: d_t on paired-valid hours and null otherwise
+      missing_policy: retain null positions; never fill a missing loss value
     block_hours: 168
-    resamples: 2000
-    interval: '0.95'
-    resampling: resampled within year and then pooled
-    rng_seed: 20260831
-    successor_repair_status: DEFERRED
+    block_unit: consecutive clock hours
+    circularity: non_circular
+    eligible_start_range: 0 ... H_y - L
+    eligible_start_count: H_y - L + 1
+    blocks_per_year: n_blocks_y = ceil(H_y / L)
+    draw_replacement: with_replacement
+    draw_order: years ascending, then blocks in index order
+    concatenated_hours_at_l_168: 8904
+    truncation_rule: concatenate blocks including nulls and truncate to exactly H_y clock-hour positions
+    null_preservation: blocks retain their observed null pattern
+    pooling_formula: D* = sum of non-null resampled d_t across years / pooled resampled paired-valid count
+    pooling_weight: resampled paired-valid count, not year count or nominal hours
+    resamples: 20000
+    interval:
+      confidence: '0.95'
+      method: raw-bootstrap percentile nearest-rank without interpolation
+      rank_formula: j(q) = ceil(q * B)
+      lower_quantile: '0.025'
+      upper_quantile: '0.975'
+      lower_rank_at_b_20000: 500
+      upper_rank_at_b_20000: 19500
+    p_value:
+      sidedness: one_sided
+      null_centering: d0_t = d_t - D_obs on paired-valid hours; nulls stay null
+      formula: p = (1 + count(D0*_b >= D_obs)) / (B + 1)
+      exact_identity: D0*_b = D*_b - D_obs
+      equivalent_count: count(D*_b >= 2 * D_obs)
+    fail_closed:
+      observed_year: fewer than 168 paired-valid observations in any required year
+      replicate_year: no paired-valid observation in any required year for a replicate
+      partial_statistic: FORBIDDEN
+    prng:
+      algorithm: SplitMix64
+      arithmetic: exact unsigned 64-bit with masking after state advance and multiplications
+      bounded_draw: rejection sampling below(bound); bare modulo is forbidden
+      random_random: FORBIDDEN
+      derivation_payload: quantara-protocol-v1_1|bootstrap-b4| + comparison_id + "|" + str(year)
+      payload_encoding: UTF-8
+      digest: SHA-256
+      seed_bytes: leading 8 digest bytes
+      byte_order: big
+      bare_seed_status: SUPERSEDED_BY_FROZEN_COMPARISON_YEAR_DERIVATION
+    arithmetic:
+      input: integer scaled by 1e-18 or Decimal exactly representable at that quantum
+      storage_quantum: '0.000000000000000001'
+      sums: Python unbounded integers
+      ratios: fractions.Fraction
+      statistic_path_floats: FORBIDDEN
+      rendering: quantize only final report to 18 decimal places with ROUND_HALF_EVEN
+    monte_carlo_justification:
+      holm_threshold_context: DEFERRED_TO_PACKET_C3
+      p: '0.05/3'
+      z: '1.96'
+      half_width_b_2000: '0.005610684252190438'
+      half_width_b_20000: '0.001774254146896035'
+      maximum_half_width: '0.002'
+      minimum_resamples_exact: '15739.888888888888888888888888888888888888888888889'
+      minimum_resamples_ceiling: 15740
+    dependence_correction: 168-clock-hour blocks preserve serial dependence from overlapping 24-hour labels
+    rejected_alternatives:
+      raw_bootstrap_count_at_or_below_zero: REJECTED_INADEQUATELY_SPECIFIED_NULL
+      favorable_resamples_formula: REJECTED_DIRECTIONALLY_AMBIGUOUS
+      non_overlapping_24h_origin_subsampling: REJECTED_PRIMARY_TEST_ARBITRARY_HOURLY_PHASE
+    successor_repair_status: IMPLEMENTED_PACKET_C2
     successor_repair_owner_packet: C2
+    supersedes_v1_inference: true
+    disclosed_design_change: Protocol v1.1 increases resamples from 2000 to 20000 as an inferential strengthening
 success_gate:
   unlock_rule: The frozen candidate may unlock 2025 only if all criteria hold.
   criteria:
@@ -528,7 +598,7 @@ lineage:
 deferred_change_set:
   C2:
     owner_packet: C2
-    status: DEFERRED
+    status: IMPLEMENTED_PACKET_C2
   C3:
     owner_packet: C3
     status: DEFERRED
