@@ -320,11 +320,158 @@ logarithm to `[0.000000000001, 0.999999999999]`. The fitted intercept is calibra
 intercept and the fitted coefficient is calibration slope. These calculations do
 not alter predictions.
 
-Inference retains the Protocol-v1 draft basis pending its separately owned repair:
-paired moving-block bootstrap over hourly loss differentials, 168-hour blocks,
-2,000 resamples, 95% interval, resampled within year and then pooled. The RNG seed
-is `20260831`. The complete repaired successor bootstrap contract is `DEFERRED` to
-packet C2; none of the C2 algorithm or fixture changes is implemented here.
+### Frozen Protocol-v1.1 B4 bootstrap inference
+
+This procedure **supersedes the Protocol-v1 inference text**. For each ordered pair
+`(candidate, comparator)`, form the hourly paired Brier-loss improvement
+
+```text
+d_t = loss_comparator,t - loss_candidate,t
+```
+
+so positive values favour the candidate. The estimand is the pooled hourly mean of
+`d_t`, not a mean of per-year means.
+
+Build the complete nominal hourly UTC grid separately for every required calendar
+year. Candidate and comparator use identical timestamps. Store `d_t` on paired-valid
+hours and `null` everywhere else; never fill a missing loss value. Derive the nominal
+hour count `H_y` with UTC `datetime` arithmetic. The verified calendar geometry is:
+
+```text
+2020 -> 8784    2021 -> 8760    2022 -> 8760
+2023 -> 8760    2024 -> 8784    2025 -> 8760
+```
+
+Use non-circular moving blocks of `L = 168` consecutive clock hours, not 168 valid
+observations. Blocks retain their observed null pattern.
+
+```text
+eligible block starts: 0 ... H_y - L        (count = H_y - L + 1)
+blocks drawn per year: n_blocks_y = ceil(H_y / L)
+```
+
+For `L = 168`, every listed year draws 53 blocks; eligible-start counts are 8,593
+when `H_y = 8760` and 8,617 when `H_y = 8784`. Draw starts with replacement,
+concatenate the blocks including nulls, and truncate to exactly `H_y` clock-hour
+positions. Because `53 * 168 = 8904`, consume only the first
+`min(L, remaining)` positions of the final block. No block wraps across a year.
+
+Each year is resampled separately and then pooled by the resampled paired-valid
+count:
+
+```text
+D* = (sum_y sum over non-null resampled positions d*_(y,i))
+     / (sum_y n*_valid,y)
+
+D_obs = (sum_y sum over non-null observed positions d_(y,t))
+        / (sum_y n_valid,y)
+```
+
+Pooling by year count or nominal-hour count is forbidden.
+
+Protocol v1.1 freezes `B = 20000` resamples, superseding Protocol v1's 2,000. This
+increase is a disclosed successor-version design change and inferential
+strengthening, not completion of an omitted implementation detail. At the smallest
+first-step Holm threshold (the family definition remains `DEFERRED` to C3), with
+`p = 0.05/3` and `z = 1.96`, the normal-approximation two-sided 95% Monte Carlo
+half-width `z * sqrt(p(1-p)/B)` is:
+
+```text
+B =  2000  ->  0.005610684252190438
+B = 20000  ->  0.001774254146896035
+```
+
+A half-width no greater than `0.002` requires
+`B >= 15739.888888888888888888888888888888888888888888889`, so at least `15740`
+resamples. `20000` is the frozen round-number choice above that bound. These values
+are reproduced with Decimal arithmetic, never floats.
+
+The frozen PRNG is SplitMix64 with exact unsigned 64-bit arithmetic:
+
+```text
+MASK   = 2**64 - 1
+GOLDEN = 0x9E3779B97F4A7C15
+
+next_u64():
+    state = (state + GOLDEN) & MASK
+    z = state
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & MASK
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & MASK
+    return z ^ (z >> 31)
+```
+
+`random.Random` is forbidden for this bootstrap. The distinct frozen diagnostic
+bootstraps retain their own preregistered RNG contracts unchanged. Bounded draws use
+rejection sampling, never bare modulo:
+
+```text
+below(bound):
+    limit = 2**64 - (2**64 mod bound)
+    loop:
+        x = next_u64()
+        if x < limit: return x mod bound
+```
+
+Use one independent stream per `(comparison_id, year)`:
+
+```text
+payload = "quantara-protocol-v1_1|bootstrap-b4|" + comparison_id + "|" + str(year)
+seed    = int.from_bytes(sha256(payload.encode("utf-8")).digest()[:8], "big")
+```
+
+The separator, UTF-8 encoding, leading eight digest bytes, and big-endian conversion
+are frozen. `comparison_id` is an opaque caller-supplied ASCII label; C2 does not
+define the comparison family. Within each replicate, draw in ascending year order
+and then block-index order.
+
+No floats may enter the statistic path. Each `d_t` is either an integer scaled by
+the frozen `1e-18` storage quantum or a Decimal exactly representable at that
+quantum. Reject all other inputs. Use unbounded Python integers for sums and
+`fractions.Fraction` for `D*`, `D_obs`, interval bounds, p-values, and comparisons.
+Only final reporting quantizes to 18 decimal places using `ROUND_HALF_EVEN`.
+
+The two-sided 95% percentile interval is the nearest-rank interval over raw-bootstrap
+pooled means:
+
+```text
+sort the B replicate means ascending using exact Fraction comparison
+j(q) = ceil(q * B)
+lower = sorted[j(0.025) - 1]     # rank 500 at B = 20000
+upper = sorted[j(0.975) - 1]     # rank 19500 at B = 20000
+```
+
+Do not interpolate. The one-sided p-value uses a null-centred series:
+
+```text
+d0_t = d_t - D_obs                         # paired-valid hours; nulls stay null
+p    = (1 + count(D0*_b >= D_obs)) / (B + 1)
+```
+
+Apply the identical streams and block starts to the centred series. Exact pooling
+gives the verified identity
+
+```text
+D0*_b = D*_b - D_obs
+count(D0*_b >= D_obs) = count(D*_b >= 2 * D_obs)
+```
+
+Gemini's raw-bootstrap count at or below zero is rejected because it does not specify
+an adequate null. Claude's "favorable resamples" formula is rejected because its
+direction is ambiguous.
+
+Inference fails closed for the comparison, returning no partial statistic, if any
+observed required year has fewer than 168 paired-valid observations or if any
+replicate has no paired-valid observation in any one required year. The named error
+records the offending year and, for a replicate failure, its replicate index. A
+positive denominator pooled from other years does not override the per-year failure.
+
+The year-stratified 168-clock-hour moving-block procedure is the explicit dependence
+correction for overlapping 24-hour labels at hourly origins. Consecutive origins are
+not treated as IID: the blocks preserve serial dependence in the paired loss
+differential while the pooled hourly mean remains the estimand. Non-overlapping
+24-hour origin subsampling is rejected for the primary test because it discards
+information and makes the result depend on an arbitrary hourly phase. It may appear
+only as a frozen diagnostic in a separately preregistered successor protocol.
 
 The frozen candidate may unlock 2025 only if all hold:
 
@@ -409,7 +556,7 @@ never be presented as a Protocol-v1 or Protocol-v1.1 correction.
 
 | Item | Status | Owning packet | Deferred scope |
 | --- | --- | --- | --- |
-| Bootstrap and inference | `DEFERRED` | C2 | Complete non-circular year-stratified 168-clock-hour moving-block bootstrap, null-centred p-value, percentile CI, exact PRNG, 20,000 resamples, and fixtures. |
+| Bootstrap and inference | `IMPLEMENTED` | C2 | Packet C2 freezes the complete non-circular year-stratified 168-clock-hour moving-block bootstrap, null-centred p-value, nearest-rank percentile CI, exact SplitMix64 streams, 20,000 resamples, fail-closed rules, and synthetic golden fixtures. |
 | Estimator and optional-family contract | `DEFERRED` | C3 | Binding to the committed exact-Decimal IRLS contract, both-class and calibration-failure rules, `M2K` plus the three fixed optional hypotheses under ordinary Holm across all three, and labelling optional-block 2022–2024 results as selection evidence rather than independent replication. |
 | Timestamp, refit, buffer, and replication contract | `DEFERRED` | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed BTC target-only endpoint buffer through `2026-01-01 22:59:59.999 UTC` for all 8,760 calendar-2025 hourly origins under the same controls, and the exact one-year 2025 `REPLICATED` gate. |
 | Coverage and final freeze | `DEFERRED` | C5 | Coverage/exclusion reporting and claim scope per candidate; synchronization of spec, YAML, and fixture; new semantic SHA-256; and repeated tamper, future-mutation, boundary, solver, bootstrap, and 2025-seal tests. |

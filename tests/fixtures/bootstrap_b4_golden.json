@@ -1,0 +1,18 @@
+{
+  "ci_lower": "0.001914656544630831",
+  "ci_upper": "0.002067181088860310",
+  "comparison_id": "synthetic-candidate-vs-comparator",
+  "derived_seeds": {
+    "2022": 14340184579069034493,
+    "2024": 12746419991427275247
+  },
+  "observed_mean": "0.001989346069066863",
+  "p_value": "1/201",
+  "resampled_index_multiset_sha256": {
+    "2022": "897fc00a560dc2ab1d83f64ac914411827a0cc58cea49d40ca2a70074641ef73",
+    "2024": "328019e0a96bccddb0560dbdb027adfdb9ae390ad6eb96ebccb1719b41cdbf53"
+  },
+  "resamples": 200,
+  "schema_version": 1,
+  "synthetic_generator": "null iff index mod 29 is 0 or 1; otherwise (((index * 17 + year) mod 41) - 18) * 10^15 scaled units"
+}
