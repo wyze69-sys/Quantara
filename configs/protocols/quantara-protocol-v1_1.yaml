@@ -1,0 +1,545 @@
+# Quantara Protocol v1.1 - machine-readable unfrozen draft successor.
+# Human-readable counterpart: docs/superpowers/specs/2026-09-01-quantara-protocol-v1_1.md
+# No scoring is authorized until packet C5 assigns and freezes a semantic hash.
+protocol_id: quantara-protocol-v1_1
+protocol_status: DRAFT_UNFROZEN_SUCCESSOR
+frozen_date: NOT_APPLICABLE_DRAFT
+draft_date: '2026-09-01'
+supersedes: quantara-protocol-v1
+predecessor_semantic_sha256: 91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a
+authorizing_audit: docs/superpowers/reviews/2026-09-01-protocol-v1-three-reviewer-deep-audit.md
+frozen_semantic_sha256: NOT_YET_ASSIGNED_PENDING_PACKET_C5
+scoring_permission: NONE_UNTIL_FROZEN
+planning_baseline: 2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57
+research_question: >-
+  Can pre-registered BTC derivatives, spot/perpetual divergence, ETH cross-market
+  state, and one independent BTC venue improve probability forecasts of unusually
+  large BTCUSDT 24-hour moves beyond a strong causal volatility-persistence
+  baseline?
+inventory:
+  - series_id: btcusdt_perp_ohlcv
+    provider: binance_usd_m_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: [1m, 1h, 1d]
+    description: BTCUSDT perpetual traded-price OHLCV, 2020-2024
+    role: btc_price_lane
+    status: already_canonical_immutable
+  - series_id: btc_settled_funding
+    provider: binance_usd_m_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: per_settlement_event
+    description: BTCUSDT settled funding rates
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: btc_open_interest_5m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 5m
+    description: BTCUSDT perpetual open interest snapshots
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: btc_mark_price_1m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 1m
+    description: BTCUSDT mark-price klines
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: btc_index_price_1m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 1m
+    description: BTCUSDT index-price klines
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: btc_native_premium_1m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 1m
+    description: BTCUSDT native premium-index klines
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: binance_btc_spot_ohlcv_1m
+    provider: binance_spot
+    venue: binance
+    market_type: spot
+    native_interval: 1m
+    description: Binance BTCUSDT spot traded-price klines
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: kraken_xbtusd_spot_ohlcv_1h
+    provider: kraken
+    venue: kraken
+    market_type: spot
+    native_interval: 1h
+    description: Kraken XBT/USD spot OHLCVT with interval-start timestamps
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: ethusdt_perp_ohlcv_1m
+    provider: binance_usd_m_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 1m
+    description: ETHUSDT perpetual traded-price klines
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: eth_settled_funding
+    provider: binance_usd_m_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: per_settlement_event
+    description: ETHUSDT settled funding rates
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: eth_open_interest_5m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 5m
+    description: ETHUSDT perpetual open interest snapshots
+    available_from: '2021-12-01'
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: eth_mark_price_1m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 1m
+    description: ETHUSDT mark-price klines
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: eth_index_price_1m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 1m
+    description: ETHUSDT index-price klines
+    role: protocol_v1_series
+    status: frozen_inventory
+  - series_id: eth_native_premium_1m
+    provider: binance_futures
+    venue: binance
+    market_type: perpetual
+    native_interval: 1m
+    description: ETHUSDT native premium-index klines
+    role: protocol_v1_series
+    status: frozen_inventory
+canonical_lane_immutability:
+  subject: btcusdt_perp_ohlcv (Binance USD-M BTCUSDT perpetual traded-price OHLCV, 2020-2024, at 1m/1h/1d)
+  rule: >-
+    The already-canonical Binance USD-M BTCUSDT perpetual traded-price OHLCV lane
+    is immutable input: its published identities, pointers, descriptors, parser
+    identity, manifests, quality evidence, and canonical bytes must not be
+    altered. Protocol packets may read it but never modify it.
+canonical_record_fields:
+  - provider
+  - venue
+  - market_type
+  - instrument_id
+  - provider_symbol
+  - series_id
+  - native_interval
+  - source_file
+  - source_sha256
+  - event_ts
+  - interval_open_ts
+  - interval_close_ts
+  - settlement_or_snapshot_ts
+  - archive_publication_ts
+  - ingestion_ts
+  - eligibility_ts
+  - quality_flags
+exclusions:
+  forbidden_families:
+    - liquidations
+    - options
+    - long_short_ratios
+    - taker_ratios
+    - altcoins
+    - order_books
+    - macro
+    - on_chain
+    - sentiment
+    - news
+    - technical_indicator_searches
+  rules:
+    - >-
+      Incidental columns in the Binance metrics archive may be retained in the
+      immutable raw object but are not canonical Protocol-v1.1 series and must not
+      enter any feature table.
+    - >-
+      docs/superpowers/plans/2026-08-29-data-slice-013-vision-derivatives-backfill.md
+      is superseded for Protocol v1.1; its top-trader and taker-ratio scope, guessed
+      completeness rules, and combined metrics feature direction are not authorized.
+target:
+  origin_convention: >-
+    For hourly origin t, P[t] is the BTCUSDT perpetual 1h bar close at T - 1 ms and
+    the future endpoint is the 1h bar close at T + 24h - 1 ms.
+  r24: 'r24_t  = log(P[t+24h] / P[t])'
+  sigma: 'sigma_t = sqrt(sum_{j=0}^{23} r[t-j]^2)'
+  zscore: 'Z_t    = abs(r24_t) / sigma_t'
+  label: 'Y_t    = 1[Z_t > k]'
+  threshold: 'k = Z_(j), where j = ceil(0.80 * N), on eligible 2020-2021 design origins only'
+  quantile:
+    ordering: 'Z_(1) <= ... <= Z_(N)'
+    rank: 'j = ceil(0.80 * N)'
+    selection: 'k = Z_(j)'
+    label: 'Y_t = 1[Z_t > k]'
+    decimal_precision: 50
+    decimal_rounding: ROUND_HALF_EVEN
+    interpolation: FORBIDDEN
+    threshold_rounding: FORBIDDEN
+    canonical_threshold_representation: full Decimal string
+    tie_break: NOT_REQUIRED_FOR_NUMERICALLY_EQUAL_VALUES
+    fixture_status: DEFERRED
+    fixture_owner_packet: C5
+  threshold_design_end: '2021-12-31T23:59:59.999Z'
+  threshold_design_rule: >-
+    An origin enters the nearest-rank calculation only when its complete forward
+    label ends no later than 2021-12-31 23:59:59.999 UTC. No 2022 value may enter
+    threshold design.
+  threshold_fixed_rule: k stays fixed through every fold and through sealed 2025
+  quantile_alternatives: >-
+    Type 7 and Type 8 are defensible alternatives but nearest-rank is selected as
+    the generalized inverse empirical CDF without an interpolated threshold.
+realized_volatility:
+  definition: RV_H = sqrt(sum of squared eligible hourly log returns over H hours)
+  horizons:
+    rv_1d: 24
+    rv_7d: 168
+    rv_30d: 720
+  invalid_window_rule: >-
+    A zero or incomplete window is invalid; no epsilon replacement is permitted.
+feature_formulas:
+  funding_24h_sum: sum settled rates with T-24h < settlement_ts <= T
+  dlog_oi_24h: log(OI_snapshot_ending_T / OI_snapshot_ending_T_minus_24h)
+  native_premium_1h_mean: arithmetic mean of the 60 native-premium 1m closes ending in (T-1h, T]
+  spot_perp_dislocation: log(BTC_perp_close_T / Binance_BTC_spot_close_T)
+  eth_ret_1h: log(ETH_perp_close_T / ETH_perp_close_T_minus_1h)
+  eth_rv_24h: sqrt(sum of the 24 eligible ETH hourly log returns ending at T)
+  eth_funding_24h_sum: ETH form of funding_24h_sum
+  eth_native_premium_1h_mean: ETH form of native_premium_1h_mean
+  eth_btc_relative_ret_24h: ETH_ret_24h(T) - BTC_ret_24h(T)
+  eth_dlog_oi_24h: ETH form of dlog_oi_24h
+  kraken_ret_1h: log(Kraken_close_T / Kraken_close_T_minus_1h)
+  kraken_rv_24h: sqrt(sum of the 24 eligible Kraken hourly log returns ending at T)
+  binance_kraken_ret_divergence_1h: Binance_spot_ret_1h(T) - Kraken_ret_1h(T)
+  binance_kraken_cross_quote_log_ratio: log(Binance_spot_close_T / Kraken_close_T)
+feature_window_completeness:
+  - Every formula requires its full endpoint/path window.
+  - Funding requires a cadence-complete settlement window.
+  - OI requires the exact five-minute snapshots ending at both endpoints and no intervening gap.
+  - 1m premium means require all 60 minutes.
+  - >-
+    Return/RV windows crossing any invalid source interval are null. There is no
+    stale-value tolerance, interpolation, nearest timestamp, or alternate horizon.
+dislocation_roles:
+  primary_futures_dislocation_feature: btc_native_premium_1m
+  diagnostic_only: [mark_index_minus_1, mark_spot_minus_1]
+  rule: >-
+    Native Binance premium is the pre-registered primary futures-dislocation feature.
+    Constructed mark/index - 1 and mark/spot - 1 are diagnostics only and never enter
+    M1-M4. Mark and index are canonicalized because they verify source integrity and
+    support diagnostics, not because they earn independent model stages.
+model_ladder:
+  B0:
+    base: null
+    adds: []
+    definition: training-only climatology
+  B1:
+    base: null
+    adds: [log(RV_1d)]
+    definition: logistic model using causal log(RV_1d)
+  B2:
+    base: null
+    adds: [log(RV_1d), log(RV_7d), log(RV_30d)]
+    definition: HAR-style logistic model
+  M1:
+    base: B2
+    adds: [funding_24h_sum, dlog_oi_24h, native_premium_1h_mean]
+    definition: B2 plus frozen BTC derivatives block
+  M2:
+    base: M1
+    adds: [spot_perp_dislocation]
+    definition: M1 plus BTC perpetual versus Binance spot dislocation
+  M3:
+    base: M2
+    adds: [eth_ret_1h, eth_rv_24h, eth_funding_24h_sum, eth_native_premium_1h_mean, eth_btc_relative_ret_24h]
+    definition: M2 plus frozen ETH family, excluding ETH OI
+  M3b:
+    base: M3
+    adds: [eth_dlog_oi_24h]
+    definition: M3 plus ETH dlog_oi_24h on the identical post-2021-12-01 common sample
+  M4:
+    base: M3
+    adds: [kraken_ret_1h, kraken_rv_24h, binance_kraken_ret_divergence_1h, binance_kraken_cross_quote_log_ratio]
+    definition: M3 plus frozen Kraken cross-venue family
+model_mandates:
+  btc_core_ladder: [M1, M2]
+  mandatory_primary_candidate: M2
+  mandatory_rule: M2 must pass the complete gate versus paired B2 before 2025 can unlock
+  optional_family_order: [M3, M4]
+  optional_family_rule: >-
+    Starting from M2, evaluate the ETH block and then the Kraken block as the only
+    optional additions.
+  m3b_role: >-
+    M3b/ETH OI is a secondary diagnostic and can never alter the retained candidate;
+    ETH OI is M3b common-sample only.
+  final_rule: >-
+    The resulting candidate must still pass the complete 2%-versus-B2 and calibration
+    gate before 2025.
+cross_quote_dislocation_policy:
+  feature: binance_kraken_cross_quote_log_ratio
+  rule: >-
+    log(Binance BTCUSDT spot close / Kraken XBT/USD close) uses no invented
+    USD/USDT FX conversion; the feature is explicitly a cross-venue, cross-quote
+    dislocation and may include quote-currency (USDT-versus-USD) effects.
+logistic_constants:
+  estimation_discipline: exact-Decimal logistic-IRLS
+  l2_penalty_lambda: '1'
+  unpenalized_intercept: true
+  standardization: train-window z-score
+  max_iterations: 50
+  convergence_tolerance: '0.000000000001'
+  eta_clamp: 24
+  probability_clamp: '0.000000000001'
+  linear_solver: Gaussian elimination with partial pivoting
+search_and_calibration_restrictions:
+  forbidden:
+    - regularization_search
+    - feature_clipping
+    - post_hoc_probability_calibration
+    - tree_model
+    - model_family_search
+  calibration_evaluation: Calibration is evaluated on the raw logistic probabilities.
+  paired_comparison_rule: >-
+    For every paired candidate comparison, refit the comparator on exactly the same
+    training rows and score exactly the same test timestamps as the candidate. A
+    larger baseline sample may be reported separately but cannot be used for the
+    paired incremental claim.
+point_in_time:
+  boundary_event_time: F = T
+  nominal_eligibility_ts: T + 1 ms
+  prediction_ts: T + 2 ms
+  join_inequality: eligibility_ts < prediction_ts
+  funding_feature_window: T-24h < settlement_ts <= T
+  kline_eligibility_ts: C + 1 ms
+  funding_eligibility_ts: F + 1 ms
+  oi_eligibility_ts: O + 5 minutes
+  kraken_eligibility_ts: K + 1 hour
+  cutoff_convention: >-
+    An hourly information cutoff T is an exact UTC hour boundary. prediction_ts =
+    T + 2 ms. P[t] is the BTC perpetual 1h bar close at T - 1 ms and its future
+    endpoint is the close at T + 24h - 1 ms. These logical ticks order completed
+    data and do not claim exchange network latency.
+  kline_eligibility: >-
+    For a kline with source close time C, nominal eligibility_ts = C + 1 ms.
+  funding_eligibility: >-
+    For settled funding with settlement time F, nominal eligibility_ts = F + 1 ms.
+  oi_eligibility: >-
+    For a five-minute OI row with interval-start timestamp O, nominal eligibility_ts
+    = O + 5 minutes.
+  kraken_eligibility: >-
+    For Kraken hourly OHLCVT with interval-start timestamp K, nominal eligibility_ts
+    = K + 1 hour.
+  join_rule: >-
+    All joins are backward as-of joins on eligibility_ts; eligibility_ts <
+    prediction_ts without exception.
+  funding_boundary_repair: >-
+    When F = T, funding eligibility T + 1 ms is strictly before prediction T + 2 ms;
+    Protocol v1 used T + 1 ms for both and therefore contradicted its funding window.
+  same_boundary_effect: >-
+    The added tick changes same-boundary inclusion for funding only. Completed klines,
+    five-minute OI, and Kraken hourly candles are already eligible no later than T.
+  boundary_test_rule: universal convention change; boundary-test every source
+  live_latency_rule: >-
+    Production use requires measured publication and ingestion latency. If it exceeds
+    the decision schedule, same-boundary funding shifts to the next live decision.
+  rejected_alternatives:
+    eligibility_at_f: coherent but removes the frozen after-settlement ordering tick
+    funding_window_before_t: causal but delays boundary settlements one hourly decision
+  archive_publication_ts_role: ex-post provenance, not real-time observation availability
+  forbidden: [nearest_joins, forward_joins, unfinished_bars, future_revisions, same_timestamp_equality]
+  limitation: >-
+    Protocol v1.1 claims nominal historical point-in-time safety, not reconstruction
+    of historical network latency. This limitation must appear in every result report.
+missing_and_duplicate_policy:
+  rules:
+    - Missing is null, never zero.
+    - No price, mark, index, premium, OI, or venue gap is interpolated.
+    - A feature is invalid when a required lookback crosses a missing native interval.
+    - A label is invalid when its required BTC price endpoints/path are unavailable.
+    - Known pre-archive periods remain null and receive no fabricated regime flag.
+    - >-
+      Exact duplicate source rows may be deterministically deduplicated only after
+      byte comparison, with source-row count, distinct-row count, duplicate count,
+      and duplicate hashes preserved.
+    - Same-key conflicting rows block publication.
+    - ETH OI before 2021-12-01 is null and never enters M3.
+validation:
+  outer_folds:
+    - fold: 1
+      train_start: '2020-09-01'
+      train_end: '2021-12-31'
+      test_year: 2022
+    - fold: 2
+      train_start: '2020-09-01'
+      train_end: '2022-12-31'
+      test_year: 2023
+    - fold: 3
+      train_start: '2020-09-01'
+      train_end: '2023-12-31'
+      test_year: 2024
+  purge:
+    training_origin_eligibility: O + 24h <= S
+    last_eligible_training_origin: S - 24h
+    first_test_origin: S
+    post_test_embargo: NOT_REQUIRED_FOR_ANCHORED_EXPANDING_WINDOW
+    rejected_cutoff: '2024-12-30 23:00 UTC'
+    examples:
+      fold_1:
+        test_start: '2022-01-01 00:00 UTC'
+        last_training_origin: '2021-12-31 00:00 UTC'
+        last_required_label_close: '2021-12-31 23:59:59.999 UTC'
+      final_evaluation:
+        test_start: '2025-01-01 00:00 UTC'
+        last_training_origin: '2024-12-31 00:00 UTC'
+        last_required_label_close: '2024-12-31 23:59:59.999 UTC'
+  fold_rules:
+    - 'Training origin O is eligible iff O + 24h <= S.'
+    - Use the exact 24-hour purge inequality.
+    - Apply only frozen train-window z-score and fixed regularization.
+    - No clipping or post-hoc calibration is allowed.
+    - Never use random K-fold.
+  primary_metric:
+    - 'BS(model) = mean((p-y)^2)'
+    - 'BSS_B2(model) = 1 - BS(model) / BS(B2)'
+    - loss_improvement_i = loss_B2_i - loss_model_i
+    - probability_bias = mean(p-y)
+  calibration_diagnostics:
+    method: unpenalized logistic regression of y on logit(p) with an intercept
+    clamp: 'clamp p to [0.000000000001, 0.999999999999] only for the logarithm'
+    outputs: [calibration_intercept, calibration_slope]
+    note: Diagnostic only; these calculations do not alter predictions.
+  bootstrap:
+    method: paired moving-block bootstrap over hourly loss differentials
+    block_hours: 168
+    resamples: 2000
+    interval: '0.95'
+    resampling: resampled within year and then pooled
+    rng_seed: 20260831
+    successor_repair_status: DEFERRED
+    successor_repair_owner_packet: C2
+success_gate:
+  unlock_rule: The frozen candidate may unlock 2025 only if all criteria hold.
+  criteria:
+    - id: 1
+      rule: pooled BSS_B2 >= 0.02
+      threshold: '0.02'
+    - id: 2
+      rule: bootstrap 95% lower bound for BS_B2 - BS_candidate is greater than zero
+    - id: 3
+      rule: positive Brier improvement in at least two validation years
+      min_years: 2
+    - id: 4
+      rule: no year has BSS_B2 < -0.02
+      threshold: '-0.02'
+    - id: 5
+      rule: pooled absolute probability bias is at most 0.02
+      threshold: '0.02'
+    - id: 6
+      rule: pooled calibration slope is between 0.8 and 1.2
+      lower: '0.8'
+      upper: '1.2'
+    - id: 7
+      rule: yearly absolute probability bias is at most 0.04
+      threshold: '0.04'
+optional_family_retention:
+  order: [eth_block, kraken_block]
+  retention_criteria:
+    - pooled relative Brier improvement versus the currently retained model is at least 0.01
+    - unadjusted two-sided 95% paired-bootstrap interval has a lower bound above zero
+    - >-
+      one-sided bootstrap p-value passes Holm at family-wise alpha 0.05 across these
+      two optional-family tests
+    - at least two years improve
+    - no year is worse than -0.02
+  holm_family_wise_alpha: '0.05'
+  holm_test_count: 2
+  fallback: >-
+    If ETH is rejected, compare Kraken against M2, not against an ETH-containing
+    model.
+  rejected_block_rule: A rejected block receives no alternative transformation search.
+  successor_repair_status: DEFERRED
+  successor_repair_owner_packet: C3
+sealed_2025:
+  state: SEALED
+  scoring_permission: FORBIDDEN_UNTIL_GATE_PASS_AND_PROTOCOL_FREEZE
+  allowed_pre_gate_checks: [file_inventory, cryptographic_hashes, parser_compatibility, expected_boundaries, mechanical_corruption]
+  forbidden_operations: [labels, feature_distributions, model_scores, conditional_outcome_inspection, protocol_adaptation]
+  on_gate_pass: run exactly one frozen 2025 evaluation
+  failure_outcome: DID_NOT_REPLICATE
+  failure_rule: never redesign and retest on 2025
+  successor_buffer_and_replication_rule: DEFERRED_PACKET_C4
+audit_reference_hash_basis: utf8_text_normalized_to_lf_before_sha256
+audit_references:
+  a7_report:
+    path: docs/superpowers/plans/2026-08-31-a7-ethusdt-perpetual.md
+    sha256: INHERITED_FROM_PROTOCOL_V1
+  a7_sidecar:
+    path: temp/audit_a7_a8/a7_ethusdt_probe_v1.json
+    sha256: INHERITED_FROM_PROTOCOL_V1
+  a8_report:
+    path: docs/superpowers/plans/2026-08-31-a8-btcusdt-spot.md
+    sha256: INHERITED_FROM_PROTOCOL_V1
+  a8_sidecar:
+    path: temp/audit_a7_a8/a8_btcusdt_spot_probe_v1.json
+    sha256: INHERITED_FROM_PROTOCOL_V1
+  a9_report:
+    path: docs/superpowers/plans/2026-08-31-a9-second-btc-venue-kraken.md
+    sha256: INHERITED_FROM_PROTOCOL_V1
+  a9_sidecar:
+    path: temp/audit_a9_kraken/a9_kraken_range_probe_v1.json
+    sha256: INHERITED_FROM_PROTOCOL_V1
+  a10_report:
+    path: docs/superpowers/plans/2026-08-31-a10-live-acquisition-consolidation.md
+    sha256: INHERITED_FROM_PROTOCOL_V1
+  a10_sidecar:
+    path: temp/audit_a10_corrections/a3a4_reprobe_v2.json
+    sha256: INHERITED_FROM_PROTOCOL_V1
+lineage:
+  earlier_recommendation_date: '2026-08-24'
+  earlier_mvp: >-
+    BTCUSDT perpetual decisions every completed 15-minute candle, fixed one-hour
+    immediate-entry policy, logistic or return regression primary, LightGBM
+    secondary, and predictive plus after-cost economic metrics.
+  supersession: >-
+    Protocol v1 intentionally changed to undirected 24-hour large-move probability,
+    hourly cadence, no trading-policy or PnL layer, and exact-Decimal logistic ladder.
+  reintroduction_rule: >-
+    LightGBM, XGBoost, return regression, directional actions, or economic gates
+    require a separately preregistered successor experiment.
+deferred_change_set:
+  C2:
+    owner_packet: C2
+    status: DEFERRED
+  C3:
+    owner_packet: C3
+    status: DEFERRED
+  C4:
+    owner_packet: C4
+    status: DEFERRED
+  C5:
+    owner_packet: C5
+    status: DEFERRED
+standing_rejections:
+  signed_return_replacement: REJECTED
+  sigma_denominator_floor: REJECTED
+  arbitrary_98_percent_coverage_cutoff: REJECTED
+  new_feature_search: REJECTED
