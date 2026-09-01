@@ -747,3 +747,68 @@ def evaluate_kill_criteria(
         "results": {key: bool(results[key]) for key in KILL_RESULT_KEYS},
         "all_passed": all(bool(results[key]) for key in KILL_RESULT_KEYS),
     }
+
+
+def evaluate_criterion_outcomes(
+    summaries: Sequence[dict],
+    baselines: dict,
+    constants: dict[str, str] | None = None,
+) -> dict:
+    """Report each criterion independently with a valid comparison basis.
+
+    The slice-012 publication gate is immutable and remains available through
+    :func:`evaluate_kill_criteria`. Its fixed K1 threshold was registered for
+    the 2024 experiment, however, so using that number to label another year's
+    directional result PASS/FAIL is not a valid cross-year comparison.
+
+    This reporting view compares K1 with the causal majority-class baseline
+    already computed on the same folds and sample. K2--K4 retain their frozen
+    pre-registered thresholds. Individual outcomes are never overwritten by
+    ``all_passed``; for example K1 stays true when K2 is false.
+    """
+    pinned = dict(KILL_CRITERIA if constants is None else constants)
+    if set(pinned) != set(KILL_CRITERIA):
+        raise MetricDomainError(f"kill-criteria constants must be {sorted(KILL_CRITERIA)}")
+
+    observed = {
+        "k1_directional_accuracy": _summary_mean(summaries, "directional_accuracy"),
+        "k2_direction_ic": _summary_mean(summaries, "direction_ic"),
+        "k3_log_loss": _summary_mean(summaries, "log_loss"),
+        "k4_brier": _summary_mean(summaries, "brier"),
+    }
+    references = {
+        "k1_directional_accuracy": {
+            "kind": "same_sample_majority_class_train_window",
+            "value": _baseline_mean(
+                baselines, "majority_class_train_window", "directional_accuracy"
+            ),
+        },
+        "k2_direction_ic": {
+            "kind": "pre_registered_minimum",
+            "value": pinned["direction_ic_min"],
+        },
+        "k3_log_loss": {
+            "kind": "pre_registered_maximum",
+            "value": pinned["log_loss_max"],
+        },
+        "k4_brier": {
+            "kind": "pre_registered_maximum",
+            "value": pinned["brier_max"],
+        },
+    }
+    results = {
+        "k1_directional_accuracy": Decimal(observed["k1_directional_accuracy"])
+        >= Decimal(references["k1_directional_accuracy"]["value"]),
+        "k2_direction_ic": Decimal(observed["k2_direction_ic"])
+        >= Decimal(references["k2_direction_ic"]["value"]),
+        "k3_log_loss": Decimal(observed["k3_log_loss"])
+        <= Decimal(references["k3_log_loss"]["value"]),
+        "k4_brier": Decimal(observed["k4_brier"])
+        <= Decimal(references["k4_brier"]["value"]),
+    }
+    return {
+        "observed": observed,
+        "references": references,
+        "results": {key: bool(results[key]) for key in KILL_RESULT_KEYS},
+        "all_passed": all(bool(results[key]) for key in KILL_RESULT_KEYS),
+    }

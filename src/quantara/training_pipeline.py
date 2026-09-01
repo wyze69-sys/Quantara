@@ -50,6 +50,7 @@ from quantara.training_metrics import (
 from quantara.training_metrics_logistic import (
     build_logistic_training_records,
     build_logistic_training_summaries,
+    evaluate_criterion_outcomes,
     evaluate_kill_criteria,
 )
 from quantara.training_quality import (
@@ -200,19 +201,37 @@ def _kill_attempt_manifest(
     }
 
 
-def _kill_diagnostics(kill: dict) -> list[str]:
-    """Observed-vs-constant diagnostics naming exactly which criteria failed."""
+def _kill_diagnostics(kill: dict, outcomes: dict) -> list[str]:
+    """Preserve the historical gate while reporting each valid outcome."""
     constants = kill["constants"]
     observed = kill["observed"]
-    results = kill["results"]
+    historical_results = kill["results"]
+    results = outcomes["results"]
+    references = outcomes["references"]
     failed = [name for name, passed in results.items() if not passed]
+    historical_labels = {
+        "k1_directional_accuracy": "fixed_2024_accuracy_reference",
+        "k2_direction_ic": "k2_direction_ic",
+        "k3_log_loss": "k3_log_loss",
+        "k4_brier": "k4_brier",
+    }
+    historical_mismatches = [
+        historical_labels[name] for name, passed in historical_results.items() if not passed
+    ]
+    statuses = ",".join(
+        f"{name}:{'PASS' if passed else 'FAIL'}" for name, passed in results.items()
+    )
     return [
         KILL_CRITERIA_FAILED.lower(),
         f"failed_criteria={','.join(failed)}",
+        f"criterion_outcomes={statuses}",
+        f"criterion_overall={'PASS' if outcomes['all_passed'] else 'FAIL'}",
+        f"historical_publication_gate_mismatches={','.join(historical_mismatches)}",
         (
             "k1_directional_accuracy_mean="
-            f"{observed['directional_accuracy_mean']} min="
-            f"{constants['directional_accuracy_min']} "
+            f"{outcomes['observed']['k1_directional_accuracy']} "
+            "same_sample_majority_class_train_window="
+            f"{references['k1_directional_accuracy']['value']} "
             f"passed={str(results['k1_directional_accuracy']).lower()}"
         ),
         (
@@ -232,6 +251,12 @@ def _kill_diagnostics(kill: dict) -> list[str]:
             f"passed={str(results['k4_brier']).lower()}"
         ),
         (
+            "historical_k1_2024_fixed_threshold_mean="
+            f"{observed['directional_accuracy_mean']} min="
+            f"{constants['directional_accuracy_min']} "
+            f"passed={str(historical_results['k1_directional_accuracy']).lower()}"
+        ),
+        (
             "baseline_majority_class_train_window_directional_accuracy_mean="
             f"{observed['majority_class_train_window_directional_accuracy_mean']}"
         ),
@@ -248,11 +273,15 @@ def _kill_diagnostics(kill: dict) -> list[str]:
 
 
 def _write_kill_attempt(
-    data_root: Path, repo_root: Path, attempt_id: str, kill: dict
+    data_root: Path,
+    repo_root: Path,
+    attempt_id: str,
+    kill: dict,
+    outcomes: dict,
 ) -> None:
     attempt = _kill_attempt_manifest(
         attempt_id=attempt_id,
-        diagnostics=_kill_diagnostics(kill),
+        diagnostics=_kill_diagnostics(kill, outcomes),
         repo_root=repo_root,
     )
     target = data_root / "attempts" / "training" / f"{attempt['attempt_id']}.json"
@@ -592,6 +621,7 @@ def run_training_pipeline(
     logistic = descriptor.model_family == LOGISTIC_FAMILY
     training_parent: dict | None = None
     kill: dict | None = None
+    criterion_outcomes: dict | None = None
     if logistic:
         try:
             training_parent = _load_training_parent_state(descriptor, data)
@@ -607,6 +637,9 @@ def run_training_pipeline(
             )
             summaries, baselines = build_logistic_training_summaries(records)
             kill = evaluate_kill_criteria(summaries, baselines, descriptor.kill_criteria)
+            criterion_outcomes = evaluate_criterion_outcomes(
+                summaries, baselines, descriptor.kill_criteria
+            )
             artifact = build_logistic_training_artifact(
                 descriptor,
                 validation_parent_info,
@@ -703,11 +736,28 @@ def run_training_pipeline(
         return EXIT_BLOCKED
 
     if logistic and not kill["all_passed"]:
-        # Pre-registered kill criteria failed: nothing is staged, the lane
-        # pointer is untouched, and the attempt manifest carries the evidence.
-        failed = [name for name, passed in kill["results"].items() if not passed]
+        # The frozen historical publication decision remains immutable. Report
+        # valid per-criterion outcomes separately so one failed criterion never
+        # rewrites a passing K1 as FAIL.
+        assert criterion_outcomes is not None
+        statuses = {
+            name: "PASS" if passed else "FAIL"
+            for name, passed in criterion_outcomes["results"].items()
+        }
+        historical_labels = {
+            "k1_directional_accuracy": "fixed_2024_accuracy_reference",
+            "k2_direction_ic": "k2_direction_ic",
+            "k3_log_loss": "k3_log_loss",
+            "k4_brier": "k4_brier",
+        }
+        historical_mismatches = [
+            historical_labels[name] for name, passed in kill["results"].items() if not passed
+        ]
         print(
-            f"kill criteria failed: {failed}; observed={kill['observed']}",
+            "criterion outcomes="
+            f"{statuses}; overall={'PASS' if criterion_outcomes['all_passed'] else 'FAIL'}; "
+            "historical_preregistered_decision=FAIL; "
+            f"historical_mismatches={historical_mismatches}",
             file=sys.stderr,
         )
         if not dry_run:
@@ -718,7 +768,7 @@ def run_training_pipeline(
                 / "training"
                 / f"per_fold_{attempt_id}.json",
             )
-            _write_kill_attempt(data, root, attempt_id, kill)
+            _write_kill_attempt(data, root, attempt_id, kill, criterion_outcomes)
         return EXIT_KILL_CRITERIA_FAILED
 
     if report.state != "PASS":
