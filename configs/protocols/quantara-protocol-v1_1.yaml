@@ -268,6 +268,10 @@ model_ladder:
     base: M1
     adds: [spot_perp_dislocation]
     definition: M1 plus BTC perpetual versus Binance spot dislocation
+  M2K:
+    base: M2
+    adds: [kraken_ret_1h, kraken_rv_24h, binance_kraken_ret_divergence_1h, binance_kraken_cross_quote_log_ratio]
+    definition: M2 plus frozen four-column Kraken block
   M3:
     base: M2
     adds: [eth_ret_1h, eth_rv_24h, eth_funding_24h_sum, eth_native_premium_1h_mean, eth_btc_relative_ret_24h]
@@ -280,6 +284,15 @@ model_ladder:
     base: M3
     adds: [kraken_ret_1h, kraken_rv_24h, binance_kraken_ret_divergence_1h, binance_kraken_cross_quote_log_ratio]
     definition: M3 plus frozen Kraken cross-venue family
+ladder_widths:
+  B1: 1
+  B2: 3
+  M1: 6
+  M2: 7
+  M2K: 11
+  M3: 12
+  M3b: 13
+  M4: 16
 model_mandates:
   btc_core_ladder: [M1, M2]
   mandatory_primary_candidate: M2
@@ -310,6 +323,61 @@ logistic_constants:
   eta_clamp: 24
   probability_clamp: '0.000000000001'
   linear_solver: Gaussian elimination with partial pivoting
+estimator_binding:
+  implementation: src/quantara/training_metrics_logistic.py
+  entry_point: fit_logistic_irls
+  decimal_precision: 50
+  rounding: ROUND_HALF_EVEN
+  storage_quantum: '0.000000000000000001'
+  standardization: train-window z-score, population denominator n
+  initial_coefficients: all zero
+  model_l2_lambda: '1'
+  intercept: unpenalized
+  convergence: every abs(beta_new - beta_old) < 0.000000000001
+  maximum_updates: 50
+  linear_solver: Gaussian elimination with partial pivoting
+  pivot_failure: exact-zero pivot, fail closed
+  constant_train_feature: exact-zero train std, fail closed
+  non_convergence: fail closed
+  binary_float_inputs: forbidden
+  eta_clamp: '24'
+  probability_clamp: '0.000000000001'
+fail_closed_causes:
+  - single_class_training_outcome
+  - constant_train_feature
+  - zero_pivot
+  - non_convergence
+  - binary_float_input
+  - calibration_single_class_outcome
+  - calibration_degenerate_logit
+fit_failure_propagation: >-
+  Any fit failure fails the affected candidate comparison and never drops a fold,
+  year, or candidate from pooling.
+calibration:
+  family: unpenalized two-parameter Decimal logistic fit of y on logit(p) with an intercept
+  lambda: '0'
+  probability_clamp_lower: '0.000000000001'
+  probability_clamp_upper: '0.999999999999'
+  probability_clamp_rule: clamp_mu is mandatory before taking the logarithm
+  predictor: x_i = ln(p_i / (1 - p_i)) after the mandatory clamp
+  back_transform:
+    slope: calibration_slope = beta_z / sd_x
+    intercept: calibration_intercept = beta_0 - beta_z * mu_x / sd_x
+  gate_band:
+    lower: '0.8'
+    upper: '1.2'
+    applies_to: raw-logit calibration_slope, never beta_z
+  failure_conditions:
+    - single-class outcome in the calibration sample
+    - zero-variance logit(p), surfacing as exact-zero std or zero pivot
+    - undefined logit, reachable only if the mandatory clamp is bypassed
+    - singular solve, surfacing as zero pivot
+    - separation, identified by positive eta_clamp_count in the calibration fit
+    - non-convergence within 50 updates
+  eta_clamp_rule: >-
+    A positive eta_clamp_count is reported for every fit and is diagnostic rather
+    than a model-fit failure; in calibration it fails calibration_degenerate_logit.
+  diagnostic_only: These calculations never alter predictions or pooled Brier estimates.
 search_and_calibration_restrictions:
   forbidden:
     - regularization_search
@@ -531,23 +599,63 @@ success_gate:
       rule: yearly absolute probability bias is at most 0.04
       threshold: '0.04'
 optional_family_retention:
-  order: [eth_block, kraken_block]
+  hypothesis_order: [H_ETH, H_K_M2, H_K_M3]
+  hypotheses:
+    H_ETH:
+      candidate: M3
+      comparator: M2
+      comparison_id: H_ETH|M3_vs_M2
+    H_K_M2:
+      candidate: M2K
+      comparator: M2
+      comparison_id: H_K_M2|M2K_vs_M2
+    H_K_M3:
+      candidate: M4
+      comparator: M3
+      comparison_id: H_K_M3|M4_vs_M3
+  compute_all_three_before_deciding: true
+  holm_family_wise_alpha: '0.05'
+  holm_test_count: 3
+  holm_step_thresholds: ['1/60', '1/40', '1/20']
+  holm_assignment_rule: >-
+    Sort all three observed p-values ascending, assign thresholds by sorted rank,
+    reject while p_(i) is at most alpha / (m - i + 1), and stop at the first failure.
+  tie_order: [H_ETH, H_K_M2, H_K_M3]
+  min_attainable_p: '1/20001'
+  max_exceedance_count_clearing_first_step: 332
+  p_at_332: '111/6667'
+  p_at_333: '334/20001'
   retention_criteria:
     - pooled relative Brier improvement versus the currently retained model is at least 0.01
     - unadjusted two-sided 95% paired-bootstrap interval has a lower bound above zero
-    - >-
-      one-sided bootstrap p-value passes Holm at family-wise alpha 0.05 across these
-      two optional-family tests
-    - at least two years improve
-    - no year is worse than -0.02
-  holm_family_wise_alpha: '0.05'
-  holm_test_count: 2
+    - one-sided bootstrap p-value passes ordinary Holm across the three-test family
+    - at least two validation years improve
+    - no validation year is worse than -0.02
+  decision_graph:
+    eth_passes: retain M4 only if H_K_M3 also passes; otherwise retain M3
+    eth_fails: retain M2K only if H_K_M2 passes; otherwise retain M2
   fallback: >-
     If ETH is rejected, compare Kraken against M2, not against an ETH-containing
     model.
+  m3b_role: >-
+    M3b is an identical-common-sample secondary diagnostic and can never alter the
+    retained candidate.
   rejected_block_rule: A rejected block receives no alternative transformation search.
-  successor_repair_status: DEFERRED
+  retained_candidate_gate: >-
+    The retained candidate must still pass the complete seven-criterion success_gate
+    versus paired B2 before 2025 unlocks.
+  optional_block_2022_2024_result_class: selection_evidence
+  independent_replication_source: sealed 2025 only
+  selection_reason: >-
+    The optional family uses the same 2022-2024 validation data to select among
+    candidates, so its improvement estimates are conditioned on that selection.
+  required_claim_wording: selected on 2022–2024 development evidence
+  successor_repair_status: IMPLEMENTED_PACKET_C3
   successor_repair_owner_packet: C3
+  supersedes_draft_holm_test_count: true
+  disclosed_design_change: >-
+    Protocol v1.1 corrects the draft optional-family size from two tests to three
+    tests so ordinary Holm covers the complete retention graph.
 sealed_2025:
   state: SEALED
   scoring_permission: FORBIDDEN_UNTIL_GATE_PASS_AND_PROTOCOL_FREEZE
@@ -601,7 +709,7 @@ deferred_change_set:
     status: IMPLEMENTED_PACKET_C2
   C3:
     owner_packet: C3
-    status: DEFERRED
+    status: IMPLEMENTED_PACKET_C3
   C4:
     owner_packet: C4
     status: DEFERRED
