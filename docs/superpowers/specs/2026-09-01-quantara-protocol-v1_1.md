@@ -284,10 +284,33 @@ All other eligibility rules keep their Protocol-v1 form and are measured against
 
 - For a kline with source close `C`, `eligibility_ts = C + 1 ms`.
 - For settled funding with settlement `F`, `eligibility_ts = F + 1 ms`.
-- For five-minute OI with source timestamp `O`,
-  `eligibility_ts = O + 5 minutes`.
+- For five-minute OI with provider timestamp `O` and role
+  `UNRESOLVED_CONSERVATIVE`, `eligibility_ts = O + 5 minutes`.
 - For Kraken hourly OHLCVT with interval-start `K`,
   `eligibility_ts = K + 1 hour`.
+
+### Open-interest provider timestamp role
+
+The historical metrics archive preserves the provider field `create_time` as `O`.
+Its archive-specific meaning is unresolved: A10 superseded A2's earlier open-bar
+claim, and the categorical claim that it denotes a period end is also rejected as
+unproven. The protocol therefore does not relabel `O` as either
+`interval_open_ts` or `interval_close_ts`, and no semantic claim is permitted while
+the role remains `UNRESOLVED_CONSERVATIVE`.
+
+The unchanged arithmetic is safe under both readings. Under the start reading, a
+row stamped `O` covers `[O, O + 5 minutes)` and becomes complete exactly at
+`O + 5 minutes`; under the end reading it is already complete at `O`, so the same
+rule is five minutes conservative. With
+`eligibility_ts < prediction_ts = T + 2 ms`, the latest eligible row at an hourly
+boundary is consequently `O = T - 5 minutes`.
+
+Before any OI canonicalization, an archive-specific `create_time` semantics check
+must be completed and its measured or cited evidence written into the source
+contract. Until then every result report using an OI feature must disclose this
+uncertainty and conservative treatment. Kraken is deliberately asymmetric: A9
+documents its candle timestamps as starts, so its role is
+`DOCUMENTED_INTERVAL_START` and its `K + 1 hour` eligibility remains frozen.
 
 `P[t]` remains the BTC perpetual 1h bar close at `T - 1 ms`, and its future
 endpoint remains the bar close at `T + 24h - 1 ms`. The millisecond ticks are
@@ -358,6 +381,37 @@ last required label close: 2021-12-31 23:59:59.999 UTC
 last training origin:      2024-12-31 00:00 UTC
 last required label close: 2024-12-31 23:59:59.999 UTC
 ```
+
+### Final pre-2025 refit
+
+Only after the frozen 2022–2024 gate passes, refit the candidate retained by the C3
+retention graph and paired comparator B2 on the identical origin set: the retained
+candidate's point-in-time complete-case origins. B2 receives no larger sample even
+though it uses fewer features. The nominal boundary is:
+
+```text
+refit train start:          2020-09-01 00:00:00.000 UTC
+origin rule:                O + 24h <= 2025-01-01 00:00:00.000 UTC
+last eligible origin:       2024-12-31 00:00:00.000 UTC
+last required label close:  2024-12-31 23:59:59.999 UTC
+nominal origin count:       37969
+excluded tail count:        23
+excluded tail range:        2024-12-31 01:00 .. 2024-12-31 23:00 UTC
+```
+
+`37969` is the nominal count of hourly origins satisfying the purge inequality,
+not the realized eligible complete-case count. The latter is smaller and remains
+unknown until execution. Recompute the z-score means and population standard
+deviations on exactly those final refit rows; no fold standardization carries over.
+Target `k`, feature set, `ridge_lambda`, `ETA_CLAMP`, `MU_CLAMP`, maximum iterations,
+estimator entry point, and probability treatment remain unchanged. In particular,
+`k` stays the value frozen from the pre-2022 design set and is never recomputed.
+
+A failure emits terminal state `FINAL_FIT_FAILURE` under exactly the seven frozen
+C3 `fail_closed_causes`. It permits no tuning, feature change, lambda change,
+different estimator, or retry on different rows; it forbids the 2025 evaluation
+and cannot be reported as `DID_NOT_REPLICATE` because no 2025 score exists. It never
+drops a fold, year, or candidate from pooling.
 
 No post-test embargo is required for this anchored expanding-window design. A
 `2024-12-30 23:00` cutoff is wrong by one hour and is rejected.
@@ -647,8 +701,111 @@ hashes, parser compatibility, expected boundaries, and mechanical corruption.
 Forbidden: labels, feature distributions, model scores, conditional outcome
 inspection, or protocol adaptation. If the gate passes, run exactly one frozen 2025
 evaluation. Failure is reported as `DID_NOT_REPLICATE`; never redesign and retest on
-2025. The additional endpoint buffer and replication-gate details are `DEFERRED` to
-packet C4 and are not implemented here.
+2025.
+
+### 2026 target-only endpoint buffer
+
+The endpoint buffer supplies 24-hour label endpoints for the 23 calendar-2025
+origins from `2025-12-31 01:00:00.000 UTC` through
+`2025-12-31 23:00:00.000 UTC`. It is `SEALED` under the same allowed pre-gate checks
+and forbidden operations stated above. Its permitted series set has exactly one
+member: BTCUSDT perpetual traded-price klines, with role `target_only`. No 2026
+feature origin is scored, and no 2026 funding, OI, mark, index, native premium,
+Binance spot, Kraken, or ETH series is acquired, parsed, or joined.
+
+The exact permitted geometry is:
+
+```text
+calendar-2025 hourly origins supported: 8760
+buffer-dependent origins:              23
+required 1h bars:                       23
+first 1h open:                          2026-01-01 00:00:00.000 UTC
+last 1h open:                           2026-01-01 22:00:00.000 UTC
+first 1h close:                         2026-01-01 00:59:59.999 UTC
+last 1h close:                          2026-01-01 22:59:59.999 UTC
+required 1m rows:                       1380
+first 1m open:                          2026-01-01 00:00:00.000 UTC
+last 1m open:                           2026-01-01 22:59:00.000 UTC
+buffer end inclusive epoch-ms:          1767308399999
+refused 1h open epoch-ms:               1767308400000
+```
+
+Target-only status is derived rather than promised. Since
+`prediction_ts = T + 2 ms` and the join is strict, every eligible feature row for a
+2025 origin has `eligibility_ts <= T + 1 ms`; no 2026 row can therefore enter a
+2025 feature vector.
+
+After parsing and before aggregation, discard every 1m row whose open is outside
+`[2026-01-01 00:00:00.000, 2026-01-01 22:59:00.000] UTC` inclusive. Count and report
+discarded rows and never use them. Derive the 23 hourly bars with the frozen
+`multi_timeframe_aggregation`: every bar requires 60 contiguous complete minutes,
+has `close_time_ms = open + 3600000 - 1`, and has
+`nominal_available_ms = open + 3600000`. `IncompleteGroup` is a hard failure; no
+padding, interpolation, or short bar is permitted. Any 1h bar opening at or after
+`2026-01-01 23:00:00.000 UTC` must be refused. The buffer cannot widen for
+convenience. If a required bar is missing, the affected label is invalid and its
+origin is excluded as incomplete; no shorter horizon, nearest bar, or 1d bar may
+replace it.
+
+### One-year 2025 replication gate
+
+Compare the complete retained candidate with paired B2 on all point-in-time
+complete-case eligible calendar-2025 origins. The outcome is `REPLICATED` if and
+only if all five conditions hold:
+
+```text
+1. pooled BSS_B2(candidate) >= 0.02
+2. two-sided 95% bootstrap CI lower bound for (BS_B2 - BS_candidate) > 0
+3. abs(mean(p - y)) <= 0.02
+4. calibration slope is within the frozen C3 helper default band
+5. the calibration regression is defined and converges
+```
+
+Otherwise the single permitted evaluation returns `DID_NOT_REPLICATE`; there is no
+redesign, rescore, or second look. The multi-year criterion requiring at least two
+improving years is unattainable in one year and is dropped. The multi-year worst
+year `-0.02` condition is implied by criterion 1, and the yearly `0.04` bias
+condition is implied by criterion 3, so neither is restated. This reduction rejects
+Gemini's weaker `1.5% / 0.03 / 0.75–1.25` gate, GPT's `0.04` one-year bias bound,
+and Claude's arithmetically impossible literal reuse of all seven multi-year
+conditions.
+
+Inference reuses the frozen C2 bootstrap unchanged: `B = 20000`, `L = 168`
+non-circular clock hours, null-centred p-value, nearest-rank percentile interval,
+and fail-closed behaviour below 168 paired-valid observations. The single-year
+geometry is:
+
+```text
+H_2025:                       8760
+n_blocks = ceil(H/L):         53
+concatenated hours:           8904
+eligible block starts:        0 .. 8592
+distinct eligible starts:     8593
+CI lower rank at B = 20000:   500
+CI upper rank at B = 20000:   19500
+```
+
+The comparison identifiers are `REPLICATION_2025|M2_vs_B2`,
+`REPLICATION_2025|M2K_vs_B2`, `REPLICATION_2025|M3_vs_B2`, and
+`REPLICATION_2025|M4_vs_B2`; their 2025 streams are derived by the frozen C2 rule.
+Calibration reuses the frozen C3 Decimal fit, mandatory clamp, back-transform,
+raw-logit slope band, and six failure conditions. It uses `lambda = 0`, clamps
+probabilities to `[0.000000000001, 0.999999999999]` before the logarithm, and
+reports `slope = beta_z / sd_x` and
+`intercept = beta_0 - beta_z * mu_x / sd_x`. The band is read from
+`estimator_c3.calibration_slope_passes` defaults and applies to the raw-logit slope,
+never `beta_z`; criterion 5 passes only when none of the six frozen calibration
+failure conditions occurs. No new inference or tolerance is introduced.
+
+`REPLICATED` means only that the complete retained frozen model replicated
+aggregate probability-forecast improvement versus paired B2 in calendar 2025. It
+does not establish replication of an individual ETH or Kraken feature. A block
+claim requires its own frozen parent comparison to pass the same five criteria;
+the component chain is scored once as claim-specific diagnostics. Report eligible
+row count and percentage, exclusion reasons, and the longest missing run. There is
+no minimum coverage pass threshold by design, and the result applies only to
+candidate-complete timestamps. `FINAL_FIT_FAILURE` remains a distinct terminal
+state and is never conflated with `DID_NOT_REPLICATE`.
 
 ## 9. Acquisition audit references (A7–A10)
 
@@ -694,7 +851,7 @@ never be presented as a Protocol-v1 or Protocol-v1.1 correction.
 | --- | --- | --- | --- |
 | Bootstrap and inference | `IMPLEMENTED` | C2 | Packet C2 freezes the complete non-circular year-stratified 168-clock-hour moving-block bootstrap, null-centred p-value, nearest-rank percentile CI, exact SplitMix64 streams, 20,000 resamples, fail-closed rules, and synthetic golden fixtures. |
 | Estimator and optional-family contract | `IMPLEMENTED` | C3 | Packet C3 binds the committed exact-Decimal IRLS contract, both-class and calibration-failure rules, `M2K` plus the three fixed optional hypotheses under ordinary Holm across all three, and labels optional-block 2022–2024 results as selection evidence rather than independent replication. |
-| Timestamp, refit, buffer, and replication contract | `DEFERRED` | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed BTC target-only endpoint buffer through `2026-01-01 22:59:59.999 UTC` for all 8,760 calendar-2025 hourly origins under the same controls, and the exact one-year 2025 `REPLICATED` gate. |
+| Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed BTC target-only endpoint buffer through `2026-01-01 22:59:59.999 UTC` for all 8,760 calendar-2025 hourly origins under the same controls, and the exact one-year 2025 `REPLICATED` gate. |
 | Coverage and final freeze | `DEFERRED` | C5 | Coverage/exclusion reporting and claim scope per candidate; synchronization of spec, YAML, and fixture; new semantic SHA-256; and repeated tamper, future-mutation, boundary, solver, bootstrap, and 2025-seal tests. |
 
 Standing rejections carried forward from the audit are unchanged: no signed-return
