@@ -47,6 +47,11 @@ V11_SPEC_PATH = (
 FROZEN_ESTIMATOR_PATH = REPO_ROOT / "src/quantara/training_metrics_logistic.py"
 GOLDEN_PATH = REPO_ROOT / "tests/fixtures/estimator_c3_golden.json"
 PACKET_PARENT = "7abce82"
+# Git blob object id of the estimator as it stood at PACKET_PARENT. Pinned as a
+# literal so the freeze stays provable in shallow CI clones, where PACKET_PARENT
+# is not present in the object store. The id is content-addressed and computed
+# after the CRLF clean filter, so it matches on Windows and POSIX checkouts.
+PACKET_PARENT_ESTIMATOR_BLOB = "f2a0a8111d4231105b45b7eb22486965495c0d1c"
 
 KRAKEN_COLUMNS = [
     "kraken_ret_1h",
@@ -335,19 +340,25 @@ def test_frozen_estimator_is_byte_identical_to_packet_parent() -> None:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    expected = subprocess.run(
+    assert FROZEN_ESTIMATOR_PATH.is_file()
+    assert current == PACKET_PARENT_ESTIMATOR_BLOB
+    parent_lookup = subprocess.run(
         [
             "git",
             "rev-parse",
             f"{PACKET_PARENT}:src/quantara/training_metrics_logistic.py",
         ],
         cwd=REPO_ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
-    ).stdout.strip()
-    assert FROZEN_ESTIMATOR_PATH.is_file()
-    assert current == expected
+    )
+    if parent_lookup.returncode != 0:
+        pytest.skip(
+            f"packet parent {PACKET_PARENT} is unreachable in this clone; "
+            "the pinned blob assertion above already proves the freeze"
+        )
+    assert parent_lookup.stdout.strip() == PACKET_PARENT_ESTIMATOR_BLOB
 
 
 def test_all_ladder_widths_fit_and_match_recursive_yaml_columns() -> None:
