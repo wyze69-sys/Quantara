@@ -207,10 +207,92 @@ def test_v11_yaml_has_no_floats_duplicate_top_level_keys_or_missing_deferred_pac
     assert set(deferred) == {"C2", "C3", "C4", "C5"}
     assert deferred["C2"]["owner_packet"] == "C2"
     assert deferred["C2"]["status"] == "IMPLEMENTED_PACKET_C2"
-    for packet in ("C3", "C4", "C5"):
+    assert deferred["C3"]["owner_packet"] == "C3"
+    assert deferred["C3"]["status"] == "IMPLEMENTED_PACKET_C3"
+    for packet in ("C4", "C5"):
         item = deferred[packet]
         assert item["owner_packet"] == packet
         assert item["status"] == "DEFERRED"
+
+
+def test_v11_estimator_and_optional_family_are_bound_by_packet_c3() -> None:
+    document = _load_v11()
+    binding = document["estimator_binding"]
+    assert binding["implementation"] == "src/quantara/training_metrics_logistic.py"
+    assert binding["entry_point"] == "fit_logistic_irls"
+    assert binding["model_l2_lambda"] == "1"
+    assert binding["maximum_updates"] == 50
+    assert binding["eta_clamp"] == "24"
+    assert binding["probability_clamp"] == "0.000000000001"
+
+    assert document["fail_closed_causes"] == [
+        "single_class_training_outcome",
+        "constant_train_feature",
+        "zero_pivot",
+        "non_convergence",
+        "binary_float_input",
+        "calibration_single_class_outcome",
+        "calibration_degenerate_logit",
+    ]
+    calibration = document["calibration"]
+    assert calibration["lambda"] == "0"
+    assert set(calibration["back_transform"]) == {"slope", "intercept"}
+    assert len(calibration["failure_conditions"]) == 6
+
+    m2k = document["model_ladder"]["M2K"]
+    assert m2k["base"] == "M2"
+    assert m2k["adds"] == [
+        "kraken_ret_1h",
+        "kraken_rv_24h",
+        "binance_kraken_ret_divergence_1h",
+        "binance_kraken_cross_quote_log_ratio",
+    ]
+
+    optional = document["optional_family_retention"]
+    assert optional["holm_test_count"] == 3
+    assert optional["successor_repair_status"] == "IMPLEMENTED_PACKET_C3"
+    assert optional["compute_all_three_before_deciding"] is True
+
+    assert document["success_gate"]["criteria"] == [
+        {
+            "id": 1,
+            "rule": "pooled BSS_B2 >= 0.02",
+            "threshold": "0.02",
+        },
+        {
+            "id": 2,
+            "rule": (
+                "bootstrap 95% lower bound for BS_B2 - BS_candidate is greater "
+                "than zero"
+            ),
+        },
+        {
+            "id": 3,
+            "rule": "positive Brier improvement in at least two validation years",
+            "min_years": 2,
+        },
+        {
+            "id": 4,
+            "rule": "no year has BSS_B2 < -0.02",
+            "threshold": "-0.02",
+        },
+        {
+            "id": 5,
+            "rule": "pooled absolute probability bias is at most 0.02",
+            "threshold": "0.02",
+        },
+        {
+            "id": 6,
+            "rule": "pooled calibration slope is between 0.8 and 1.2",
+            "lower": "0.8",
+            "upper": "1.2",
+        },
+        {
+            "id": 7,
+            "rule": "yearly absolute probability bias is at most 0.04",
+            "threshold": "0.04",
+        },
+    ]
 
 
 def test_v11_bootstrap_b4_contract_is_frozen_by_packet_c2() -> None:

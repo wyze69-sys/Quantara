@@ -108,10 +108,22 @@ B1 — logistic model using causal log(RV_1d)
 B2 — HAR-style logistic model using log(RV_1d), log(RV_7d), log(RV_30d)
 M1 — B2 + BTC funding_24h_sum + BTC dlog_oi_24h + BTC native_premium_1h_mean
 M2 — M1 + log(BTC perpetual close / Binance BTC spot close)
+M2K — M2 + frozen four-column Kraken block
 M3 — M2 + frozen ETH family, excluding ETH OI
 M3b — M3 + ETH dlog_oi_24h on the identical post-2021-12-01 common sample
 M4 — M3 + frozen Kraken cross-venue family
 ```
+
+| Model | Frozen width |
+| --- | ---: |
+| B1 | 1 |
+| B2 | 3 |
+| M1 | 6 |
+| M2 | 7 |
+| M2K | 11 |
+| M3 | 12 |
+| M3b | 13 |
+| M4 | 16 |
 
 `RV_H = sqrt(sum of squared eligible hourly log returns over H hours)` for
 H = 24, 168, 720. A zero or incomplete window is invalid; no epsilon replacement
@@ -135,6 +147,11 @@ M4 adds exactly:
 - `log(Binance BTCUSDT spot close / Kraken XBT/USD close)` with no invented
   USD/USDT FX conversion. The feature is explicitly a cross-venue, cross-quote
   dislocation and may include USDT-versus-USD effects.
+
+M2K adds the same frozen four-column Kraken block to M2: `kraken_ret_1h`,
+`kraken_rv_24h`, `binance_kraken_ret_divergence_1h`, and
+`binance_kraken_cross_quote_log_ratio`. It adds no feature and performs no
+transformation search beyond that already frozen block.
 
 At information cutoff `T`, exact feature formulas are:
 
@@ -166,13 +183,56 @@ Constructed `mark/index - 1` and `mark/spot - 1` are diagnostics only and never 
 M1-M4. Mark and index are canonicalized because they verify source integrity and
 support diagnostics, not because they earn independent model stages.
 
-All probability models use the repository's exact-Decimal logistic-IRLS discipline
-with these frozen constants: L2 penalty `lambda = 1`, unpenalized intercept,
-train-window z-score standardization, `max_iterations = 50`, convergence tolerance
-`0.000000000001`, eta clamp 24, probability clamp `0.000000000001`, and Gaussian
-elimination with partial pivoting. There is no regularization search, no post-hoc
-probability calibration, no feature clipping, no tree model, and no model family
-search in Protocol v1.1. Calibration is evaluated on raw logistic probabilities.
+Protocol v1.1 binds every probability-model fit to the committed exact-Decimal
+implementation `src/quantara/training_metrics_logistic.py`, entry point
+`fit_logistic_irls`. It does not define or permit a second solver. The bound
+contract is:
+
+```text
+Decimal precision:         50
+rounding:                  ROUND_HALF_EVEN
+storage quantum:           0.000000000000000001
+standardization:           train-window z-score, population denominator n
+initial coefficients:      all zero
+model L2 lambda:           1
+intercept:                 unpenalized
+convergence:               every abs(beta_new - beta_old) < 0.000000000001
+maximum updates:           50
+linear solver:             Gaussian elimination with partial pivoting
+pivot failure:             exact-zero pivot, fail closed
+constant train feature:    exact-zero train std, fail closed
+non-convergence:           fail closed
+binary float inputs:       forbidden
+eta clamp:                 24
+probability clamp:         0.000000000001
+```
+
+Every training outcome supplied to a fit must contain both classes. The C3 binding
+checks this before calling `fit_logistic_irls`; a single-class window fails the
+affected candidate comparison closed. Any fit failure fails the affected candidate
+comparison and never silently drops a fold, year, or candidate from pooling. The
+seven named fail-closed causes are exactly:
+
+```text
+single_class_training_outcome
+constant_train_feature
+zero_pivot
+non_convergence
+binary_float_input
+calibration_single_class_outcome
+calibration_degenerate_logit
+```
+
+The eta clamp at 24 is a recorded diagnostic, not a model-fit failure. Every
+positive `eta_clamp_count` is reported alongside the fit result. For calibration
+only, a positive count fails the calibration gate as
+`calibration_degenerate_logit`, because a clamped calibration linear predictor
+means the reported slope is not the fitted slope over the observed logit range.
+There is no coefficient-magnitude separation threshold.
+
+There is no regularization search, no post-hoc probability calibration, no feature
+clipping, no tree model, and no model family search in Protocol v1.1. Calibration
+is evaluated on raw logistic probabilities.
 
 For every paired candidate comparison, refit the comparator on exactly the same
 training rows and score exactly the same test timestamps as the candidate. A larger
@@ -314,11 +374,31 @@ loss_improvement_i = loss_B2_i - loss_model_i
 probability_bias = mean(p-y)
 ```
 
-Calibration intercept and slope are obtained diagnostically by unpenalized logistic
-regression of `y` on `logit(p)` with an intercept, after clamping only for the
-logarithm to `[0.000000000001, 0.999999999999]`. The fitted intercept is calibration
-intercept and the fitted coefficient is calibration slope. These calculations do
-not alter predictions.
+Calibration is an unpenalized two-parameter Decimal logistic fit of `y` on
+`x = logit(p)` with an intercept, computed through the same committed
+`fit_logistic_irls` implementation with `lambda = 0`. Before taking the logarithm,
+`clamp_mu` mandatorily clamps every probability to
+`[0.000000000001, 0.999999999999]`:
+
+```text
+x_i                   = ln(p_i / (1 - p_i))
+calibration_slope     = beta_z / sd_x
+calibration_intercept = beta_0 - beta_z * mu_x / sd_x
+```
+
+Here `beta_0` and `beta_z` are the fitted intercept and standardized-logit
+coefficient, and `mu_x` and `sd_x` are the train-window mean and population
+standard deviation returned by the bound solver. The success-gate band
+`[0.8, 1.2]` applies to the back-transformed raw-logit `calibration_slope`, never
+to `beta_z`.
+
+Calibration fails closed on: a single-class calibration outcome; zero-variance
+`logit(p)`, which surfaces as exact-zero standard deviation or zero pivot; an
+undefined logit, which is reachable only if the mandatory clamp is bypassed; a
+singular solve, which surfaces as zero pivot; separation, identified by positive
+`eta_clamp_count`; or non-convergence within 50 updates. Calibration is a diagnostic
+of predictions. These calculations do not alter predictions, refit a candidate, or
+enter the pooled Brier estimand.
 
 ### Frozen Protocol-v1.1 B4 bootstrap inference
 
@@ -372,7 +452,7 @@ Pooling by year count or nominal-hour count is forbidden.
 Protocol v1.1 freezes `B = 20000` resamples, superseding Protocol v1's 2,000. This
 increase is a disclosed successor-version design change and inferential
 strengthening, not completion of an omitted implementation detail. At the smallest
-first-step Holm threshold (the family definition remains `DEFERRED` to C3), with
+first-step Holm threshold across the three-test family, with
 `p = 0.05/3` and `z = 1.96`, the normal-approximation two-sided 95% Monte Carlo
 half-width `z * sqrt(p(1-p)/B)` is:
 
@@ -488,21 +568,77 @@ diagnostics. AUC cannot pass the gate.
 
 M1 and M2 are reported as the frozen BTC core ladder; M2 is the mandatory primary
 candidate. M2 must pass the complete gate versus paired B2 before 2025 can unlock.
-Starting from M2, evaluate the ETH block and then the Kraken block as the only
-optional additions. Retain an optional block only when pooled relative Brier
-improvement versus the currently retained model is at least 1%, its unadjusted
-two-sided 95% paired-bootstrap interval has a lower bound above zero, its one-sided
-bootstrap p-value passes Holm at family-wise alpha 0.05 across these two
-optional-family tests, at least two years improve, and no year is worse than -2%.
+
+The optional family has exactly three fixed hypotheses, all computed before any
+retention decision:
+
+```text
+H_ETH:   M3  vs M2   comparison_id "H_ETH|M3_vs_M2"
+H_K_M2:  M2K vs M2   comparison_id "H_K_M2|M2K_vs_M2"
+H_K_M3:  M4  vs M3   comparison_id "H_K_M3|M4_vs_M3"
+```
+
+Each uses the frozen C2 bootstrap and its `comparison_id` as the stream-derivation
+input. All three p-values are computed even when the realized retention path can
+use only two of them. An unused branch remains multiplicity-controlled but has no
+retention authority on that path.
+
+Ordinary step-down Holm controls the family-wise alpha `1/20` across all three.
+Sort the observed one-sided bootstrap p-values ascending and assign thresholds by
+sorted rank, never by model name:
+
+```text
+p_(1) <= 1/60
+p_(2) <= 1/40
+p_(3) <= 1/20
+```
+
+Reject in order while the ranked p-value is at most its exact rational threshold;
+stop at the first failure and accept every remaining null. Exact
+`fractions.Fraction` comparisons are mandatory. Ties follow the frozen hypothesis
+order `[H_ETH, H_K_M2, H_K_M3]`. This three-test family is a disclosed
+successor-version correction of the draft's two-test family.
+
+At `B = 20000`, the minimum attainable p-value `1/20001` clears `1/60`. The largest
+exceedance count that clears the first step is 332:
+`p(332) = 333/20001 = 111/6667 <= 1/60`, while
+`p(333) = 334/20001 > 1/60`.
+
+Each hypothesis passes its retention gate only when all five conditions hold:
+
+1. Pooled relative Brier improvement versus the currently retained model is at
+   least `0.01`.
+2. The unadjusted two-sided 95% paired-bootstrap CI lower bound is greater than
+   zero.
+3. Its one-sided bootstrap p-value passes ordinary Holm across the three-test
+   family.
+4. At least two validation years improve.
+5. No validation year is worse than `-0.02`.
+
+The retention graph is fixed:
+
+```text
+if H_ETH passes its gate:
+    retain M3
+    retain M4 instead only if H_K_M3 also passes its gate
+else:
+    retain M2
+    retain M2K instead only if H_K_M2 also passes its gate
+```
+
 If ETH is rejected, compare Kraken against M2, not against an ETH-containing model.
 A rejected block receives no alternative transformation search. M3b/ETH OI is a
-secondary diagnostic and can never alter the retained candidate. The resulting
-candidate must still pass the complete 2%-versus-B2 and calibration gate before
-2025.
+secondary diagnostic on the identical post-2021-12-01 common sample and can never
+alter the retained candidate. The retained candidate must still pass the complete
+seven-criterion `success_gate` versus paired B2 before 2025 unlocks.
 
-The repaired optional-family decision contract is `DEFERRED` to packet C3; this
-packet does not add `M2K`, hypotheses, estimator binding, calibration-failure rules,
-or selection-evidence labelling.
+Every optional-block result computed on 2022–2024 is classified
+`selection_evidence`, not independent replication, because the same validation
+data choose among the candidates and therefore condition the improvement estimate
+on that selection. The only independent replication source is the sealed 2025
+evaluation. Any retained optional-block claim must say
+"selected on 2022–2024 development evidence". The preregistered mandatory primary
+candidate M2 is unaffected and its 2022–2024 gate keeps its existing status.
 
 ## 8. Sealed 2025
 
@@ -557,7 +693,7 @@ never be presented as a Protocol-v1 or Protocol-v1.1 correction.
 | Item | Status | Owning packet | Deferred scope |
 | --- | --- | --- | --- |
 | Bootstrap and inference | `IMPLEMENTED` | C2 | Packet C2 freezes the complete non-circular year-stratified 168-clock-hour moving-block bootstrap, null-centred p-value, nearest-rank percentile CI, exact SplitMix64 streams, 20,000 resamples, fail-closed rules, and synthetic golden fixtures. |
-| Estimator and optional-family contract | `DEFERRED` | C3 | Binding to the committed exact-Decimal IRLS contract, both-class and calibration-failure rules, `M2K` plus the three fixed optional hypotheses under ordinary Holm across all three, and labelling optional-block 2022–2024 results as selection evidence rather than independent replication. |
+| Estimator and optional-family contract | `IMPLEMENTED` | C3 | Packet C3 binds the committed exact-Decimal IRLS contract, both-class and calibration-failure rules, `M2K` plus the three fixed optional hypotheses under ordinary Holm across all three, and labels optional-block 2022–2024 results as selection evidence rather than independent replication. |
 | Timestamp, refit, buffer, and replication contract | `DEFERRED` | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed BTC target-only endpoint buffer through `2026-01-01 22:59:59.999 UTC` for all 8,760 calendar-2025 hourly origins under the same controls, and the exact one-year 2025 `REPLICATED` gate. |
 | Coverage and final freeze | `DEFERRED` | C5 | Coverage/exclusion reporting and claim scope per candidate; synchronization of spec, YAML, and fixture; new semantic SHA-256; and repeated tamper, future-mutation, boundary, solver, bootstrap, and 2025-seal tests. |
 

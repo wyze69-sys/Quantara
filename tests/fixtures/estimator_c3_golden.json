@@ -1,0 +1,81 @@
+{
+  "calibration": {
+    "beta_0": "0.432157834608377550",
+    "beta_z": "0.967673090434496607",
+    "intercept": "0.432157834608377550",
+    "mu_x": "0.000000000000000000",
+    "sd_x": "1.201528025609381324",
+    "slope": "0.805368722001902493"
+  },
+  "generator": {
+    "bootstrap_resamples": 200,
+    "description": "SplitMix64(derive_stream_seed(comparison_id, 2024)).below(3) sets the synthetic exceedance count"
+  },
+  "holm_steps": [
+    {
+      "hypothesis": "H_ETH",
+      "p_value": "1/201",
+      "rank": 1,
+      "rejected": true,
+      "threshold": "1/60"
+    },
+    {
+      "hypothesis": "H_K_M2",
+      "p_value": "1/201",
+      "rank": 2,
+      "rejected": true,
+      "threshold": "1/40"
+    },
+    {
+      "hypothesis": "H_K_M3",
+      "p_value": "2/201",
+      "rank": 3,
+      "rejected": true,
+      "threshold": "1/20"
+    }
+  ],
+  "hypotheses": {
+    "H_ETH": {
+      "c2_seed_2024": 18054714604253578655,
+      "comparison_id": "H_ETH|M3_vs_M2",
+      "criteria": {
+        "at_least_two_validation_years_improve": true,
+        "ci_lower_bound_above_zero": true,
+        "holm_rejected": true,
+        "no_validation_year_worse_than_minus_0_02": true,
+        "pooled_relative_brier_improvement_at_least_0_01": true
+      },
+      "p_value": "1/201",
+      "result_class": "selection_evidence"
+    },
+    "H_K_M2": {
+      "c2_seed_2024": 1087225728007236760,
+      "comparison_id": "H_K_M2|M2K_vs_M2",
+      "criteria": {
+        "at_least_two_validation_years_improve": true,
+        "ci_lower_bound_above_zero": true,
+        "holm_rejected": true,
+        "no_validation_year_worse_than_minus_0_02": true,
+        "pooled_relative_brier_improvement_at_least_0_01": true
+      },
+      "p_value": "1/201",
+      "result_class": "selection_evidence"
+    },
+    "H_K_M3": {
+      "c2_seed_2024": 7582897174145650624,
+      "comparison_id": "H_K_M3|M4_vs_M3",
+      "criteria": {
+        "at_least_two_validation_years_improve": true,
+        "ci_lower_bound_above_zero": true,
+        "holm_rejected": true,
+        "no_validation_year_worse_than_minus_0_02": true,
+        "pooled_relative_brier_improvement_at_least_0_01": true
+      },
+      "p_value": "2/201",
+      "result_class": "selection_evidence"
+    }
+  },
+  "result_class": "selection_evidence",
+  "retained_model": "M4",
+  "unlocks_2025": false
+}
