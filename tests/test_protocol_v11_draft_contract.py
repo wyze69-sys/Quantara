@@ -368,12 +368,19 @@ def test_v11_c4_contract_literals_and_terminal_states_are_exact() -> None:
     assert buffer_contract["required_1m_row_count"] == 1380
     assert buffer_contract["buffer_end_inclusive_ms"] == 1767308399999
     assert buffer_contract["refused_bar_open_ms"] == 1767308400000
-    assert buffer_contract["allowed_pre_gate_checks"] == document["sealed_2025"]["allowed_pre_gate_checks"]
-    assert buffer_contract["forbidden_operations"] == document["sealed_2025"]["forbidden_operations"]
+    sealed = document["sealed_2025"]
+    assert buffer_contract["allowed_pre_gate_checks"] == sealed["allowed_pre_gate_checks"]
+    assert buffer_contract["forbidden_operations"] == sealed["forbidden_operations"]
 
     gate = document["replication_gate_2025"]
     assert [criterion["id"] for criterion in gate["criteria"]] == [1, 2, 3, 4, 5]
-    assert [criterion["threshold"] for criterion in gate["criteria"]] == ["0.02", "> 0", "0.02", "frozen C3 defaults", "true"]
+    assert [criterion["threshold"] for criterion in gate["criteria"]] == [
+        "0.02",
+        "> 0",
+        "0.02",
+        "frozen C3 defaults",
+        "true",
+    ]
     assert gate["outcome_on_failure"] == "DID_NOT_REPLICATE"
     assert gate["run_count_permitted"] == 1
     assert gate["bootstrap_geometry"]["H_2025"] == 8760
@@ -417,5 +424,7 @@ def test_v11_c4_contract_literals_and_terminal_states_are_exact() -> None:
 
 def test_v11_c4_spec_status_is_implemented_while_c5_stays_deferred() -> None:
     spec_text = V11_SPEC_PATH.read_text(encoding="utf-8")
-    assert "| Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 |" in spec_text
+    assert (
+        "| Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 |" in spec_text
+    )
     assert "| Coverage and final freeze | `DEFERRED` | C5 |" in spec_text
