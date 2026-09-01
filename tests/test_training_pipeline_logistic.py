@@ -421,7 +421,12 @@ def test_logistic_kill_failure_exits_four_and_publishes_nothing(
     }
     diagnostics = attempt["diagnostics"]
     assert diagnostics[0] == "kill_criteria_failed"
-    assert "k1_directional_accuracy" in diagnostics[1]
+    assert diagnostics[1] == "failed_criteria="
+    assert "k1_directional_accuracy:PASS" in diagnostics[2]
+    assert diagnostics[3] == "criterion_overall=PASS"
+    assert diagnostics[4] == (
+        "historical_publication_gate_mismatches=fixed_2024_accuracy_reference"
+    )
     for prefix in (
         "k1_directional_accuracy_mean=",
         "k2_direction_ic_mean=",
@@ -431,6 +436,12 @@ def test_logistic_kill_failure_exits_four_and_publishes_nothing(
         assert any(item.startswith(prefix) for item in diagnostics), prefix
     assert any(
         item.startswith("k1_directional_accuracy_mean=")
+        and "same_sample_majority_class_train_window=" in item
+        and "passed=true" in item
+        for item in diagnostics
+    )
+    assert any(
+        item.startswith("historical_k1_2024_fixed_threshold_mean=")
         and "min=0.990000000000000000" in item
         and "passed=false" in item
         for item in diagnostics

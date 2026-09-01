@@ -19,6 +19,7 @@ from quantara.training_metrics_logistic import (
     climatology_probability,
     direction_ic,
     direction_ic_with_definition,
+    evaluate_criterion_outcomes,
     evaluate_kill_criteria,
     fit_logistic_irls,
     log_loss,
@@ -228,7 +229,13 @@ def test_single_class_fold_ic_is_zero_and_flagged_undefined() -> None:
     assert value == Decimal(1)
 
 
-def _kill_block(accuracy: str, ic: str, loss: str, score: str) -> dict:
+def _kill_inputs(
+    accuracy: str,
+    ic: str,
+    loss: str,
+    score: str,
+    majority_accuracy: str = "0.500000000000000000",
+) -> tuple[list[dict], dict]:
     summaries = [
         {"metric": "directional_accuracy", "equal_weight_mean": accuracy},
         {"metric": "log_loss", "equal_weight_mean": loss},
@@ -238,7 +245,7 @@ def _kill_block(accuracy: str, ic: str, loss: str, score: str) -> dict:
     ]
     baselines = {
         "majority_class_train_window": {
-            "directional_accuracy": {"equal_weight_mean": "0.500000000000000000"}
+            "directional_accuracy": {"equal_weight_mean": majority_accuracy}
         },
         "sign_f_ret_1": {
             "directional_accuracy": {"equal_weight_mean": "0.500000000000000000"}
@@ -249,7 +256,40 @@ def _kill_block(accuracy: str, ic: str, loss: str, score: str) -> dict:
             "brier": {"equal_weight_mean": "0.250000000000000000"},
         },
     }
+    return summaries, baselines
+
+
+def _kill_block(accuracy: str, ic: str, loss: str, score: str) -> dict:
+    summaries, baselines = _kill_inputs(accuracy, ic, loss, score)
     return evaluate_kill_criteria(summaries, baselines)
+
+
+def test_independent_outcomes_keep_k1_pass_when_another_criterion_fails() -> None:
+    summaries, baselines = _kill_inputs(
+        accuracy="0.518584146160487831",
+        ic="-0.036035220107766154",
+        loss="0.703652372374689632",
+        score="0.254166614144309991",
+        majority_accuracy="0.507449088689223463",
+    )
+
+    # The immutable historical gate used 2024's fixed K1 threshold and therefore
+    # remains reproducible, but it is not the cross-year criterion report.
+    historical = evaluate_kill_criteria(summaries, baselines)
+    assert historical["results"]["k1_directional_accuracy"] is False
+
+    outcomes = evaluate_criterion_outcomes(summaries, baselines)
+    assert outcomes["results"] == {
+        "k1_directional_accuracy": True,
+        "k2_direction_ic": False,
+        "k3_log_loss": True,
+        "k4_brier": False,
+    }
+    assert outcomes["all_passed"] is False
+    assert outcomes["references"]["k1_directional_accuracy"] == {
+        "kind": "same_sample_majority_class_train_window",
+        "value": "0.507449088689223463",
+    }
 
 
 def test_kill_criteria_boundaries_pass_and_fail_exactly() -> None:
