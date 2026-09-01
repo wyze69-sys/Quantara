@@ -860,9 +860,11 @@ PYTHONPATH="$PWD/src" D:/PROJECT/Quantara/.venv/Scripts/python.exe -m pytest -q 
 # Full suite.
 PYTHONPATH="$PWD/src" D:/PROJECT/Quantara/.venv/Scripts/python.exe -m pytest -q
 
-# Scoped lint.
-D:/PROJECT/Quantara/.venv/Scripts/python.exe -m ruff check \
-  src/quantara/replication_c4.py tests/test_replication_c4.py
+# Repository-wide lint. This MUST match the CI gate exactly. A scoped lint over
+# only the new files is NOT sufficient: it passes while an *edited* file
+# regresses, which is exactly how C4 shipped 4 over-length lines in
+# tests/test_protocol_v11_draft_contract.py past a clean scoped run.
+D:/PROJECT/Quantara/.venv/Scripts/python.exe -m ruff check src tests benchmarks
 
 # Whitespace hygiene.
 git diff --check

@@ -48,6 +48,12 @@ Only C5 may compute and freeze the Protocol v1.1 semantic hash.
 6. Each packet: dedicated branch/worktree, tests first with real red output, focused
    gate, local commit only, stop for Hermes audit.
 7. Only Hermes may mark a packet `ACCEPTED`.
+8. Every packet gate list must include the **repository-wide** lint that CI runs,
+   `ruff check src tests benchmarks`, not a lint scoped to the packet's new files.
+   A scoped lint passes while a file the packet *edited* regresses. C4 shipped 4
+   over-length lines in `tests/test_protocol_v11_draft_contract.py` past a clean
+   scoped run; the audit caught it before merge. Local gate lists mirror CI or they
+   are not gates.
 
 ## Packet plans
 
