@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 2: Canonical Data Platform and BTC Funding Reference Slice
 
-**Status:** UNBLOCKED 2026-09-03 — Stage 1 P00–P02 accepted; Protocol v1 frozen at semantic SHA-256 `91457d3f…` and Protocol v1.1 frozen at `12dd3445…` (PR #10, merge `566f4c2`). First action: D00 only.
+**Status:** UNBLOCKED 2026-09-03 — D00 `ACCEPTED` and merged (PR #11, merge commit `8e1d288`). Protocol v1 frozen at `91457d3f…`, Protocol v1.1 frozen at `12dd3445…` (PR #10, `566f4c2`). Next action: D01 only.
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -360,4 +360,4 @@ remains unfinished. A green unit test alone is never COMPLETE.
 
 ## First action
 
-After Stage 1 P00–P02 are accepted, execute **D00 only** and stop for Hermes audit.
+After D00 is accepted, execute **D01 only** and stop for Hermes audit.
