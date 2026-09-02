@@ -204,7 +204,7 @@ def test_v11_yaml_has_no_floats_duplicate_top_level_keys_or_missing_deferred_pac
     assert len(keys) == len(set(keys)), "duplicate top-level YAML mapping key"
 
     deferred = document["deferred_change_set"]
-    assert set(deferred) == {"C2", "C3", "C4", "C5"}
+    assert set(deferred) == {"C2", "C3", "C4", "C5a", "C5"}
     assert deferred["C2"]["owner_packet"] == "C2"
     assert deferred["C2"]["status"] == "IMPLEMENTED_PACKET_C2"
     assert deferred["C3"]["owner_packet"] == "C3"
@@ -212,6 +212,10 @@ def test_v11_yaml_has_no_floats_duplicate_top_level_keys_or_missing_deferred_pac
     assert deferred["C4"] == {
         "owner_packet": "C4",
         "status": "IMPLEMENTED_PACKET_C4",
+    }
+    assert deferred["C5a"] == {
+        "owner_packet": "C5a",
+        "status": "IMPLEMENTED_PACKET_C5A",
     }
     assert deferred["C5"] == {"owner_packet": "C5", "status": "DEFERRED"}
 
@@ -335,7 +339,7 @@ def test_v11_spec_records_intentional_lineage_and_future_experiment_boundary() -
 
 def test_v11_c4_contract_literals_and_terminal_states_are_exact() -> None:
     document = _load_v11()
-    assert len(document) == 46
+    assert len(document) == 49
     assert document["protocol_status"] == "DRAFT_UNFROZEN_SUCCESSOR"
     assert document["frozen_semantic_sha256"] == UNASSIGNED_V11_HASH
 
@@ -428,3 +432,57 @@ def test_v11_c4_spec_status_is_implemented_while_c5_stays_deferred() -> None:
         "| Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 |" in spec_text
     )
     assert "| Coverage and final freeze | `DEFERRED` | C5 |" in spec_text
+    assert "| Loader, hash scope, and coverage/claim contract | `IMPLEMENTED` | C5a |" in spec_text
+
+
+def test_v11_exclusions_preserve_families_and_intentionally_supersede_v1_rule() -> None:
+    v1 = _load_yaml(V1_YAML_PATH)
+    v11 = _load_v11()
+    v1_exclusions = v1["exclusions"]
+    v11_exclusions = v11["exclusions"]
+
+    assert len(v1_exclusions["forbidden_families"]) == 11
+    assert v11_exclusions["forbidden_families"] == v1_exclusions["forbidden_families"]
+    assert len(v1_exclusions["rules"]) == len(v11_exclusions["rules"]) == 2
+    assert v11_exclusions["rules"] != v1_exclusions["rules"]
+    assert "data-slice-013" in v11_exclusions["rules"][1]
+    assert "Protocol v1.1" in v11_exclusions["rules"][1]
+
+
+def test_v11_standing_rejections_are_closed_and_absent_from_v1() -> None:
+    v1 = _load_yaml(V1_YAML_PATH)
+    v11 = _load_v11()
+    assert "standing_rejections" not in v1
+    assert v11["standing_rejections"] == {
+        "signed_return_replacement": "REJECTED",
+        "sigma_denominator_floor": "REJECTED",
+        "arbitrary_98_percent_coverage_cutoff": "REJECTED",
+        "new_feature_search": "REJECTED",
+    }
+
+
+def test_v11_coverage_contract_generalizes_c4_without_adding_a_threshold() -> None:
+    document = _load_v11()
+    coverage = document["coverage_and_claim_scope"]
+    gate_coverage = document["replication_gate_2025"]["coverage_reporting"]
+    required = [
+        "candidate_eligible_rows",
+        "candidate_eligible_percentage",
+        "exclusion_reasons",
+        "longest_missing_run",
+    ]
+
+    assert coverage["required_per_candidate"] == required
+    assert coverage["required_granularity"] == ["by_year", "pooled"]
+    assert coverage["minimum_coverage_threshold"] == "NONE_BY_DESIGN"
+    assert gate_coverage["general_contract"] == "coverage_and_claim_scope"
+    assert gate_coverage["required"] == required
+    assert gate_coverage["minimum_coverage_threshold"] == "NONE_BY_DESIGN"
+    assert gate_coverage["applicability"] == "candidate-complete timestamps only"
+
+
+def test_v11_has_only_the_predecessor_digest_and_no_c5_fixture() -> None:
+    spec_text = V11_SPEC_PATH.read_text(encoding="utf-8")
+    yaml_text = V11_YAML_PATH.read_text(encoding="utf-8")
+    assert set(HEX_64_RE.findall(spec_text + "\n" + yaml_text)) == {PREDECESSOR_SHA256}
+    assert not (REPO_ROOT / "tests/fixtures/protocol_v1_1_expected.json").exists()
