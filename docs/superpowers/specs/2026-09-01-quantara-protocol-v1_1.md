@@ -694,6 +694,48 @@ evaluation. Any retained optional-block claim must say
 "selected on 2022–2024 development evidence". The preregistered mandatory primary
 candidate M2 is unaffected and its 2022–2024 gate keeps its existing status.
 
+### Coverage and claim scope
+
+Every candidate in the frozen ladder and every optional-family hypothesis must
+report coverage for every scored period, both by year and pooled. Each report
+contains `candidate_eligible_rows`, `candidate_eligible_percentage`,
+`exclusion_reasons`, and `longest_missing_run`. Coverage is computed on the paired
+sample actually scored, never on a larger comparator sample, and claims apply only
+to candidate-complete timestamps. The pooled percentage is computed from pooled
+eligible and nominal counts rather than by averaging yearly percentages.
+
+The exclusion vocabulary is closed and ordered:
+
+1. `missing_native_interval`
+2. `incomplete_feature_window`
+3. `funding_cadence_incomplete`
+4. `oi_snapshot_gap`
+5. `invalid_label_endpoint`
+6. `buffer_bar_missing`
+7. `pre_archive_period`
+8. `eth_oi_pre_2021_12_01`
+9. `same_key_conflict`
+
+Each excluded row receives exactly one reason: the first applicable member in that
+order. Unknown reasons fail closed, and reason counts must equal the total number
+of ineligible nominal-grid positions. These reasons trace only to the already
+frozen missing/duplicate, feature-window, target-buffer, and ETH-OI clauses; they
+introduce no new exclusion physics.
+
+`longest_missing_run` is the greatest number of consecutive nominal hourly origin
+positions that are not candidate-eligible because they are missing, invalid, or
+excluded for any vocabulary reason. It is `0` when every position is eligible.
+Runs never span a year boundary; the pooled report is the maximum of the per-year
+runs. The value is diagnostic only and changes neither eligibility, pooling
+weights, nor any gate outcome.
+
+There is no minimum coverage threshold by design. The audit rejected the arbitrary
+98 percent cutoff as unsupported. Any future threshold requires separate
+justification and preregistration and cannot be presented as a Protocol-v1 or
+Protocol-v1.1 correction. The existing minimum of 168 paired-valid observations
+per required year remains the frozen B4 fail-closed inference rule, not a newly
+introduced coverage pass threshold.
+
 ## 8. Sealed 2025
 
 Before the final gate, 2025 may be checked only for file inventory, cryptographic
@@ -852,6 +894,7 @@ never be presented as a Protocol-v1 or Protocol-v1.1 correction.
 | Bootstrap and inference | `IMPLEMENTED` | C2 | Packet C2 freezes the complete non-circular year-stratified 168-clock-hour moving-block bootstrap, null-centred p-value, nearest-rank percentile CI, exact SplitMix64 streams, 20,000 resamples, fail-closed rules, and synthetic golden fixtures. |
 | Estimator and optional-family contract | `IMPLEMENTED` | C3 | Packet C3 binds the committed exact-Decimal IRLS contract, both-class and calibration-failure rules, `M2K` plus the three fixed optional hypotheses under ordinary Holm across all three, and labels optional-block 2022–2024 results as selection evidence rather than independent replication. |
 | Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed BTC target-only endpoint buffer through `2026-01-01 22:59:59.999 UTC` for all 8,760 calendar-2025 hourly origins under the same controls, and the exact one-year 2025 `REPLICATED` gate. |
+| Loader, hash scope, and coverage/claim contract | `IMPLEMENTED` | C5a | Packet C5a binds the fail-closed draft loader, the every-key-except-own-hash projection, per-candidate by-year and pooled coverage reporting, closed exclusion vocabulary, and candidate-complete claim scope without assigning a v1.1 semantic hash. |
 | Coverage and final freeze | `DEFERRED` | C5 | Coverage/exclusion reporting and claim scope per candidate; synchronization of spec, YAML, and fixture; new semantic SHA-256; and repeated tamper, future-mutation, boundary, solver, bootstrap, and 2025-seal tests. |
 
 Standing rejections carried forward from the audit are unchanged: no signed-return
@@ -860,7 +903,15 @@ new feature search.
 
 ## 12. Draft semantic-hash state
 
-Protocol v1.1 has no frozen semantic hash in this packet. Its state is
-`NOT_YET_ASSIGNED_PENDING_PACKET_C5`. Packet C5 owns synchronization, fixture
-creation, semantic hashing, and freeze. Until then, scoring permission remains
-`NONE_UNTIL_FROZEN`.
+Protocol v1.1 has no frozen semantic hash in this packet. The future semantic-hash
+projection is every top-level key except `frozen_semantic_sha256`: exactly 48 of
+the document's 49 top-level keys are in scope. The own-hash field is the sole
+exclusion because a document cannot contain its own digest; in particular,
+`predecessor_semantic_sha256` remains in scope.
+
+Canonicalization inherits
+`json.dumps(projected, sort_keys=True, separators=(',',':'), ensure_ascii=True)`
+over UTF-8 followed by `sha256`. Mapping order, comments, and YAML formatting are
+outside the semantic identity. The state remains
+`NOT_YET_ASSIGNED_PENDING_PACKET_C5`, and C5 owns the value, synchronized fixture,
+and freeze. Until then, scoring permission remains `NONE_UNTIL_FROZEN`.

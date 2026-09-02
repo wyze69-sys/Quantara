@@ -10,6 +10,19 @@ predecessor_semantic_sha256: 91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7
 authorizing_audit: docs/superpowers/reviews/2026-09-01-protocol-v1-three-reviewer-deep-audit.md
 frozen_semantic_sha256: NOT_YET_ASSIGNED_PENDING_PACKET_C5
 scoring_permission: NONE_UNTIL_FROZEN
+semantic_hash_scope:
+  basis: utf8_text_normalized_to_lf_before_sha256
+  canonicalization: "json.dumps(projected, sort_keys=True, separators=(',',':'), ensure_ascii=True)"
+  hash_algorithm: sha256
+  projection_rule: every top-level key except the excluded set
+  excluded_keys: [frozen_semantic_sha256]
+  exclusion_reason: a document cannot contain its own digest
+  in_scope_key_count: 48
+  total_key_count: 49
+  float_policy: FORBIDDEN_AT_EVERY_DEPTH
+  duplicate_key_policy: FORBIDDEN_FAIL_CLOSED_AT_LOAD
+  key_order_relevance: NONE_BECAUSE_SORT_KEYS_TRUE
+  owner_packet_for_value: C5
 planning_baseline: 2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57
 research_question: >-
   Can pre-registered BTC derivatives, spot/perpetual divergence, ETH cross-market
@@ -451,6 +464,71 @@ missing_and_duplicate_policy:
       and duplicate hashes preserved.
     - Same-key conflicting rows block publication.
     - ETH OI before 2021-12-01 is null and never enters M3.
+coverage_and_claim_scope:
+  applies_to: >-
+    Every candidate in the frozen ladder and every optional-family hypothesis,
+    in every scored period.
+  required_per_candidate:
+    - candidate_eligible_rows
+    - candidate_eligible_percentage
+    - exclusion_reasons
+    - longest_missing_run
+  required_granularity: [by_year, pooled]
+  minimum_coverage_threshold: NONE_BY_DESIGN
+  no_threshold_reason: the audit rejected the unsupported arbitrary 98 percent cutoff
+  threshold_addition_rule: >-
+    Any future minimum requires separate justification and preregistration and is
+    never a Protocol v1 or v1.1 correction.
+  claim_applicability: candidate-complete timestamps only
+  paired_comparison_rule: >-
+    Coverage is reported on the paired sample actually scored, never on a larger
+    comparator sample.
+  minimum_paired_per_year: 168
+  minimum_paired_per_year_source: validation.bootstrap.fail_closed.observed_year
+  semantics: REPORTING_ONLY_NEVER_A_PASS_FAIL_THRESHOLD
+exclusion_reason_vocabulary:
+  closure: CLOSED_UNKNOWN_REASON_IS_HARD_FAILURE
+  assignment_rule: first applicable member in listed order
+  mutual_exclusivity: exactly one reason per excluded row
+  count_identity: counts by reason sum to total excluded rows
+  reasons:
+    - reason: missing_native_interval
+      definition: a required lookback crosses a missing native interval
+      source_clause: missing_and_duplicate_policy
+    - reason: incomplete_feature_window
+      definition: a formula's full endpoint or path window is unavailable
+      source_clause: feature_window_completeness
+    - reason: funding_cadence_incomplete
+      definition: the settlement window is not cadence-complete
+      source_clause: feature_window_completeness
+    - reason: oi_snapshot_gap
+      definition: a required five-minute OI snapshot is missing or an intervening gap exists
+      source_clause: missing_and_duplicate_policy
+    - reason: invalid_label_endpoint
+      definition: a required BTC price endpoint or path is unavailable
+      source_clause: missing_and_duplicate_policy
+    - reason: buffer_bar_missing
+      definition: a required 2026 target-only buffer bar is absent
+      source_clause: target_endpoint_buffer_2026.missing_data_rule
+    - reason: pre_archive_period
+      definition: a known pre-archive period is null and unflagged
+      source_clause: missing_and_duplicate_policy
+    - reason: eth_oi_pre_2021_12_01
+      definition: ETH OI before 2021-12-01 never enters M3
+      source_clause: missing_and_duplicate_policy
+    - reason: same_key_conflict
+      definition: conflicting same-key rows block publication
+      source_clause: missing_and_duplicate_policy
+  longest_missing_run:
+    unit: consecutive nominal hourly origin positions
+    domain: the candidate's nominal hourly grid for the period
+    counted_state: positions that are not candidate-eligible
+    value_when_none: 0
+    boundary_rule: >-
+      Runs do not span a year boundary; report per year and pooled as the maximum
+      of the per-year runs.
+    tie_rule: report the length only; no start timestamp is required
+    effect: diagnostic only; never changes eligibility, pooling weights, or a gate outcome
 validation:
   outer_folds:
     - fold: 1
@@ -716,6 +794,9 @@ deferred_change_set:
   C4:
     owner_packet: C4
     status: IMPLEMENTED_PACKET_C4
+  C5a:
+    owner_packet: C5a
+    status: IMPLEMENTED_PACKET_C5A
   C5:
     owner_packet: C5
     status: DEFERRED
@@ -942,6 +1023,7 @@ replication_gate_2025:
     required: [candidate_eligible_rows, candidate_eligible_percentage, exclusion_reasons, longest_missing_run]
     minimum_coverage_threshold: NONE_BY_DESIGN
     applicability: candidate-complete timestamps only
+    general_contract: coverage_and_claim_scope
 outcome_states:
   - FINAL_FIT_FAILURE
   - REPLICATED
