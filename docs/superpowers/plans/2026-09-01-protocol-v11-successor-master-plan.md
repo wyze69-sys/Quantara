@@ -1,6 +1,6 @@
 # Protocol v1.1 — Master Plan (Successor Freeze)
 
-**Status:** IN PROGRESS — C1 `ACCEPTED` and merged (PR #5, merge commit `9a9196e`); C2 `ACCEPTED` and merged (PR #6, merge commit `7abce82`); C3 `ACCEPTED` and merged (PR #7, merge commit `b02cbc5`); C4 `ACCEPTED` by Hermes audit, PR #8 open awaiting user merge; C5 is `NEXT`
+**Status:** IN PROGRESS — C1 `ACCEPTED` and merged (PR #5, merge commit `9a9196e`); C2 `ACCEPTED` and merged (PR #6, merge commit `7abce82`); C3 `ACCEPTED` and merged (PR #7, merge commit `b02cbc5`); C4 `ACCEPTED` and merged (PR #8, merge commit `3c77610`); C5a is `NEXT`
 **Date:** 2026-09-01
 **Predecessor:** Protocol v1, frozen at semantic SHA-256
 `91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a`
@@ -29,10 +29,12 @@ auto-advance.
 | C1 | Version identity, lineage/supersession record, `T+2ms` ordering, nearest-rank Q80, exact purge inequality | B1, B2, B3, item 14 | `ACCEPTED` (PR #5, `9a9196e`) |
 | C2 | Year-stratified 168-clock-hour moving-block bootstrap, null-centred p-value, percentile CI, exact PRNG, 20,000 resamples, golden fixtures | B4 | `ACCEPTED` (PR #6, `7abce82`) |
 | C3 | Exact-Decimal IRLS binding, both-class and calibration-failure rules, `M2K` naming, three fixed optional hypotheses under ordinary Holm, selection-evidence labelling | B5, B6, item 7 | `ACCEPTED` (PR #7, `b02cbc5`) |
-| C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed 2026 target-only endpoint buffer, one-year 2025 `REPLICATED` gate | B7, B8, B9, HIGH OI finding | `ACCEPTED` (PR #8, awaiting merge) |
-| C5 | Coverage/exclusion reporting and claim scope, spec/YAML/fixture synchronization, new semantic SHA-256, full tamper/boundary/solver/bootstrap/seal suite | items 12, 13, freeze | `NEXT` |
+| C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed 2026 target-only endpoint buffer, one-year 2025 `REPLICATED` gate | B7, B8, B9, HIGH OI finding | `ACCEPTED` (PR #8, `3c77610`) |
+| C5a | v1.1 draft loader, explicit semantic-hash scope rule, coverage/exclusion reporting and claim scope per candidate, exclusion-reason vocabulary, `longest_missing_run` definition, guardrail test suite | items 12, 13 | `NEXT` |
+| C5 | Spec/YAML/fixture synchronization, independent v1.1 expected fixture, new semantic SHA-256, and freeze | freeze | after C5a |
 
-Only C5 may compute and freeze the Protocol v1.1 semantic hash.
+Only C5 may compute and freeze the Protocol v1.1 semantic hash. C5a defines the hash
+*scope*; C5 computes the *value* against that scope.
 
 ## Standing invariants across all five packets
 
@@ -61,7 +63,8 @@ Only C5 may compute and freeze the Protocol v1.1 semantic hash.
 - C2: `docs/superpowers/plans/2026-09-01-protocol-v11-c2-bootstrap-inference.md`
 - C3: `docs/superpowers/plans/2026-09-01-protocol-v11-c3-estimator-optional-family.md`
 - C4: `docs/superpowers/plans/2026-09-01-protocol-v11-c4-timestamp-refit-buffer-replication.md`
-- C5: written after its predecessor is accepted, so the plan reflects real
+- C5a: `docs/superpowers/plans/2026-09-01-protocol-v11-c5a-coverage-loader.md`
+- C5: written after C5a is accepted, so the plan reflects real
   audited state rather than forecast state.
 
 ## Workflow scope and its termination (decided 2026-09-01)
