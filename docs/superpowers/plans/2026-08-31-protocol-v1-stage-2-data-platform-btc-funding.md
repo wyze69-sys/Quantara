@@ -16,7 +16,7 @@ the next packet.
 
 ```text
 Read D:\PROJECT\Quantara\docs\superpowers\plans\2026-08-31-protocol-v1-stage-2-data-platform-btc-funding.md and execute <PACKET_ID> only.
-Use a dedicated branch/worktree. Preserve unrelated work. Run every packet gate.
+Use a dedicated feature branch in D:\PROJECT\Quantara (no worktree; git status --short empty before starting). Preserve unrelated work. Run every packet gate.
 Commit only the packet allowlist. Do not push, merge, or auto-advance.
 Return COMPLETE / BLOCKED / INCOMPLETE with raw commands, outputs, changed files, hashes, and risks.
 STOP after the report.
@@ -105,7 +105,9 @@ Use a new hash-domain separator and schema fingerprint for each family. Do not m
 
 For every packet:
 
-1. Work on a dedicated branch/worktree, never directly on shared dirty `main`.
+1. Work in `D:\PROJECT\Quantara` on a dedicated feature branch; `git status --short`
+   must be empty before the packet starts. No per-packet worktree (successor master
+   plan, post-C5 decision of record). Never work directly on `main`.
 2. Record starting HEAD and `git status --porcelain=v1 -uall`.
 3. Preserve all pre-existing untracked `temp/*.md`; do not stage, delete, rename, or rewrite them.
 4. Read packet dependencies and stop if an earlier packet lacks Hermes `ACCEPTED` status.
