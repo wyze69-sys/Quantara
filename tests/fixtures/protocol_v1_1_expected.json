@@ -1,0 +1,1241 @@
+{
+  "fixture_id": "protocol_v1_1_expected_semantic",
+  "rendered_by": "Independently hand-rendered from docs/superpowers/specs/2026-09-01-quantara-protocol-v1_1.md and docs/superpowers/plans/2026-09-02-protocol-v11-c5-freeze.md section 5 without importing any production code or reading the Protocol v1.1 YAML.",
+  "canonicalization": {
+    "method": "json.dumps(projected_semantic, sort_keys=True, separators=(',', ':'), ensure_ascii=True)",
+    "hash_algorithm": "sha256"
+  },
+  "expected_top_level_keys": [
+    "audit_reference_hash_basis",
+    "audit_references",
+    "authorizing_audit",
+    "calibration",
+    "canonical_lane_immutability",
+    "canonical_record_fields",
+    "coverage_and_claim_scope",
+    "cross_quote_dislocation_policy",
+    "deferred_change_set",
+    "dislocation_roles",
+    "draft_date",
+    "estimator_binding",
+    "exclusion_reason_vocabulary",
+    "exclusions",
+    "fail_closed_causes",
+    "feature_formulas",
+    "feature_window_completeness",
+    "final_refit",
+    "fit_failure_propagation",
+    "frozen_date",
+    "inventory",
+    "ladder_widths",
+    "lineage",
+    "logistic_constants",
+    "missing_and_duplicate_policy",
+    "model_ladder",
+    "model_mandates",
+    "oi_timestamp_resolution",
+    "optional_family_retention",
+    "outcome_states",
+    "planning_baseline",
+    "point_in_time",
+    "predecessor_semantic_sha256",
+    "protocol_id",
+    "protocol_status",
+    "realized_volatility",
+    "replication_gate_2025",
+    "research_question",
+    "scoring_permission",
+    "sealed_2025",
+    "search_and_calibration_restrictions",
+    "semantic_hash_scope",
+    "standing_rejections",
+    "success_gate",
+    "supersedes",
+    "target",
+    "target_endpoint_buffer_2026",
+    "validation"
+  ],
+  "semantic_sha256": "12dd3445365fdaa9e35cdcf93cae3e79a88b6b4d72d3d703b921359d1e917a9b",
+  "expected_semantic": {
+    "protocol_id": "quantara-protocol-v1_1",
+    "protocol_status": "FROZEN_BEFORE_2022_2024_SCORING",
+    "frozen_date": "2026-09-02",
+    "draft_date": "2026-09-01",
+    "supersedes": "quantara-protocol-v1",
+    "predecessor_semantic_sha256": "91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a",
+    "authorizing_audit": "docs/superpowers/reviews/2026-09-01-protocol-v1-three-reviewer-deep-audit.md",
+    "scoring_permission": "AUTHORIZED_2022_2024_AFTER_THRESHOLD_FIXTURE_2025_REMAINS_SEALED",
+    "semantic_hash_scope": {
+      "basis": "utf8_text_normalized_to_lf_before_sha256",
+      "canonicalization": "json.dumps(projected, sort_keys=True, separators=(',',':'), ensure_ascii=True)",
+      "hash_algorithm": "sha256",
+      "projection_rule": "every top-level key except the excluded set",
+      "excluded_keys": [
+        "frozen_semantic_sha256"
+      ],
+      "exclusion_reason": "a document cannot contain its own digest",
+      "in_scope_key_count": 48,
+      "total_key_count": 49,
+      "float_policy": "FORBIDDEN_AT_EVERY_DEPTH",
+      "duplicate_key_policy": "FORBIDDEN_FAIL_CLOSED_AT_LOAD",
+      "key_order_relevance": "NONE_BECAUSE_SORT_KEYS_TRUE",
+      "owner_packet_for_value": "C5"
+    },
+    "planning_baseline": "2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57",
+    "research_question": "Can pre-registered BTC derivatives, spot/perpetual divergence, ETH cross-market state, and one independent BTC venue improve probability forecasts of unusually large BTCUSDT 24-hour moves beyond a strong causal volatility-persistence baseline?",
+    "inventory": [
+      {
+        "series_id": "btcusdt_perp_ohlcv",
+        "provider": "binance_usd_m_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": [
+          "1m",
+          "1h",
+          "1d"
+        ],
+        "description": "BTCUSDT perpetual traded-price OHLCV, 2020-2024",
+        "role": "btc_price_lane",
+        "status": "already_canonical_immutable"
+      },
+      {
+        "series_id": "btc_settled_funding",
+        "provider": "binance_usd_m_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "per_settlement_event",
+        "description": "BTCUSDT settled funding rates",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "btc_open_interest_5m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "5m",
+        "description": "BTCUSDT perpetual open interest snapshots",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "btc_mark_price_1m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "1m",
+        "description": "BTCUSDT mark-price klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "btc_index_price_1m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "1m",
+        "description": "BTCUSDT index-price klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "btc_native_premium_1m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "1m",
+        "description": "BTCUSDT native premium-index klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "binance_btc_spot_ohlcv_1m",
+        "provider": "binance_spot",
+        "venue": "binance",
+        "market_type": "spot",
+        "native_interval": "1m",
+        "description": "Binance BTCUSDT spot traded-price klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "kraken_xbtusd_spot_ohlcv_1h",
+        "provider": "kraken",
+        "venue": "kraken",
+        "market_type": "spot",
+        "native_interval": "1h",
+        "description": "Kraken XBT/USD spot OHLCVT with interval-start timestamps",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "ethusdt_perp_ohlcv_1m",
+        "provider": "binance_usd_m_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "1m",
+        "description": "ETHUSDT perpetual traded-price klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "eth_settled_funding",
+        "provider": "binance_usd_m_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "per_settlement_event",
+        "description": "ETHUSDT settled funding rates",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "eth_open_interest_5m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "5m",
+        "description": "ETHUSDT perpetual open interest snapshots",
+        "available_from": "2021-12-01",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "eth_mark_price_1m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "1m",
+        "description": "ETHUSDT mark-price klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "eth_index_price_1m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "1m",
+        "description": "ETHUSDT index-price klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      },
+      {
+        "series_id": "eth_native_premium_1m",
+        "provider": "binance_futures",
+        "venue": "binance",
+        "market_type": "perpetual",
+        "native_interval": "1m",
+        "description": "ETHUSDT native premium-index klines",
+        "role": "protocol_v1_series",
+        "status": "frozen_inventory"
+      }
+    ],
+    "canonical_lane_immutability": {
+      "subject": "btcusdt_perp_ohlcv (Binance USD-M BTCUSDT perpetual traded-price OHLCV, 2020-2024, at 1m/1h/1d)",
+      "rule": "The already-canonical Binance USD-M BTCUSDT perpetual traded-price OHLCV lane is immutable input: its published identities, pointers, descriptors, parser identity, manifests, quality evidence, and canonical bytes must not be altered. Protocol packets may read it but never modify it."
+    },
+    "canonical_record_fields": [
+      "provider",
+      "venue",
+      "market_type",
+      "instrument_id",
+      "provider_symbol",
+      "series_id",
+      "native_interval",
+      "source_file",
+      "source_sha256",
+      "event_ts",
+      "interval_open_ts",
+      "interval_close_ts",
+      "settlement_or_snapshot_ts",
+      "archive_publication_ts",
+      "ingestion_ts",
+      "eligibility_ts",
+      "quality_flags"
+    ],
+    "exclusions": {
+      "forbidden_families": [
+        "liquidations",
+        "options",
+        "long_short_ratios",
+        "taker_ratios",
+        "altcoins",
+        "order_books",
+        "macro",
+        "on_chain",
+        "sentiment",
+        "news",
+        "technical_indicator_searches"
+      ],
+      "rules": [
+        "Incidental columns in the Binance metrics archive may be retained in the immutable raw object but are not canonical Protocol-v1.1 series and must not enter any feature table.",
+        "docs/superpowers/plans/2026-08-29-data-slice-013-vision-derivatives-backfill.md is superseded for Protocol v1.1; its top-trader and taker-ratio scope, guessed completeness rules, and combined metrics feature direction are not authorized."
+      ]
+    },
+    "target": {
+      "origin_convention": "For hourly origin t, P[t] is the BTCUSDT perpetual 1h bar close at T - 1 ms and the future endpoint is the 1h bar close at T + 24h - 1 ms.",
+      "r24": "r24_t  = log(P[t+24h] / P[t])",
+      "sigma": "sigma_t = sqrt(sum_{j=0}^{23} r[t-j]^2)",
+      "zscore": "Z_t    = abs(r24_t) / sigma_t",
+      "label": "Y_t    = 1[Z_t > k]",
+      "threshold": "k = Z_(j), where j = ceil(0.80 * N), on eligible 2020-2021 design origins only",
+      "quantile": {
+        "ordering": "Z_(1) <= ... <= Z_(N)",
+        "rank": "j = ceil(0.80 * N)",
+        "selection": "k = Z_(j)",
+        "label": "Y_t = 1[Z_t > k]",
+        "decimal_precision": 50,
+        "decimal_rounding": "ROUND_HALF_EVEN",
+        "interpolation": "FORBIDDEN",
+        "threshold_rounding": "FORBIDDEN",
+        "canonical_threshold_representation": "full Decimal string",
+        "tie_break": "NOT_REQUIRED_FOR_NUMERICALLY_EQUAL_VALUES",
+        "fixture_status": "REQUIRED_BEFORE_2022_2024_SCORING",
+        "fixture_owner_packet": "STAGE_2",
+        "fixture_binding_rule": "The synthetic quantile fixture and the frozen k fixture and its hash must exist and be committed before any 2022-2024 scoring. Protocol v1.1 freezes the threshold method, never the threshold value: k is derived from design data and is therefore outside this document's semantic identity."
+      },
+      "threshold_design_end": "2021-12-31T23:59:59.999Z",
+      "threshold_design_rule": "An origin enters the nearest-rank calculation only when its complete forward label ends no later than 2021-12-31 23:59:59.999 UTC. No 2022 value may enter threshold design.",
+      "threshold_fixed_rule": "k stays fixed through every fold and through sealed 2025",
+      "quantile_alternatives": "Type 7 and Type 8 are defensible alternatives but nearest-rank is selected as the generalized inverse empirical CDF without an interpolated threshold."
+    },
+    "realized_volatility": {
+      "definition": "RV_H = sqrt(sum of squared eligible hourly log returns over H hours)",
+      "horizons": {
+        "rv_1d": 24,
+        "rv_7d": 168,
+        "rv_30d": 720
+      },
+      "invalid_window_rule": "A zero or incomplete window is invalid; no epsilon replacement is permitted."
+    },
+    "feature_formulas": {
+      "funding_24h_sum": "sum settled rates with T-24h < settlement_ts <= T",
+      "dlog_oi_24h": "log(OI_snapshot_ending_T / OI_snapshot_ending_T_minus_24h)",
+      "native_premium_1h_mean": "arithmetic mean of the 60 native-premium 1m closes ending in (T-1h, T]",
+      "spot_perp_dislocation": "log(BTC_perp_close_T / Binance_BTC_spot_close_T)",
+      "eth_ret_1h": "log(ETH_perp_close_T / ETH_perp_close_T_minus_1h)",
+      "eth_rv_24h": "sqrt(sum of the 24 eligible ETH hourly log returns ending at T)",
+      "eth_funding_24h_sum": "ETH form of funding_24h_sum",
+      "eth_native_premium_1h_mean": "ETH form of native_premium_1h_mean",
+      "eth_btc_relative_ret_24h": "ETH_ret_24h(T) - BTC_ret_24h(T)",
+      "eth_dlog_oi_24h": "ETH form of dlog_oi_24h",
+      "kraken_ret_1h": "log(Kraken_close_T / Kraken_close_T_minus_1h)",
+      "kraken_rv_24h": "sqrt(sum of the 24 eligible Kraken hourly log returns ending at T)",
+      "binance_kraken_ret_divergence_1h": "Binance_spot_ret_1h(T) - Kraken_ret_1h(T)",
+      "binance_kraken_cross_quote_log_ratio": "log(Binance_spot_close_T / Kraken_close_T)"
+    },
+    "feature_window_completeness": [
+      "Every formula requires its full endpoint/path window.",
+      "Funding requires a cadence-complete settlement window.",
+      "OI requires the exact five-minute snapshots ending at both endpoints and no intervening gap.",
+      "1m premium means require all 60 minutes.",
+      "Return/RV windows crossing any invalid source interval are null. There is no stale-value tolerance, interpolation, nearest timestamp, or alternate horizon."
+    ],
+    "dislocation_roles": {
+      "primary_futures_dislocation_feature": "btc_native_premium_1m",
+      "diagnostic_only": [
+        "mark_index_minus_1",
+        "mark_spot_minus_1"
+      ],
+      "rule": "Native Binance premium is the pre-registered primary futures-dislocation feature. Constructed mark/index - 1 and mark/spot - 1 are diagnostics only and never enter M1-M4. Mark and index are canonicalized because they verify source integrity and support diagnostics, not because they earn independent model stages."
+    },
+    "model_ladder": {
+      "B0": {
+        "base": null,
+        "adds": [],
+        "definition": "training-only climatology"
+      },
+      "B1": {
+        "base": null,
+        "adds": [
+          "log(RV_1d)"
+        ],
+        "definition": "logistic model using causal log(RV_1d)"
+      },
+      "B2": {
+        "base": null,
+        "adds": [
+          "log(RV_1d)",
+          "log(RV_7d)",
+          "log(RV_30d)"
+        ],
+        "definition": "HAR-style logistic model"
+      },
+      "M1": {
+        "base": "B2",
+        "adds": [
+          "funding_24h_sum",
+          "dlog_oi_24h",
+          "native_premium_1h_mean"
+        ],
+        "definition": "B2 plus frozen BTC derivatives block"
+      },
+      "M2": {
+        "base": "M1",
+        "adds": [
+          "spot_perp_dislocation"
+        ],
+        "definition": "M1 plus BTC perpetual versus Binance spot dislocation"
+      },
+      "M2K": {
+        "base": "M2",
+        "adds": [
+          "kraken_ret_1h",
+          "kraken_rv_24h",
+          "binance_kraken_ret_divergence_1h",
+          "binance_kraken_cross_quote_log_ratio"
+        ],
+        "definition": "M2 plus frozen four-column Kraken block"
+      },
+      "M3": {
+        "base": "M2",
+        "adds": [
+          "eth_ret_1h",
+          "eth_rv_24h",
+          "eth_funding_24h_sum",
+          "eth_native_premium_1h_mean",
+          "eth_btc_relative_ret_24h"
+        ],
+        "definition": "M2 plus frozen ETH family, excluding ETH OI"
+      },
+      "M3b": {
+        "base": "M3",
+        "adds": [
+          "eth_dlog_oi_24h"
+        ],
+        "definition": "M3 plus ETH dlog_oi_24h on the identical post-2021-12-01 common sample"
+      },
+      "M4": {
+        "base": "M3",
+        "adds": [
+          "kraken_ret_1h",
+          "kraken_rv_24h",
+          "binance_kraken_ret_divergence_1h",
+          "binance_kraken_cross_quote_log_ratio"
+        ],
+        "definition": "M3 plus frozen Kraken cross-venue family"
+      }
+    },
+    "ladder_widths": {
+      "B1": 1,
+      "B2": 3,
+      "M1": 6,
+      "M2": 7,
+      "M2K": 11,
+      "M3": 12,
+      "M3b": 13,
+      "M4": 16
+    },
+    "model_mandates": {
+      "btc_core_ladder": [
+        "M1",
+        "M2"
+      ],
+      "mandatory_primary_candidate": "M2",
+      "mandatory_rule": "M2 must pass the complete gate versus paired B2 before 2025 can unlock",
+      "optional_family_order": [
+        "M3",
+        "M4"
+      ],
+      "optional_family_rule": "Starting from M2, evaluate the ETH block and then the Kraken block as the only optional additions.",
+      "m3b_role": "M3b/ETH OI is a secondary diagnostic and can never alter the retained candidate; ETH OI is M3b common-sample only.",
+      "final_rule": "The resulting candidate must still pass the complete 2%-versus-B2 and calibration gate before 2025."
+    },
+    "cross_quote_dislocation_policy": {
+      "feature": "binance_kraken_cross_quote_log_ratio",
+      "rule": "log(Binance BTCUSDT spot close / Kraken XBT/USD close) uses no invented USD/USDT FX conversion; the feature is explicitly a cross-venue, cross-quote dislocation and may include quote-currency (USDT-versus-USD) effects."
+    },
+    "logistic_constants": {
+      "estimation_discipline": "exact-Decimal logistic-IRLS",
+      "l2_penalty_lambda": "1",
+      "unpenalized_intercept": true,
+      "standardization": "train-window z-score",
+      "max_iterations": 50,
+      "convergence_tolerance": "0.000000000001",
+      "eta_clamp": 24,
+      "probability_clamp": "0.000000000001",
+      "linear_solver": "Gaussian elimination with partial pivoting"
+    },
+    "estimator_binding": {
+      "implementation": "src/quantara/training_metrics_logistic.py",
+      "entry_point": "fit_logistic_irls",
+      "decimal_precision": 50,
+      "rounding": "ROUND_HALF_EVEN",
+      "storage_quantum": "0.000000000000000001",
+      "standardization": "train-window z-score, population denominator n",
+      "initial_coefficients": "all zero",
+      "model_l2_lambda": "1",
+      "intercept": "unpenalized",
+      "convergence": "every abs(beta_new - beta_old) < 0.000000000001",
+      "maximum_updates": 50,
+      "linear_solver": "Gaussian elimination with partial pivoting",
+      "pivot_failure": "exact-zero pivot, fail closed",
+      "constant_train_feature": "exact-zero train std, fail closed",
+      "non_convergence": "fail closed",
+      "binary_float_inputs": "forbidden",
+      "eta_clamp": "24",
+      "probability_clamp": "0.000000000001"
+    },
+    "fail_closed_causes": [
+      "single_class_training_outcome",
+      "constant_train_feature",
+      "zero_pivot",
+      "non_convergence",
+      "binary_float_input",
+      "calibration_single_class_outcome",
+      "calibration_degenerate_logit"
+    ],
+    "fit_failure_propagation": "Any fit failure fails the affected candidate comparison and never drops a fold, year, or candidate from pooling.",
+    "calibration": {
+      "family": "unpenalized two-parameter Decimal logistic fit of y on logit(p) with an intercept",
+      "lambda": "0",
+      "probability_clamp_lower": "0.000000000001",
+      "probability_clamp_upper": "0.999999999999",
+      "probability_clamp_rule": "clamp_mu is mandatory before taking the logarithm",
+      "predictor": "x_i = ln(p_i / (1 - p_i)) after the mandatory clamp",
+      "back_transform": {
+        "slope": "calibration_slope = beta_z / sd_x",
+        "intercept": "calibration_intercept = beta_0 - beta_z * mu_x / sd_x"
+      },
+      "gate_band": {
+        "lower": "0.8",
+        "upper": "1.2",
+        "applies_to": "raw-logit calibration_slope, never beta_z"
+      },
+      "failure_conditions": [
+        "single-class outcome in the calibration sample",
+        "zero-variance logit(p), surfacing as exact-zero std or zero pivot",
+        "undefined logit, reachable only if the mandatory clamp is bypassed",
+        "singular solve, surfacing as zero pivot",
+        "separation, identified by positive eta_clamp_count in the calibration fit",
+        "non-convergence within 50 updates"
+      ],
+      "eta_clamp_rule": "A positive eta_clamp_count is reported for every fit and is diagnostic rather than a model-fit failure; in calibration it fails calibration_degenerate_logit.",
+      "diagnostic_only": "These calculations never alter predictions or pooled Brier estimates."
+    },
+    "search_and_calibration_restrictions": {
+      "forbidden": [
+        "regularization_search",
+        "feature_clipping",
+        "post_hoc_probability_calibration",
+        "tree_model",
+        "model_family_search"
+      ],
+      "calibration_evaluation": "Calibration is evaluated on the raw logistic probabilities.",
+      "paired_comparison_rule": "For every paired candidate comparison, refit the comparator on exactly the same training rows and score exactly the same test timestamps as the candidate. A larger baseline sample may be reported separately but cannot be used for the paired incremental claim."
+    },
+    "point_in_time": {
+      "boundary_event_time": "F = T",
+      "nominal_eligibility_ts": "T + 1 ms",
+      "prediction_ts": "T + 2 ms",
+      "join_inequality": "eligibility_ts < prediction_ts",
+      "funding_feature_window": "T-24h < settlement_ts <= T",
+      "kline_eligibility_ts": "C + 1 ms",
+      "funding_eligibility_ts": "F + 1 ms",
+      "oi_eligibility_ts": "O + 5 minutes",
+      "kraken_eligibility_ts": "K + 1 hour",
+      "cutoff_convention": "An hourly information cutoff T is an exact UTC hour boundary. prediction_ts = T + 2 ms. P[t] is the BTC perpetual 1h bar close at T - 1 ms and its future endpoint is the close at T + 24h - 1 ms. These logical ticks order completed data and do not claim exchange network latency.",
+      "kline_eligibility": "For a kline with source close time C, nominal eligibility_ts = C + 1 ms.",
+      "funding_eligibility": "For settled funding with settlement time F, nominal eligibility_ts = F + 1 ms.",
+      "oi_eligibility": "For a five-minute OI row with provider timestamp O under oi_timestamp_resolution role UNRESOLVED_CONSERVATIVE, nominal eligibility_ts = O + 5 minutes.",
+      "kraken_eligibility": "For Kraken hourly OHLCVT with interval-start timestamp K, nominal eligibility_ts = K + 1 hour.",
+      "join_rule": "All joins are backward as-of joins on eligibility_ts; eligibility_ts < prediction_ts without exception.",
+      "funding_boundary_repair": "When F = T, funding eligibility T + 1 ms is strictly before prediction T + 2 ms; Protocol v1 used T + 1 ms for both and therefore contradicted its funding window.",
+      "same_boundary_effect": "The added tick changes same-boundary inclusion for funding only. Completed klines, five-minute OI, and Kraken hourly candles are already eligible no later than T.",
+      "boundary_test_rule": "universal convention change; boundary-test every source",
+      "live_latency_rule": "Production use requires measured publication and ingestion latency. If it exceeds the decision schedule, same-boundary funding shifts to the next live decision.",
+      "rejected_alternatives": {
+        "eligibility_at_f": "coherent but removes the frozen after-settlement ordering tick",
+        "funding_window_before_t": "causal but delays boundary settlements one hourly decision"
+      },
+      "archive_publication_ts_role": "ex-post provenance, not real-time observation availability",
+      "forbidden": [
+        "nearest_joins",
+        "forward_joins",
+        "unfinished_bars",
+        "future_revisions",
+        "same_timestamp_equality"
+      ],
+      "limitation": "Protocol v1.1 claims nominal historical point-in-time safety, not reconstruction of historical network latency. This limitation must appear in every result report."
+    },
+    "missing_and_duplicate_policy": {
+      "rules": [
+        "Missing is null, never zero.",
+        "No price, mark, index, premium, OI, or venue gap is interpolated.",
+        "A feature is invalid when a required lookback crosses a missing native interval.",
+        "A label is invalid when its required BTC price endpoints/path are unavailable.",
+        "Known pre-archive periods remain null and receive no fabricated regime flag.",
+        "Exact duplicate source rows may be deterministically deduplicated only after byte comparison, with source-row count, distinct-row count, duplicate count, and duplicate hashes preserved.",
+        "Same-key conflicting rows block publication.",
+        "ETH OI before 2021-12-01 is null and never enters M3."
+      ]
+    },
+    "coverage_and_claim_scope": {
+      "applies_to": "Every candidate in the frozen ladder and every optional-family hypothesis, in every scored period.",
+      "required_per_candidate": [
+        "candidate_eligible_rows",
+        "candidate_eligible_percentage",
+        "exclusion_reasons",
+        "longest_missing_run"
+      ],
+      "required_granularity": [
+        "by_year",
+        "pooled"
+      ],
+      "minimum_coverage_threshold": "NONE_BY_DESIGN",
+      "no_threshold_reason": "the audit rejected the unsupported arbitrary 98 percent cutoff",
+      "threshold_addition_rule": "Any future minimum requires separate justification and preregistration and is never a Protocol v1 or v1.1 correction.",
+      "claim_applicability": "candidate-complete timestamps only",
+      "paired_comparison_rule": "Coverage is reported on the paired sample actually scored, never on a larger comparator sample.",
+      "minimum_paired_per_year": 168,
+      "minimum_paired_per_year_source": "validation.bootstrap.fail_closed.observed_year",
+      "semantics": "REPORTING_ONLY_NEVER_A_PASS_FAIL_THRESHOLD"
+    },
+    "exclusion_reason_vocabulary": {
+      "closure": "CLOSED_UNKNOWN_REASON_IS_HARD_FAILURE",
+      "assignment_rule": "first applicable member in listed order",
+      "mutual_exclusivity": "exactly one reason per excluded row",
+      "count_identity": "counts by reason sum to total excluded rows",
+      "reasons": [
+        {
+          "reason": "missing_native_interval",
+          "definition": "a required lookback crosses a missing native interval",
+          "source_clause": "missing_and_duplicate_policy"
+        },
+        {
+          "reason": "incomplete_feature_window",
+          "definition": "a formula's full endpoint or path window is unavailable",
+          "source_clause": "feature_window_completeness"
+        },
+        {
+          "reason": "funding_cadence_incomplete",
+          "definition": "the settlement window is not cadence-complete",
+          "source_clause": "feature_window_completeness"
+        },
+        {
+          "reason": "oi_snapshot_gap",
+          "definition": "a required five-minute OI snapshot is missing or an intervening gap exists",
+          "source_clause": "missing_and_duplicate_policy"
+        },
+        {
+          "reason": "invalid_label_endpoint",
+          "definition": "a required BTC price endpoint or path is unavailable",
+          "source_clause": "missing_and_duplicate_policy"
+        },
+        {
+          "reason": "buffer_bar_missing",
+          "definition": "a required 2026 target-only buffer bar is absent",
+          "source_clause": "target_endpoint_buffer_2026.missing_data_rule"
+        },
+        {
+          "reason": "pre_archive_period",
+          "definition": "a known pre-archive period is null and unflagged",
+          "source_clause": "missing_and_duplicate_policy"
+        },
+        {
+          "reason": "eth_oi_pre_2021_12_01",
+          "definition": "ETH OI before 2021-12-01 never enters M3",
+          "source_clause": "missing_and_duplicate_policy"
+        },
+        {
+          "reason": "same_key_conflict",
+          "definition": "conflicting same-key rows block publication",
+          "source_clause": "missing_and_duplicate_policy"
+        }
+      ],
+      "longest_missing_run": {
+        "unit": "consecutive nominal hourly origin positions",
+        "domain": "the candidate's nominal hourly grid for the period",
+        "counted_state": "positions that are not candidate-eligible",
+        "value_when_none": 0,
+        "boundary_rule": "Runs do not span a year boundary; report per year and pooled as the maximum of the per-year runs.",
+        "tie_rule": "report the length only; no start timestamp is required",
+        "effect": "diagnostic only; never changes eligibility, pooling weights, or a gate outcome"
+      }
+    },
+    "validation": {
+      "outer_folds": [
+        {
+          "fold": 1,
+          "train_start": "2020-09-01",
+          "train_end": "2021-12-31",
+          "test_year": 2022
+        },
+        {
+          "fold": 2,
+          "train_start": "2020-09-01",
+          "train_end": "2022-12-31",
+          "test_year": 2023
+        },
+        {
+          "fold": 3,
+          "train_start": "2020-09-01",
+          "train_end": "2023-12-31",
+          "test_year": 2024
+        }
+      ],
+      "purge": {
+        "training_origin_eligibility": "O + 24h <= S",
+        "last_eligible_training_origin": "S - 24h",
+        "first_test_origin": "S",
+        "post_test_embargo": "NOT_REQUIRED_FOR_ANCHORED_EXPANDING_WINDOW",
+        "rejected_cutoff": "2024-12-30 23:00 UTC",
+        "examples": {
+          "fold_1": {
+            "test_start": "2022-01-01 00:00 UTC",
+            "last_training_origin": "2021-12-31 00:00 UTC",
+            "last_required_label_close": "2021-12-31 23:59:59.999 UTC"
+          },
+          "final_evaluation": {
+            "test_start": "2025-01-01 00:00 UTC",
+            "last_training_origin": "2024-12-31 00:00 UTC",
+            "last_required_label_close": "2024-12-31 23:59:59.999 UTC"
+          }
+        }
+      },
+      "fold_rules": [
+        "Training origin O is eligible iff O + 24h <= S.",
+        "Use the exact 24-hour purge inequality.",
+        "Apply only frozen train-window z-score and fixed regularization.",
+        "No clipping or post-hoc calibration is allowed.",
+        "Never use random K-fold."
+      ],
+      "primary_metric": [
+        "BS(model) = mean((p-y)^2)",
+        "BSS_B2(model) = 1 - BS(model) / BS(B2)",
+        "loss_improvement_i = loss_B2_i - loss_model_i",
+        "probability_bias = mean(p-y)"
+      ],
+      "calibration_diagnostics": {
+        "method": "unpenalized logistic regression of y on logit(p) with an intercept",
+        "clamp": "clamp p to [0.000000000001, 0.999999999999] only for the logarithm",
+        "outputs": [
+          "calibration_intercept",
+          "calibration_slope"
+        ],
+        "note": "Diagnostic only; these calculations do not alter predictions."
+      },
+      "bootstrap": {
+        "method": "frozen year-stratified paired non-circular moving-block bootstrap",
+        "estimand": {
+          "paired_difference": "d_t = loss_comparator,t - loss_candidate,t",
+          "positive_direction": "favours candidate",
+          "observed_statistic": "D_obs = pooled hourly mean over paired-valid d_t"
+        },
+        "nominal_grid": {
+          "construction": "complete nominal hourly UTC grid separately for each calendar year",
+          "hours_formula": "H_y = UTC hours from January 1 of year y to January 1 of year y+1",
+          "paired_valid_storage": "d_t on paired-valid hours and null otherwise",
+          "missing_policy": "retain null positions; never fill a missing loss value"
+        },
+        "block_hours": 168,
+        "block_unit": "consecutive clock hours",
+        "circularity": "non_circular",
+        "eligible_start_range": "0 ... H_y - L",
+        "eligible_start_count": "H_y - L + 1",
+        "blocks_per_year": "n_blocks_y = ceil(H_y / L)",
+        "draw_replacement": "with_replacement",
+        "draw_order": "years ascending, then blocks in index order",
+        "concatenated_hours_at_l_168": 8904,
+        "truncation_rule": "concatenate blocks including nulls and truncate to exactly H_y clock-hour positions",
+        "null_preservation": "blocks retain their observed null pattern",
+        "pooling_formula": "D* = sum of non-null resampled d_t across years / pooled resampled paired-valid count",
+        "pooling_weight": "resampled paired-valid count, not year count or nominal hours",
+        "resamples": 20000,
+        "interval": {
+          "confidence": "0.95",
+          "method": "raw-bootstrap percentile nearest-rank without interpolation",
+          "rank_formula": "j(q) = ceil(q * B)",
+          "lower_quantile": "0.025",
+          "upper_quantile": "0.975",
+          "lower_rank_at_b_20000": 500,
+          "upper_rank_at_b_20000": 19500
+        },
+        "p_value": {
+          "sidedness": "one_sided",
+          "null_centering": "d0_t = d_t - D_obs on paired-valid hours; nulls stay null",
+          "formula": "p = (1 + count(D0*_b >= D_obs)) / (B + 1)",
+          "exact_identity": "D0*_b = D*_b - D_obs",
+          "equivalent_count": "count(D*_b >= 2 * D_obs)"
+        },
+        "fail_closed": {
+          "observed_year": "fewer than 168 paired-valid observations in any required year",
+          "replicate_year": "no paired-valid observation in any required year for a replicate",
+          "partial_statistic": "FORBIDDEN"
+        },
+        "prng": {
+          "algorithm": "SplitMix64",
+          "arithmetic": "exact unsigned 64-bit with masking after state advance and multiplications",
+          "bounded_draw": "rejection sampling below(bound); bare modulo is forbidden",
+          "random_random": "FORBIDDEN",
+          "derivation_payload": "quantara-protocol-v1_1|bootstrap-b4| + comparison_id + \"|\" + str(year)",
+          "payload_encoding": "UTF-8",
+          "digest": "SHA-256",
+          "seed_bytes": "leading 8 digest bytes",
+          "byte_order": "big",
+          "bare_seed_status": "SUPERSEDED_BY_FROZEN_COMPARISON_YEAR_DERIVATION"
+        },
+        "arithmetic": {
+          "input": "integer scaled by 1e-18 or Decimal exactly representable at that quantum",
+          "storage_quantum": "0.000000000000000001",
+          "sums": "Python unbounded integers",
+          "ratios": "fractions.Fraction",
+          "statistic_path_floats": "FORBIDDEN",
+          "rendering": "quantize only final report to 18 decimal places with ROUND_HALF_EVEN"
+        },
+        "monte_carlo_justification": {
+          "holm_threshold_context": "IMPLEMENTED_PACKET_C3",
+          "p": "0.05/3",
+          "z": "1.96",
+          "half_width_b_2000": "0.005610684252190438",
+          "half_width_b_20000": "0.001774254146896035",
+          "maximum_half_width": "0.002",
+          "minimum_resamples_exact": "15739.888888888888888888888888888888888888888888889",
+          "minimum_resamples_ceiling": 15740
+        },
+        "dependence_correction": "168-clock-hour blocks preserve serial dependence from overlapping 24-hour labels",
+        "rejected_alternatives": {
+          "raw_bootstrap_count_at_or_below_zero": "REJECTED_INADEQUATELY_SPECIFIED_NULL",
+          "favorable_resamples_formula": "REJECTED_DIRECTIONALLY_AMBIGUOUS",
+          "non_overlapping_24h_origin_subsampling": "REJECTED_PRIMARY_TEST_ARBITRARY_HOURLY_PHASE"
+        },
+        "successor_repair_status": "IMPLEMENTED_PACKET_C2",
+        "successor_repair_owner_packet": "C2",
+        "supersedes_v1_inference": true,
+        "disclosed_design_change": "Protocol v1.1 increases resamples from 2000 to 20000 as an inferential strengthening"
+      }
+    },
+    "success_gate": {
+      "unlock_rule": "The frozen candidate may unlock 2025 only if all criteria hold.",
+      "criteria": [
+        {
+          "id": 1,
+          "rule": "pooled BSS_B2 >= 0.02",
+          "threshold": "0.02"
+        },
+        {
+          "id": 2,
+          "rule": "bootstrap 95% lower bound for BS_B2 - BS_candidate is greater than zero"
+        },
+        {
+          "id": 3,
+          "rule": "positive Brier improvement in at least two validation years",
+          "min_years": 2
+        },
+        {
+          "id": 4,
+          "rule": "no year has BSS_B2 < -0.02",
+          "threshold": "-0.02"
+        },
+        {
+          "id": 5,
+          "rule": "pooled absolute probability bias is at most 0.02",
+          "threshold": "0.02"
+        },
+        {
+          "id": 6,
+          "rule": "pooled calibration slope is between 0.8 and 1.2",
+          "lower": "0.8",
+          "upper": "1.2"
+        },
+        {
+          "id": 7,
+          "rule": "yearly absolute probability bias is at most 0.04",
+          "threshold": "0.04"
+        }
+      ]
+    },
+    "optional_family_retention": {
+      "hypothesis_order": [
+        "H_ETH",
+        "H_K_M2",
+        "H_K_M3"
+      ],
+      "hypotheses": {
+        "H_ETH": {
+          "candidate": "M3",
+          "comparator": "M2",
+          "comparison_id": "H_ETH|M3_vs_M2"
+        },
+        "H_K_M2": {
+          "candidate": "M2K",
+          "comparator": "M2",
+          "comparison_id": "H_K_M2|M2K_vs_M2"
+        },
+        "H_K_M3": {
+          "candidate": "M4",
+          "comparator": "M3",
+          "comparison_id": "H_K_M3|M4_vs_M3"
+        }
+      },
+      "compute_all_three_before_deciding": true,
+      "holm_family_wise_alpha": "0.05",
+      "holm_test_count": 3,
+      "holm_step_thresholds": [
+        "1/60",
+        "1/40",
+        "1/20"
+      ],
+      "holm_assignment_rule": "Sort all three observed p-values ascending, assign thresholds by sorted rank, reject while p_(i) is at most alpha / (m - i + 1), and stop at the first failure.",
+      "tie_order": [
+        "H_ETH",
+        "H_K_M2",
+        "H_K_M3"
+      ],
+      "min_attainable_p": "1/20001",
+      "max_exceedance_count_clearing_first_step": 332,
+      "p_at_332": "111/6667",
+      "p_at_333": "334/20001",
+      "retention_criteria": [
+        "pooled relative Brier improvement versus the currently retained model is at least 0.01",
+        "unadjusted two-sided 95% paired-bootstrap interval has a lower bound above zero",
+        "one-sided bootstrap p-value passes ordinary Holm across the three-test family",
+        "at least two validation years improve",
+        "no validation year is worse than -0.02"
+      ],
+      "decision_graph": {
+        "eth_passes": "retain M4 only if H_K_M3 also passes; otherwise retain M3",
+        "eth_fails": "retain M2K only if H_K_M2 passes; otherwise retain M2"
+      },
+      "fallback": "If ETH is rejected, compare Kraken against M2, not against an ETH-containing model.",
+      "m3b_role": "M3b is an identical-common-sample secondary diagnostic and can never alter the retained candidate.",
+      "rejected_block_rule": "A rejected block receives no alternative transformation search.",
+      "retained_candidate_gate": "The retained candidate must still pass the complete seven-criterion success_gate versus paired B2 before 2025 unlocks.",
+      "optional_block_2022_2024_result_class": "selection_evidence",
+      "independent_replication_source": "sealed 2025 only",
+      "selection_reason": "The optional family uses the same 2022-2024 validation data to select among candidates, so its improvement estimates are conditioned on that selection.",
+      "required_claim_wording": "selected on 2022\u20132024 development evidence",
+      "successor_repair_status": "IMPLEMENTED_PACKET_C3",
+      "successor_repair_owner_packet": "C3",
+      "supersedes_draft_holm_test_count": true,
+      "disclosed_design_change": "Protocol v1.1 corrects the draft optional-family size from two tests to three tests so ordinary Holm covers the complete retention graph."
+    },
+    "sealed_2025": {
+      "state": "SEALED",
+      "scoring_permission": "FORBIDDEN_UNTIL_GATE_PASS_AND_PROTOCOL_FREEZE",
+      "allowed_pre_gate_checks": [
+        "file_inventory",
+        "cryptographic_hashes",
+        "parser_compatibility",
+        "expected_boundaries",
+        "mechanical_corruption"
+      ],
+      "forbidden_operations": [
+        "labels",
+        "feature_distributions",
+        "model_scores",
+        "conditional_outcome_inspection",
+        "protocol_adaptation"
+      ],
+      "on_gate_pass": "run exactly one frozen 2025 evaluation",
+      "failure_outcome": "DID_NOT_REPLICATE",
+      "failure_rule": "never redesign and retest on 2025",
+      "successor_buffer_and_replication_rule": "IMPLEMENTED_PACKET_C4",
+      "buffer_contract": "target_endpoint_buffer_2026",
+      "replication_contract": "replication_gate_2025"
+    },
+    "audit_reference_hash_basis": "utf8_text_normalized_to_lf_before_sha256",
+    "audit_references": {
+      "a7_report": {
+        "path": "docs/superpowers/plans/2026-08-31-a7-ethusdt-perpetual.md",
+        "sha256": "379a70250630f1e914618eda33131f6d396535126cbedbde7955a4216e7b2f72"
+      },
+      "a7_sidecar": {
+        "path": "temp/audit_a7_a8/a7_ethusdt_probe_v1.json",
+        "sha256": "3b3b6ea81b3e1d91a9c10140333b2e01ab39929ff9022d0573878defd043ff58"
+      },
+      "a8_report": {
+        "path": "docs/superpowers/plans/2026-08-31-a8-btcusdt-spot.md",
+        "sha256": "548ad0c2c6d766f49d5bb41de0fa1fecd0e928ec8939d253db5a1d31e55a9919"
+      },
+      "a8_sidecar": {
+        "path": "temp/audit_a7_a8/a8_btcusdt_spot_probe_v1.json",
+        "sha256": "08f972fcbc9776d5a6cdc028a2d7523d24355887b204dddc2277a540c22a2c52"
+      },
+      "a9_report": {
+        "path": "docs/superpowers/plans/2026-08-31-a9-second-btc-venue-kraken.md",
+        "sha256": "225793a4723c1f55345084fe0a5be5c68273181798ce96ba61ac3283adaf5fb5"
+      },
+      "a9_sidecar": {
+        "path": "temp/audit_a9_kraken/a9_kraken_range_probe_v1.json",
+        "sha256": "808c1a17c0b710187c36254c31992d2b645cc2533b7fec4b4c0d05b7d42f7c14"
+      },
+      "a10_report": {
+        "path": "docs/superpowers/plans/2026-08-31-a10-live-acquisition-consolidation.md",
+        "sha256": "61881d940dca4810293b487cb172427fc5c18d1936724ba28939eabc4a88e9ee"
+      },
+      "a10_sidecar": {
+        "path": "temp/audit_a10_corrections/a3a4_reprobe_v2.json",
+        "sha256": "621c5781df4d94810dbfc2fa61f9a78767f6b735ed9d42c421d2cfc5e10cfe86"
+      }
+    },
+    "lineage": {
+      "earlier_recommendation_date": "2026-08-24",
+      "earlier_mvp": "BTCUSDT perpetual decisions every completed 15-minute candle, fixed one-hour immediate-entry policy, logistic or return regression primary, LightGBM secondary, and predictive plus after-cost economic metrics.",
+      "supersession": "Protocol v1 intentionally changed to undirected 24-hour large-move probability, hourly cadence, no trading-policy or PnL layer, and exact-Decimal logistic ladder.",
+      "reintroduction_rule": "LightGBM, XGBoost, return regression, directional actions, or economic gates require a separately preregistered successor experiment."
+    },
+    "deferred_change_set": {
+      "C2": {
+        "owner_packet": "C2",
+        "status": "IMPLEMENTED_PACKET_C2"
+      },
+      "C3": {
+        "owner_packet": "C3",
+        "status": "IMPLEMENTED_PACKET_C3"
+      },
+      "C4": {
+        "owner_packet": "C4",
+        "status": "IMPLEMENTED_PACKET_C4"
+      },
+      "C5a": {
+        "owner_packet": "C5a",
+        "status": "IMPLEMENTED_PACKET_C5A"
+      },
+      "C5": {
+        "owner_packet": "C5",
+        "status": "IMPLEMENTED_PACKET_C5"
+      }
+    },
+    "standing_rejections": {
+      "signed_return_replacement": "REJECTED",
+      "sigma_denominator_floor": "REJECTED",
+      "arbitrary_98_percent_coverage_cutoff": "REJECTED",
+      "new_feature_search": "REJECTED"
+    },
+    "oi_timestamp_resolution": {
+      "oi_timestamp_role": "UNRESOLVED_CONSERVATIVE",
+      "oi_provider_field": "create_time",
+      "oi_eligibility_ts": "O + 5 minutes",
+      "semantic_claim_permitted": false,
+      "provider_timestamp_preservation": "Preserve create_time natively; do not relabel it as interval_open_ts or interval_close_ts while its archive-specific semantics remain unresolved.",
+      "both_readings_safety": "If O denotes the start of a five-minute interval, O + 5 minutes is exactly its completion; if O denotes the end, the same rule is five minutes conservative. The arithmetic is causally safe under both readings.",
+      "latest_eligible_at_hourly_boundary": "Under eligibility_ts < prediction_ts = T + 2 ms, the latest eligible row has O = T - 5 minutes.",
+      "resolution_obligation": "Before OI canonicalization, perform an archive-specific create_time semantics check and record measured or cited evidence in the source contract; until then the role remains UNRESOLVED_CONSERVATIVE.",
+      "disclosed_limitation": "Every result report using an OI feature must disclose the unresolved provider timestamp semantics and the conservative eligibility treatment.",
+      "kraken_asymmetry": "Kraken documents candle timestamps as interval starts; its timestamp role and K + 1 hour eligibility remain frozen and must not be harmonized with OI.",
+      "kraken_timestamp_role": "DOCUMENTED_INTERVAL_START",
+      "kraken_eligibility_ts": "K + 1 hour"
+    },
+    "final_refit": {
+      "retained_candidate": "frozen C3 retention graph result",
+      "paired_comparator": "B2",
+      "prerequisite": "frozen 2022-2024 gate has passed",
+      "refit_train_start": "2020-09-01 00:00:00.000 UTC",
+      "refit_origin_rule": "O + 24h <= 2025-01-01 00:00:00.000 UTC",
+      "refit_last_origin": "2024-12-31 00:00:00.000 UTC",
+      "refit_last_label_close": "2024-12-31 23:59:59.999 UTC",
+      "nominal_origin_count": 37969,
+      "excluded_tail_count": 23,
+      "excluded_tail_range": "2024-12-31 01:00 .. 2024-12-31 23:00 UTC",
+      "identical_sample_rule": "Refit the retained candidate and paired B2 on the same origin set: the retained candidate's point-in-time complete-case origins. B2 receives no larger sample.",
+      "standardization_refit_rule": "Recompute z-score means and population standard deviations on exactly the final refit rows; carry no standardization from any fold.",
+      "unchanged_parameters": [
+        "target_k",
+        "feature_set",
+        "ridge_lambda",
+        "ETA_CLAMP",
+        "MU_CLAMP",
+        "max_iterations",
+        "estimator_entry_point",
+        "probability_treatment"
+      ],
+      "target_k_rule": "Keep the value frozen from the pre-2022 design set; never recompute k in the final refit.",
+      "nominal_vs_eligible": "37969 is the nominal hourly-origin count satisfying the purge inequality; the realized point-in-time complete-case count is smaller and unknown until execution.",
+      "fail_closed_causes_source": "fail_closed_causes",
+      "fit_failure_propagation": "Never drop a fold, year, or candidate from pooling after a final fit failure.",
+      "failure": {
+        "state": "FINAL_FIT_FAILURE",
+        "terminal_for_run": true,
+        "tuning_feature_lambda_estimator_or_row_retry": "FORBIDDEN",
+        "evaluation_2025": "FORBIDDEN",
+        "did_not_replicate_reporting": "FORBIDDEN_BECAUSE_NO_2025_SCORE_EXISTS"
+      }
+    },
+    "target_endpoint_buffer_2026": {
+      "purpose": "Supply 24-hour label endpoints for the 23 calendar-2025 origins whose labels end in 2026.",
+      "scope": "BTCUSDT perpetual traded-price klines only",
+      "state": "SEALED",
+      "role": "target_only",
+      "permitted_series": [
+        "btcusdt_perp_ohlcv"
+      ],
+      "origin_count_supported": 8760,
+      "buffer_dependent_origins": 23,
+      "first_dependent_origin": "2025-12-31 01:00:00.000 UTC",
+      "last_dependent_origin": "2025-12-31 23:00:00.000 UTC",
+      "required_1h_bar_count": 23,
+      "first_1h_bar_open": "2026-01-01 00:00:00.000 UTC",
+      "last_1h_bar_open": "2026-01-01 22:00:00.000 UTC",
+      "first_1h_bar_close": "2026-01-01 00:59:59.999 UTC",
+      "last_1h_bar_close": "2026-01-01 22:59:59.999 UTC",
+      "required_1m_row_count": 1380,
+      "first_1m_open": "2026-01-01 00:00:00.000 UTC",
+      "last_1m_open": "2026-01-01 22:59:00.000 UTC",
+      "buffer_end_inclusive_ms": 1767308399999,
+      "refused_bar_open_ms": 1767308400000,
+      "allowed_pre_gate_checks": [
+        "file_inventory",
+        "cryptographic_hashes",
+        "parser_compatibility",
+        "expected_boundaries",
+        "mechanical_corruption"
+      ],
+      "forbidden_operations": [
+        "labels",
+        "feature_distributions",
+        "model_scores",
+        "conditional_outcome_inspection",
+        "protocol_adaptation"
+      ],
+      "target_only_proof": "Because prediction_ts = T + 2 ms and the join is strict, every eligible feature row for a 2025 origin has eligibility_ts <= T + 1 ms; no 2026 row of any series can be a feature for a 2025 origin.",
+      "forbidden_2026_content": [
+        "feature_origins",
+        "funding",
+        "open_interest",
+        "mark_price",
+        "index_price",
+        "native_premium",
+        "binance_spot",
+        "kraken",
+        "any_eth_series"
+      ],
+      "hard_end_boundary": "Refuse any 1h bar with open at or after 2026-01-01 23:00:00.000 UTC; emitting that bar is a contract violation, not an ignorable extra row.",
+      "truncation_rule": "After parsing and before aggregation, discard every 1m row whose open is outside [2026-01-01 00:00:00.000, 2026-01-01 22:59:00.000] UTC inclusive.",
+      "discarded_rows_rule": "Count and report discarded rows; never use them for any purpose.",
+      "derivation": {
+        "transformation": "multi_timeframe_aggregation",
+        "source_interval": "1m",
+        "target_interval": "1h",
+        "complete_contiguous_minutes_per_bar": 60,
+        "close_time_ms": "open + 3600000 - 1",
+        "nominal_available_ms": "open + 3600000",
+        "incomplete_group": "HARD_FAILURE_INCOMPLETE_GROUP",
+        "padding_interpolation_or_short_bar": "FORBIDDEN",
+        "canonical_target_close_semantics": "UNCHANGED_FROM_FROZEN_LANE"
+      },
+      "cannot_widen": "The permitted extent is exactly the 23 stated bars; acquiring more 2026 data for convenience is a contract violation even if extra rows would not be used.",
+      "missing_data_rule": "A missing required buffer bar invalidates and excludes the affected origin as an incomplete case; shorter horizons, nearest bars, and 1d substitution are forbidden."
+    },
+    "replication_gate_2025": {
+      "scope": "Complete retained candidate versus paired B2 on all point-in-time complete-case eligible calendar-2025 origins.",
+      "criteria": [
+        {
+          "id": 1,
+          "rule": "pooled BSS_B2(candidate) >= 0.02",
+          "threshold": "0.02"
+        },
+        {
+          "id": 2,
+          "rule": "two-sided 95% bootstrap CI lower bound for BS_B2 - BS_candidate > 0",
+          "threshold": "> 0"
+        },
+        {
+          "id": 3,
+          "rule": "abs(mean(p - y)) <= 0.02",
+          "threshold": "0.02"
+        },
+        {
+          "id": 4,
+          "rule": "calibration slope is within the frozen C3 helper default band",
+          "threshold": "frozen C3 defaults"
+        },
+        {
+          "id": 5,
+          "rule": "calibration regression is defined and converges",
+          "threshold": "true"
+        }
+      ],
+      "outcome_on_success": "REPLICATED",
+      "outcome_on_failure": "DID_NOT_REPLICATE",
+      "run_count_permitted": 1,
+      "dropped_multi_year_criteria": [
+        {
+          "multi_year_id": 3,
+          "reason": "at least two improving years is unattainable in one calendar year"
+        },
+        {
+          "multi_year_id": 4,
+          "reason": "the one-year BSS threshold of 0.02 implies the minus-0.02 worst-year bound"
+        },
+        {
+          "multi_year_id": 7,
+          "reason": "the one-year absolute-bias bound of 0.02 implies the 0.04 yearly bound"
+        }
+      ],
+      "rejected_alternatives": {
+        "gemini_weaker_gate": "REJECTED_1.5_PERCENT_0.03_0.75_TO_1.25",
+        "gpt_one_year_bias_threshold": "REJECTED_0.04",
+        "claude_literal_seven_condition_reuse": "REJECTED_ARITHMETICALLY_IMPOSSIBLE"
+      },
+      "inference_reuse": {
+        "implementation": "src/quantara/bootstrap_b4.py",
+        "new_inference_code": "FORBIDDEN",
+        "resamples": 20000,
+        "block_hours": 168,
+        "circularity": "non_circular",
+        "p_value": "frozen null-centred one-sided p-value",
+        "interval": "frozen nearest-rank two-sided 95% percentile interval",
+        "paired_valid_fail_closed_below": 168
+      },
+      "bootstrap_geometry": {
+        "H_2025": 8760,
+        "block_hours": 168,
+        "n_blocks": 53,
+        "concatenated_hours": 8904,
+        "eligible_block_starts": "0 .. 8592",
+        "distinct_eligible_starts": 8593,
+        "ci_rank_lower_at_b_20000": 500,
+        "ci_rank_upper_at_b_20000": 19500
+      },
+      "comparison_id": {
+        "pattern": "REPLICATION_2025|<MODEL>_vs_B2",
+        "models": {
+          "M2": "REPLICATION_2025|M2_vs_B2",
+          "M2K": "REPLICATION_2025|M2K_vs_B2",
+          "M3": "REPLICATION_2025|M3_vs_B2",
+          "M4": "REPLICATION_2025|M4_vs_B2"
+        },
+        "seeds_2025": {
+          "M2": 13432793617478683004,
+          "M2K": 17576365771105646995,
+          "M3": 15946086953525544617,
+          "M4": 3803725181447297110
+        }
+      },
+      "calibration_reuse": {
+        "implementation": "estimator_c3.fit_calibration",
+        "lambda": "0",
+        "probability_clamp_lower": "0.000000000001",
+        "probability_clamp_upper": "0.999999999999",
+        "probability_clamp_rule": "clamp_mu is mandatory before taking the logarithm",
+        "slope": "calibration_slope = beta_z / sd_x",
+        "intercept": "calibration_intercept = beta_0 - beta_z * mu_x / sd_x",
+        "slope_band_source": "estimator_c3.calibration_slope_passes defaults",
+        "slope_band_applies_to": "raw-logit calibration_slope, never beta_z",
+        "failure_conditions_source": "calibration.failure_conditions",
+        "failure_condition_count": 6,
+        "criterion_5_rule": "satisfied only when the calibration fit is defined and converges",
+        "new_tolerance": "FORBIDDEN"
+      },
+      "claim_scope": "REPLICATED means the complete retained frozen model replicated aggregate probability-forecast improvement versus paired B2 in calendar 2025; it does not establish replication of any individual ETH or Kraken feature.",
+      "component_claim_rule": "A block claim requires its own frozen parent comparison to satisfy the same five criteria; the component chain is scored once as claim-specific diagnostics.",
+      "coverage_reporting": {
+        "required": [
+          "candidate_eligible_rows",
+          "candidate_eligible_percentage",
+          "exclusion_reasons",
+          "longest_missing_run"
+        ],
+        "minimum_coverage_threshold": "NONE_BY_DESIGN",
+        "applicability": "candidate-complete timestamps only",
+        "general_contract": "coverage_and_claim_scope"
+      }
+    },
+    "outcome_states": [
+      "FINAL_FIT_FAILURE",
+      "REPLICATED",
+      "DID_NOT_REPLICATE"
+    ]
+  }
+}

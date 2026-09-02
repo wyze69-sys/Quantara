@@ -19,6 +19,21 @@ V11_YAML_PATH = REPO_ROOT / "configs/protocols/quantara-protocol-v1_1.yaml"
 
 PREDECESSOR_SHA256 = "91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a"
 UNASSIGNED_V11_HASH = "NOT_YET_ASSIGNED_PENDING_PACKET_C5"
+FROZEN_V11_HASH = "12dd3445365fdaa9e35cdcf93cae3e79a88b6b4d72d3d703b921359d1e917a9b"
+V11_FROZEN_STATUS = "FROZEN_BEFORE_2022_2024_SCORING"
+V11_SCORING_PERMISSION = (
+    "AUTHORIZED_2022_2024_AFTER_THRESHOLD_FIXTURE_2025_REMAINS_SEALED"
+)
+AUDIT_REFERENCE_SHA256S = {
+    "379a70250630f1e914618eda33131f6d396535126cbedbde7955a4216e7b2f72",
+    "3b3b6ea81b3e1d91a9c10140333b2e01ab39929ff9022d0573878defd043ff58",
+    "548ad0c2c6d766f49d5bb41de0fa1fecd0e928ec8939d253db5a1d31e55a9919",
+    "08f972fcbc9776d5a6cdc028a2d7523d24355887b204dddc2277a540c22a2c52",
+    "225793a4723c1f55345084fe0a5be5c68273181798ce96ba61ac3283adaf5fb5",
+    "808c1a17c0b710187c36254c31992d2b645cc2533b7fec4b4c0d05b7d42f7c14",
+    "61881d940dca4810293b487cb172427fc5c18d1936724ba28939eabc4a88e9ee",
+    "621c5781df4d94810dbfc2fa61f9a78767f6b735ed9d42c421d2cfc5e10cfe86",
+}
 V1_TOP_LEVEL_KEYS = (
     "protocol_id",
     "protocol_status",
@@ -101,23 +116,32 @@ def test_v11_draft_is_fail_closed_and_unloadable_by_frozen_v1_loader() -> None:
         load_protocol(V11_YAML_PATH)
 
 
-def test_v11_draft_identity_status_and_hash_state() -> None:
+def test_v11_frozen_identity_status_and_hash_state() -> None:
     document = _load_v11()
     assert document["protocol_id"] == "quantara-protocol-v1_1"
-    assert document["protocol_status"] == "DRAFT_UNFROZEN_SUCCESSOR"
+    assert document["protocol_status"] == V11_FROZEN_STATUS
     assert document["supersedes"] == "quantara-protocol-v1"
     assert document["predecessor_semantic_sha256"] == PREDECESSOR_SHA256
-    assert document["frozen_semantic_sha256"] == UNASSIGNED_V11_HASH
-    assert document["scoring_permission"] == "NONE_UNTIL_FROZEN"
+    assert document["frozen_semantic_sha256"] == FROZEN_V11_HASH
+    assert document["frozen_semantic_sha256"] != UNASSIGNED_V11_HASH
+    assert document["scoring_permission"] == V11_SCORING_PERMISSION
 
     spec_text = V11_SPEC_PATH.read_text(encoding="utf-8")
     yaml_text = V11_YAML_PATH.read_text(encoding="utf-8")
     all_hash_tokens = HEX_64_RE.findall(spec_text + "\n" + yaml_text)
-    assert set(all_hash_tokens) <= {PREDECESSOR_SHA256}
-    for line in FROZEN_HASH_POSITION_RE.findall(spec_text + "\n" + yaml_text):
-        assert HEX_64_RE.search(line) is None, (
-            f"draft frozen-hash position contains a digest: {line}"
-        )
+    assert set(all_hash_tokens) == {
+        PREDECESSOR_SHA256,
+        FROZEN_V11_HASH,
+        *AUDIT_REFERENCE_SHA256S,
+    }
+    frozen_hash_positions = [
+        line
+        for line in (spec_text + "\n" + yaml_text).splitlines()
+        if line.startswith(("Frozen semantic hash:", "frozen_semantic_sha256:"))
+    ]
+    assert len(frozen_hash_positions) == 2
+    for line in frozen_hash_positions:
+        assert HEX_64_RE.search(line), f"frozen-hash position lacks a digest: {line}"
 
 
 def test_v11_time_semantics_are_explicit_and_boundary_ordering_is_causal() -> None:
@@ -217,7 +241,10 @@ def test_v11_yaml_has_no_floats_duplicate_top_level_keys_or_missing_deferred_pac
         "owner_packet": "C5a",
         "status": "IMPLEMENTED_PACKET_C5A",
     }
-    assert deferred["C5"] == {"owner_packet": "C5", "status": "DEFERRED"}
+    assert deferred["C5"] == {
+        "owner_packet": "C5",
+        "status": "IMPLEMENTED_PACKET_C5",
+    }
 
 
 def test_v11_estimator_and_optional_family_are_bound_by_packet_c3() -> None:
@@ -333,15 +360,15 @@ def test_v11_spec_records_intentional_lineage_and_future_experiment_boundary() -
     assert "LightGBM" in spec_text
     assert "earlier recommendation" in spec_text
     assert "separately preregistered successor experiment" in spec_text
-    assert "no scoring of any period" in spec_text
-    assert "no 2025 access" in spec_text
+    assert "2022\u20132024 scoring is\nauthorized only after" in spec_text
+    assert "2025 remains sealed" in spec_text
 
 
 def test_v11_c4_contract_literals_and_terminal_states_are_exact() -> None:
     document = _load_v11()
     assert len(document) == 49
-    assert document["protocol_status"] == "DRAFT_UNFROZEN_SUCCESSOR"
-    assert document["frozen_semantic_sha256"] == UNASSIGNED_V11_HASH
+    assert document["protocol_status"] == V11_FROZEN_STATUS
+    assert document["frozen_semantic_sha256"] == FROZEN_V11_HASH
 
     resolution = document["oi_timestamp_resolution"]
     assert resolution["oi_timestamp_role"] == "UNRESOLVED_CONSERVATIVE"
@@ -426,12 +453,12 @@ def test_v11_c4_contract_literals_and_terminal_states_are_exact() -> None:
     ]
 
 
-def test_v11_c4_spec_status_is_implemented_while_c5_stays_deferred() -> None:
+def test_v11_c4_and_c5_spec_statuses_are_implemented() -> None:
     spec_text = V11_SPEC_PATH.read_text(encoding="utf-8")
     assert (
         "| Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 |" in spec_text
     )
-    assert "| Coverage and final freeze | `DEFERRED` | C5 |" in spec_text
+    assert "| Coverage and final freeze | `IMPLEMENTED` | C5 |" in spec_text
     assert "| Loader, hash scope, and coverage/claim contract | `IMPLEMENTED` | C5a |" in spec_text
 
 
@@ -481,8 +508,12 @@ def test_v11_coverage_contract_generalizes_c4_without_adding_a_threshold() -> No
     assert gate_coverage["applicability"] == "candidate-complete timestamps only"
 
 
-def test_v11_has_only_the_predecessor_digest_and_no_c5_fixture() -> None:
+def test_v11_has_frozen_and_audit_digests_and_the_c5_fixture() -> None:
     spec_text = V11_SPEC_PATH.read_text(encoding="utf-8")
     yaml_text = V11_YAML_PATH.read_text(encoding="utf-8")
-    assert set(HEX_64_RE.findall(spec_text + "\n" + yaml_text)) == {PREDECESSOR_SHA256}
-    assert not (REPO_ROOT / "tests/fixtures/protocol_v1_1_expected.json").exists()
+    assert set(HEX_64_RE.findall(spec_text + "\n" + yaml_text)) == {
+        PREDECESSOR_SHA256,
+        FROZEN_V11_HASH,
+        *AUDIT_REFERENCE_SHA256S,
+    }
+    assert (REPO_ROOT / "tests/fixtures/protocol_v1_1_expected.json").exists()
