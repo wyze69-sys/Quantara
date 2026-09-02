@@ -1,0 +1,64 @@
+schema: quantara.provider-rights/v1
+record_id: binance-spot-provider-rights.v1
+provider: binance_spot
+reviewer: wyze69-sys
+review_date: 2026-09-03
+# Protocol v1.1 scope: binance_btc_spot_ohlcv_1m (BTCUSDT spot).
+# Owner risk acceptance pending counsel; private internal research only.
+# USD-M futures remain governed by the existing versioned USD-M records.
+operations:
+  acquire_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: >-
+      Owner-approved internal acquisition of binance_btc_spot_ohlcv_1m pending
+      counsel review, authorized by configs/protocols/quantara-protocol-v1_1.yaml.
+      Feasibility audit: docs/superpowers/plans/2026-08-31-a8-btcusdt-spot.md.
+      Companion venue audit: docs/superpowers/plans/2026-08-31-a9-second-btc-venue-kraken.md.
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
+  retain_raw_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Owner-approved raw retention for private internal research pending counsel review."
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
+  normalize_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Owner-approved internal normalization of retained spot data pending counsel review."
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
+  analyze_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Owner-approved internal analysis pending counsel review; outputs remain private research evidence."
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
+  model_train_internal:
+    state: OWNER_APPROVED_PENDING_COUNSEL
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: >-
+      Owner-approved internal model development over retained spot data pending
+      counsel review, within the frozen Protocol v1.1 inventory and model ladder.
+      Models and outputs remain private internal research evidence only.
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
+  commercial_production_eligible:
+    state: UNKNOWN
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Commercial production is not cleared; pending-counsel approval never permits it."
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
+  customer_display:
+    state: UNKNOWN
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Customer-facing use is not cleared; pending-counsel approval never permits it."
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
+  raw_redistribution:
+    state: UNKNOWN
+    source_terms: "Binance Terms of Use; data.binance.vision public archives"
+    rationale: "Redistribution is not cleared; raw and normalized artifacts remain private internal evidence."
+    review_date: 2026-09-03
+    reviewer: wyze69-sys
