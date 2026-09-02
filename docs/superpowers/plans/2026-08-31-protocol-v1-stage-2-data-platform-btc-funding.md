@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 2: Canonical Data Platform and BTC Funding Reference Slice
 
-**Status:** BLOCKED — P01 and P02 must be accepted before D00
+**Status:** UNBLOCKED 2026-09-03 — Stage 1 P00–P02 accepted; Protocol v1 frozen at semantic SHA-256 `91457d3f…` and Protocol v1.1 frozen at `12dd3445…` (PR #10, merge `566f4c2`). First action: D00 only.
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`

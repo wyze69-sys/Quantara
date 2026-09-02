@@ -1,6 +1,6 @@
 # Protocol v1.1 — Master Plan (Successor Freeze)
 
-**Status:** IN PROGRESS — C1 `ACCEPTED` and merged (PR #5, merge commit `9a9196e`); C2 `ACCEPTED` and merged (PR #6, merge commit `7abce82`); C3 `ACCEPTED` and merged (PR #7, merge commit `b02cbc5`); C4 `ACCEPTED` and merged (PR #8, merge commit `3c77610`); C5a `ACCEPTED` and merged (PR #9, merge commit `c2e1a8d`); C5 is `NEXT` and is the final packet
+**Status:** COMPLETE — C1 `ACCEPTED` and merged (PR #5, merge commit `9a9196e`); C2 `ACCEPTED` and merged (PR #6, merge commit `7abce82`); C3 `ACCEPTED` and merged (PR #7, merge commit `b02cbc5`); C4 `ACCEPTED` and merged (PR #8, merge commit `3c77610`); C5a `ACCEPTED` and merged (PR #9, merge commit `c2e1a8d`); C5 `ACCEPTED` and merged (PR #10, merge commit `566f4c2`). Protocol v1.1 is frozen at semantic SHA-256 `12dd3445365fdaa9e35cdcf93cae3e79a88b6b4d72d3d703b921359d1e917a9b`; successor-line workflow closed 2026-09-03. Stage 2 (D00 onward) is authorized to start.
 **Date:** 2026-09-01
 **Predecessor:** Protocol v1, frozen at semantic SHA-256
 `91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a`
@@ -31,7 +31,7 @@ auto-advance.
 | C3 | Exact-Decimal IRLS binding, both-class and calibration-failure rules, `M2K` naming, three fixed optional hypotheses under ordinary Holm, selection-evidence labelling | B5, B6, item 7 | `ACCEPTED` (PR #7, `b02cbc5`) |
 | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed 2026 target-only endpoint buffer, one-year 2025 `REPLICATED` gate | B7, B8, B9, HIGH OI finding | `ACCEPTED` (PR #8, `3c77610`) |
 | C5a | v1.1 draft loader, explicit semantic-hash scope rule, coverage/exclusion reporting and claim scope per candidate, exclusion-reason vocabulary, `longest_missing_run` definition, guardrail test suite | items 12, 13 | `ACCEPTED` (PR #9, `c2e1a8d`) |
-| C5 | Spec/YAML/fixture synchronization, independent v1.1 expected fixture, new semantic SHA-256, and freeze | freeze | `NEXT` |
+| C5 | Spec/YAML/fixture synchronization, independent v1.1 expected fixture, new semantic SHA-256, and freeze | freeze | `ACCEPTED` (PR #10, `566f4c2`) |
 
 Only C5 may compute and freeze the Protocol v1.1 semantic hash. C5a defines the hash
 *scope*; C5 computes the *value* against that scope.
