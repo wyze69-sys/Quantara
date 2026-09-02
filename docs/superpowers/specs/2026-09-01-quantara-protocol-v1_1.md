@@ -1,19 +1,21 @@
-# Quantara Protocol v1.1 — Draft Successor Scientific Protocol Specification
+# Quantara Protocol v1.1 — Successor Scientific Protocol Specification
 
 ```text
 Protocol id:            quantara-protocol-v1_1
-Protocol status:        DRAFT_UNFROZEN_SUCCESSOR
+Protocol status:        FROZEN_BEFORE_2022_2024_SCORING
 Draft date:             2026-09-01
+Frozen date:            2026-09-02 (`frozen_date`)
 Supersedes:             quantara-protocol-v1
 Predecessor hash:       91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a
 Authorizing audit:      docs/superpowers/reviews/2026-09-01-protocol-v1-three-reviewer-deep-audit.md
-Frozen semantic hash:   NOT_YET_ASSIGNED_PENDING_PACKET_C5
-Scoring permission:     NONE_UNTIL_FROZEN
+Frozen semantic hash:   12dd3445365fdaa9e35cdcf93cae3e79a88b6b4d72d3d703b921359d1e917a9b
+Scoring permission:     AUTHORIZED_2022_2024_AFTER_THRESHOLD_FIXTURE_2025_REMAINS_SEALED
 ```
 
-This is a complete standalone draft successor to Protocol v1. While the protocol
-status is `DRAFT_UNFROZEN_SUCCESSOR`, no scoring of any period, and no 2025 access,
-is authorized. The machine-readable counterpart is
+This is a complete standalone successor to Protocol v1. 2022–2024 scoring is
+authorized only after the synthetic quantile fixture and frozen `k` fixture/hash are
+committed; 2025 remains sealed until the seven-criterion success gate passes. The
+machine-readable counterpart is
 `configs/protocols/quantara-protocol-v1_1.yaml`. This packet repairs version,
 lineage, prediction ordering, quantile, and purge semantics only. The remaining
 accepted change-set items are explicitly deferred in §11.
@@ -100,7 +102,7 @@ Type 7 and Type 8 are defensible alternatives but are not scientifically require
 nearest-rank is chosen because it matches the generalized inverse empirical-CDF
 meaning and introduces no interpolated threshold.
 
-## 4. Baselines and frozen model ladder
+## 4. Baselines and frozen model ladder (YAML key: `ladder_widths`)
 
 ```text
 B0 — training-only climatology
@@ -183,7 +185,8 @@ Constructed `mark/index - 1` and `mark/spot - 1` are diagnostics only and never 
 M1-M4. Mark and index are canonicalized because they verify source integrity and
 support diagnostics, not because they earn independent model stages.
 
-Protocol v1.1 binds every probability-model fit to the committed exact-Decimal
+Protocol v1.1 binds every probability-model fit (YAML key: `estimator_binding`) to
+the committed exact-Decimal
 implementation `src/quantara/training_metrics_logistic.py`, entry point
 `fit_logistic_irls`. It does not define or permit a second solver. The bound
 contract is:
@@ -209,8 +212,9 @@ probability clamp:         0.000000000001
 
 Every training outcome supplied to a fit must contain both classes. The C3 binding
 checks this before calling `fit_logistic_irls`; a single-class window fails the
-affected candidate comparison closed. Any fit failure fails the affected candidate
-comparison and never silently drops a fold, year, or candidate from pooling. The
+affected candidate comparison closed. The frozen `fit_failure_propagation` rule is
+that any fit failure fails the affected candidate comparison and never silently drops
+a fold, year, or candidate from pooling. The
 seven named fail-closed causes are exactly:
 
 ```text
@@ -239,7 +243,7 @@ training rows and score exactly the same test timestamps as the candidate. A lar
 baseline sample may be reported separately but cannot be used for the paired
 incremental claim.
 
-## 5. Point-in-time contract
+## 5. Point-in-time contract (YAML key: `point_in_time`)
 
 Every canonical record preserves:
 
@@ -289,7 +293,7 @@ All other eligibility rules keep their Protocol-v1 form and are measured against
 - For Kraken hourly OHLCVT with interval-start `K`,
   `eligibility_ts = K + 1 hour`.
 
-### Open-interest provider timestamp role
+### Open-interest provider timestamp role (YAML key: `oi_timestamp_resolution`)
 
 The historical metrics archive preserves the provider field `create_time` as `O`.
 Its archive-specific meaning is unresolved: A10 superseded A2's earlier open-bar
@@ -382,7 +386,7 @@ last training origin:      2024-12-31 00:00 UTC
 last required label close: 2024-12-31 23:59:59.999 UTC
 ```
 
-### Final pre-2025 refit
+### Final pre-2025 refit (YAML key: `final_refit`)
 
 Only after the frozen 2022–2024 gate passes, refit the candidate retained by the C3
 retention graph and paired comparator B2 on the identical origin set: the retained
@@ -411,7 +415,8 @@ A failure emits terminal state `FINAL_FIT_FAILURE` under exactly the seven froze
 C3 `fail_closed_causes`. It permits no tuning, feature change, lambda change,
 different estimator, or retry on different rows; it forbids the 2025 evaluation
 and cannot be reported as `DID_NOT_REPLICATE` because no 2025 score exists. It never
-drops a fold, year, or candidate from pooling.
+drops a fold, year, or candidate from pooling. These three terminal labels are the
+closed `outcome_states` vocabulary.
 
 No post-test embargo is required for this anchored expanding-window design. A
 `2024-12-30 23:00` cutoff is wrong by one hour and is rejected.
@@ -623,7 +628,8 @@ diagnostics. AUC cannot pass the gate.
 M1 and M2 are reported as the frozen BTC core ladder; M2 is the mandatory primary
 candidate. M2 must pass the complete gate versus paired B2 before 2025 can unlock.
 
-The optional family has exactly three fixed hypotheses, all computed before any
+The `optional_family_retention` family has exactly three fixed hypotheses, all
+computed before any
 retention decision:
 
 ```text
@@ -704,7 +710,7 @@ sample actually scored, never on a larger comparator sample, and claims apply on
 to candidate-complete timestamps. The pooled percentage is computed from pooled
 eligible and nominal counts rather than by averaging yearly percentages.
 
-The exclusion vocabulary is closed and ordered:
+The `exclusion_reason_vocabulary` is closed and ordered:
 
 1. `missing_native_interval`
 2. `incomplete_feature_window`
@@ -745,7 +751,7 @@ inspection, or protocol adaptation. If the gate passes, run exactly one frozen 2
 evaluation. Failure is reported as `DID_NOT_REPLICATE`; never redesign and retest on
 2025.
 
-### 2026 target-only endpoint buffer
+### 2026 target-only endpoint buffer (YAML key: `target_endpoint_buffer_2026`)
 
 The endpoint buffer supplies 24-hour label endpoints for the 23 calendar-2025
 origins from `2025-12-31 01:00:00.000 UTC` through
@@ -789,7 +795,7 @@ convenience. If a required bar is missing, the affected label is invalid and its
 origin is excluded as incomplete; no shorter horizon, nearest bar, or 1d bar may
 replace it.
 
-### One-year 2025 replication gate
+### One-year 2025 replication gate (YAML key: `replication_gate_2025`)
 
 Compare the complete retained candidate with paired B2 on all point-in-time
 complete-case eligible calendar-2025 origins. The outcome is `REPLICATED` if and
@@ -863,10 +869,10 @@ the hash basis `utf8_text_normalized_to_lf_before_sha256`. The A7–A10 paths ar
 - `docs/superpowers/plans/2026-08-31-a10-live-acquisition-consolidation.md`
 - `temp/audit_a10_corrections/a3a4_reprobe_v2.json`
 
-Their predecessor digests are not recopied into this unfrozen draft. Each binding is
-recorded as `INHERITED_FROM_PROTOCOL_V1` pending the C5 synchronized fixture and
-semantic freeze. Earlier A1–A6 per-file bindings remain inherited subject to the A10
-correction register's interpretation.
+Their eight predecessor digests are now recorded in `audit_references` under the
+declared normalized-LF hash basis and bound by the C5 synchronized fixture and semantic
+freeze. Earlier A1–A6 per-file bindings remain inherited subject to the A10 correction
+register's interpretation.
 
 ## 10. Protocol lineage and intentional supersession
 
@@ -887,7 +893,7 @@ candidate. Reintroducing LightGBM, XGBoost, return regression, directional actio
 or economic gates requires a separately preregistered successor experiment and may
 never be presented as a Protocol-v1 or Protocol-v1.1 correction.
 
-## 11. Deferred change-set items
+## 11. Deferred change-set items (YAML key: `deferred_change_set`)
 
 | Item | Status | Owning packet | Deferred scope |
 | --- | --- | --- | --- |
@@ -895,16 +901,16 @@ never be presented as a Protocol-v1 or Protocol-v1.1 correction.
 | Estimator and optional-family contract | `IMPLEMENTED` | C3 | Packet C3 binds the committed exact-Decimal IRLS contract, both-class and calibration-failure rules, `M2K` plus the three fixed optional hypotheses under ordinary Holm across all three, and labels optional-block 2022–2024 results as selection evidence rather than independent replication. |
 | Timestamp, refit, buffer, and replication contract | `IMPLEMENTED` | C4 | Archive-specific OI timestamp resolution or conservative unknown-role handling, exact final pre-2025 refit sample and failure state, sealed BTC target-only endpoint buffer through `2026-01-01 22:59:59.999 UTC` for all 8,760 calendar-2025 hourly origins under the same controls, and the exact one-year 2025 `REPLICATED` gate. |
 | Loader, hash scope, and coverage/claim contract | `IMPLEMENTED` | C5a | Packet C5a binds the fail-closed draft loader, the every-key-except-own-hash projection, per-candidate by-year and pooled coverage reporting, closed exclusion vocabulary, and candidate-complete claim scope without assigning a v1.1 semantic hash. |
-| Coverage and final freeze | `DEFERRED` | C5 | Coverage/exclusion reporting and claim scope per candidate; synchronization of spec, YAML, and fixture; new semantic SHA-256; and repeated tamper, future-mutation, boundary, solver, bootstrap, and 2025-seal tests. |
+| Coverage and final freeze | `IMPLEMENTED` | C5 | Packet C5 synchronizes the spec, YAML, and independent 48-key fixture; assigns the frozen semantic SHA-256; authorizes only the guarded protocol paths; and adds repeated tamper, future-mutation, boundary, solver, bootstrap, and 2025-seal tests. |
 
 Standing rejections carried forward from the audit are unchanged: no signed-return
 replacement, no sigma denominator floor, no arbitrary 98% coverage cutoff, and no
 new feature search.
 
-## 12. Draft semantic-hash state
+## 12. Frozen semantic-hash state (YAML key: `semantic_hash_scope`)
 
-Protocol v1.1 has no frozen semantic hash in this packet. The future semantic-hash
-projection is every top-level key except `frozen_semantic_sha256`: exactly 48 of
+Protocol v1.1 has a frozen semantic hash in this packet. The semantic-hash projection
+is every top-level key except `frozen_semantic_sha256`: exactly 48 of
 the document's 49 top-level keys are in scope. The own-hash field is the sole
 exclusion because a document cannot contain its own digest; in particular,
 `predecessor_semantic_sha256` remains in scope.
@@ -912,6 +918,7 @@ exclusion because a document cannot contain its own digest; in particular,
 Canonicalization inherits
 `json.dumps(projected, sort_keys=True, separators=(',',':'), ensure_ascii=True)`
 over UTF-8 followed by `sha256`. Mapping order, comments, and YAML formatting are
-outside the semantic identity. The state remains
-`NOT_YET_ASSIGNED_PENDING_PACKET_C5`, and C5 owns the value, synchronized fixture,
-and freeze. Until then, scoring permission remains `NONE_UNTIL_FROZEN`.
+outside the semantic identity. C5 computed
+`12dd3445365fdaa9e35cdcf93cae3e79a88b6b4d72d3d703b921359d1e917a9b` from the
+independent render at `tests/fixtures/protocol_v1_1_expected.json`, synchronized the
+machine document to that fixture, and froze the value.

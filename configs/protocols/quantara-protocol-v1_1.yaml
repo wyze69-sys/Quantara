@@ -2,14 +2,14 @@
 # Human-readable counterpart: docs/superpowers/specs/2026-09-01-quantara-protocol-v1_1.md
 # No scoring is authorized until packet C5 assigns and freezes a semantic hash.
 protocol_id: quantara-protocol-v1_1
-protocol_status: DRAFT_UNFROZEN_SUCCESSOR
-frozen_date: NOT_APPLICABLE_DRAFT
+protocol_status: FROZEN_BEFORE_2022_2024_SCORING
+frozen_date: '2026-09-02'
 draft_date: '2026-09-01'
 supersedes: quantara-protocol-v1
 predecessor_semantic_sha256: 91457d3f1497abfd4e20cf4624768a5d9e9ba4b4478008fb4c7f65c17d90c65a
 authorizing_audit: docs/superpowers/reviews/2026-09-01-protocol-v1-three-reviewer-deep-audit.md
-frozen_semantic_sha256: NOT_YET_ASSIGNED_PENDING_PACKET_C5
-scoring_permission: NONE_UNTIL_FROZEN
+frozen_semantic_sha256: 12dd3445365fdaa9e35cdcf93cae3e79a88b6b4d72d3d703b921359d1e917a9b
+scoring_permission: AUTHORIZED_2022_2024_AFTER_THRESHOLD_FIXTURE_2025_REMAINS_SEALED
 semantic_hash_scope:
   basis: utf8_text_normalized_to_lf_before_sha256
   canonicalization: "json.dumps(projected, sort_keys=True, separators=(',',':'), ensure_ascii=True)"
@@ -210,8 +210,13 @@ target:
     threshold_rounding: FORBIDDEN
     canonical_threshold_representation: full Decimal string
     tie_break: NOT_REQUIRED_FOR_NUMERICALLY_EQUAL_VALUES
-    fixture_status: DEFERRED
-    fixture_owner_packet: C5
+    fixture_status: REQUIRED_BEFORE_2022_2024_SCORING
+    fixture_owner_packet: STAGE_2
+    fixture_binding_rule: >-
+      The synthetic quantile fixture and the frozen k fixture and its hash must exist
+      and be committed before any 2022-2024 scoring. Protocol v1.1 freezes the
+      threshold method, never the threshold value: k is derived from design data and
+      is therefore outside this document's semantic identity.
   threshold_design_end: '2021-12-31T23:59:59.999Z'
   threshold_design_rule: >-
     An origin enters the nearest-rank calculation only when its complete forward
@@ -636,7 +641,7 @@ validation:
       statistic_path_floats: FORBIDDEN
       rendering: quantize only final report to 18 decimal places with ROUND_HALF_EVEN
     monte_carlo_justification:
-      holm_threshold_context: DEFERRED_TO_PACKET_C3
+      holm_threshold_context: IMPLEMENTED_PACKET_C3
       p: '0.05/3'
       z: '1.96'
       half_width_b_2000: '0.005610684252190438'
@@ -750,28 +755,28 @@ audit_reference_hash_basis: utf8_text_normalized_to_lf_before_sha256
 audit_references:
   a7_report:
     path: docs/superpowers/plans/2026-08-31-a7-ethusdt-perpetual.md
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 379a70250630f1e914618eda33131f6d396535126cbedbde7955a4216e7b2f72
   a7_sidecar:
     path: temp/audit_a7_a8/a7_ethusdt_probe_v1.json
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 3b3b6ea81b3e1d91a9c10140333b2e01ab39929ff9022d0573878defd043ff58
   a8_report:
     path: docs/superpowers/plans/2026-08-31-a8-btcusdt-spot.md
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 548ad0c2c6d766f49d5bb41de0fa1fecd0e928ec8939d253db5a1d31e55a9919
   a8_sidecar:
     path: temp/audit_a7_a8/a8_btcusdt_spot_probe_v1.json
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 08f972fcbc9776d5a6cdc028a2d7523d24355887b204dddc2277a540c22a2c52
   a9_report:
     path: docs/superpowers/plans/2026-08-31-a9-second-btc-venue-kraken.md
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 225793a4723c1f55345084fe0a5be5c68273181798ce96ba61ac3283adaf5fb5
   a9_sidecar:
     path: temp/audit_a9_kraken/a9_kraken_range_probe_v1.json
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 808c1a17c0b710187c36254c31992d2b645cc2533b7fec4b4c0d05b7d42f7c14
   a10_report:
     path: docs/superpowers/plans/2026-08-31-a10-live-acquisition-consolidation.md
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 61881d940dca4810293b487cb172427fc5c18d1936724ba28939eabc4a88e9ee
   a10_sidecar:
     path: temp/audit_a10_corrections/a3a4_reprobe_v2.json
-    sha256: INHERITED_FROM_PROTOCOL_V1
+    sha256: 621c5781df4d94810dbfc2fa61f9a78767f6b735ed9d42c421d2cfc5e10cfe86
 lineage:
   earlier_recommendation_date: '2026-08-24'
   earlier_mvp: >-
@@ -799,7 +804,7 @@ deferred_change_set:
     status: IMPLEMENTED_PACKET_C5A
   C5:
     owner_packet: C5
-    status: DEFERRED
+    status: IMPLEMENTED_PACKET_C5
 standing_rejections:
   signed_return_replacement: REJECTED
   sigma_denominator_floor: REJECTED

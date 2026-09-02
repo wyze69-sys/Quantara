@@ -1,18 +1,18 @@
-"""Fail-closed draft loader and coverage contract for Protocol v1.1 packet C5a.
-
-This module deliberately canonicalizes the declared semantic projection without
-computing a digest. Protocol v1.1 remains unfrozen until packet C5.
-"""
+"""Fail-closed frozen loader, guard, and coverage contract for Protocol v1.1."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, NoReturn
+from typing import Any
 
 import yaml
 
@@ -27,6 +27,13 @@ from quantara.protocol import (
 )
 
 V11_UNASSIGNED_HASH = "NOT_YET_ASSIGNED_PENDING_PACKET_C5"
+V11_FROZEN_SEMANTIC_SHA256 = (
+    "12dd3445365fdaa9e35cdcf93cae3e79a88b6b4d72d3d703b921359d1e917a9b"
+)
+V11_FROZEN_STATUS = "FROZEN_BEFORE_2022_2024_SCORING"
+V11_SCORING_PERMISSION = (
+    "AUTHORIZED_2022_2024_AFTER_THRESHOLD_FIXTURE_2025_REMAINS_SEALED"
+)
 V11_HASH_EXCLUDED_KEYS = ("frozen_semantic_sha256",)
 V11_IN_SCOPE_KEY_COUNT = 48
 V11_TOTAL_KEY_COUNT = 49
@@ -41,22 +48,45 @@ EXCLUSION_REASONS = (
     "eth_oi_pre_2021_12_01",
     "same_key_conflict",
 )
+_V11_PRE_GATE_OPERATIONS = frozenset(
+    {
+        "file_inventory",
+        "cryptographic_hashes",
+        "parser_compatibility",
+        "expected_boundaries",
+        "mechanical_corruption",
+    }
+)
+_V11_GATE_ARTIFACT_KEYS = frozenset({"payload", "mac"})
+_V11_GATE_PAYLOAD_KEYS = frozenset(
+    {
+        "artifact_type",
+        "schema_version",
+        "protocol_sha256",
+        "operation",
+        "criteria",
+    }
+)
+_V11_GATE_CRITERION_IDS = frozenset(str(index) for index in range(1, 8))
+_V11_GATE_ARTIFACT_TYPE = "quantara-protocol-v1_1-gate-result"
+_V11_GATE_HMAC_KEY_ENV = "QUANTARA_PROTOCOL_V1_1_GATE_HMAC_KEY"
 
 
 class ProtocolV11DraftError(ValueError):
-    """Raised when a document violates the packet-C5a draft contract."""
+    """Raised when a document violates the frozen Protocol v1.1 contract."""
 
 
 class ProtocolV11GuardError(PermissionError):
-    """Raised because the unfrozen v1.1 draft authorizes no operation."""
+    """Raised when a frozen Protocol v1.1 operation is not authorized."""
 
 
 @dataclass(frozen=True, slots=True)
 class ProtocolV11:
-    """Validated draft identity containing canonical text but deliberately no digest."""
+    """Validated frozen identity containing canonical text and its semantic digest."""
 
     source: Path
     canonical_projection_json: str
+    semantic_sha256: str
     _canonical_document_json: str = field(repr=False)
 
     def to_dict(self) -> dict[str, Any]:
@@ -86,7 +116,7 @@ class CoverageReport:
 
 
 def hash_scope_projection(document: Mapping[str, object]) -> dict[str, object]:
-    """Apply the packet-C5a every-key-except-own-hash projection rule."""
+    """Apply the frozen every-key-except-own-hash semantic projection clause."""
     if not isinstance(document, Mapping):
         raise ProtocolV11DraftError("Protocol v1.1 document must be a mapping")
     try:
@@ -125,7 +155,7 @@ def hash_scope_projection(document: Mapping[str, object]) -> dict[str, object]:
 
 
 def load_protocol_v11(path: str | Path) -> ProtocolV11:
-    """Load the UTF-8 Protocol v1.1 draft under the packet-C5a fail-closed rules."""
+    """Load UTF-8 Protocol v1.1 only when its frozen semantic identity matches."""
     source = Path(path)
     try:
         text = source.read_text(encoding="utf-8")
@@ -149,36 +179,198 @@ def load_protocol_v11(path: str | Path) -> ProtocolV11:
         raise ProtocolV11DraftError(str(exc)) from exc
 
     expected_state = {
-        "frozen_semantic_sha256": V11_UNASSIGNED_HASH,
-        "protocol_status": "DRAFT_UNFROZEN_SUCCESSOR",
-        "scoring_permission": "NONE_UNTIL_FROZEN",
+        "frozen_semantic_sha256": V11_FROZEN_SEMANTIC_SHA256,
+        "protocol_status": V11_FROZEN_STATUS,
+        "scoring_permission": V11_SCORING_PERMISSION,
     }
     for key, expected in expected_state.items():
         if document.get(key) != expected:
             raise ProtocolV11DraftError(
-                f"Protocol v1.1 draft requires {key} to remain {expected!r}"
+                f"frozen Protocol v1.1 requires {key} to equal {expected!r}"
             )
+
+    sealed = document.get("sealed_2025")
+    if not isinstance(sealed, Mapping):
+        raise ProtocolV11DraftError("sealed_2025 must be a mapping")
+    pre_gate_checks = sealed.get("allowed_pre_gate_checks")
+    if not isinstance(pre_gate_checks, list) or set(pre_gate_checks) != (
+        _V11_PRE_GATE_OPERATIONS
+    ):
+        raise ProtocolV11DraftError(
+            "sealed_2025 allowed_pre_gate_checks does not match the frozen guard"
+        )
+    success_gate = document.get("success_gate")
+    if not isinstance(success_gate, Mapping):
+        raise ProtocolV11DraftError("success_gate must be a mapping")
+    criteria = success_gate.get("criteria")
+    if not isinstance(criteria, list) or {
+        str(criterion.get("id"))
+        for criterion in criteria
+        if isinstance(criterion, Mapping)
+    } != _V11_GATE_CRITERION_IDS:
+        raise ProtocolV11DraftError(
+            "success_gate criteria does not match the seven-criterion frozen guard"
+        )
 
     projection = hash_scope_projection(document)
     canonical_projection = canonical_semantic_json(projection)
+    digest = hashlib.sha256(canonical_projection.encode("utf-8")).hexdigest()
+    if digest != V11_FROZEN_SEMANTIC_SHA256:
+        raise ProtocolV11DraftError(
+            "Protocol v1.1 semantic SHA-256 mismatch: "
+            f"expected {V11_FROZEN_SEMANTIC_SHA256}, got {digest}"
+        )
     canonical_document = canonical_semantic_json(document)
     return ProtocolV11(
         source=source,
         canonical_projection_json=canonical_projection,
+        semantic_sha256=digest,
         _canonical_document_json=canonical_document,
     )
 
 
-def guard_protocol_v11_operation(operation: str) -> NoReturn:
-    """Refuse every operation under packet C5a because v1.1 is still unfrozen."""
-    raise ProtocolV11GuardError(
-        f"Protocol v1.1 operation {operation!r} is forbidden while "
-        f"frozen_semantic_sha256 is {V11_UNASSIGNED_HASH}"
+def _unique_v11_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ProtocolV11GuardError(f"duplicate gate artifact key: {key!r}")
+        result[key] = value
+    return result
+
+
+def _canonical_v11_gate_payload(payload: dict[str, object]) -> bytes:
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+
+
+def _load_v11_gate_authentication_key() -> bytes:
+    encoded_key = os.environ.get(_V11_GATE_HMAC_KEY_ENV)
+    if encoded_key is None:
+        raise ProtocolV11GuardError(
+            f"score_2025 requires {_V11_GATE_HMAC_KEY_ENV} to be configured"
+        )
+    if len(encoded_key) != 64:
+        raise ProtocolV11GuardError(
+            f"{_V11_GATE_HMAC_KEY_ENV} must contain exactly 32 bytes as hexadecimal"
+        )
+    try:
+        authentication_key = bytes.fromhex(encoded_key)
+    except ValueError as exc:
+        raise ProtocolV11GuardError(
+            f"{_V11_GATE_HMAC_KEY_ENV} is not valid hexadecimal"
+        ) from exc
+    if len(authentication_key) != 32:
+        raise ProtocolV11GuardError(
+            f"{_V11_GATE_HMAC_KEY_ENV} must decode to exactly 32 bytes"
+        )
+    return authentication_key
+
+
+def _verify_v11_gate_result_artifact(
+    artifact: object,
+    authentication_key: object,
+    protocol_hash: str,
+) -> None:
+    if not isinstance(artifact, bytes):
+        raise ProtocolV11GuardError(
+            "gate result must be an immutable bytes snapshot, not a path or mutable buffer"
+        )
+    if not isinstance(authentication_key, bytes) or len(authentication_key) != 32:
+        raise ProtocolV11GuardError(
+            "authentication key must be external immutable bytes of exactly 32 bytes"
+        )
+    try:
+        envelope = json.loads(
+            artifact.decode("utf-8"), object_pairs_hook=_unique_v11_json_object
+        )
+    except ProtocolV11GuardError:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProtocolV11GuardError(
+            "gate result is not canonicalizable UTF-8 JSON"
+        ) from exc
+    if not isinstance(envelope, dict) or set(envelope) != _V11_GATE_ARTIFACT_KEYS:
+        raise ProtocolV11GuardError("gate result envelope has missing or unknown keys")
+    payload = envelope["payload"]
+    mac_hex = envelope["mac"]
+    if not isinstance(payload, dict) or set(payload) != _V11_GATE_PAYLOAD_KEYS:
+        raise ProtocolV11GuardError("gate result payload has missing or unknown keys")
+    if not isinstance(mac_hex, str) or re.fullmatch(r"[0-9a-f]{64}", mac_hex) is None:
+        raise ProtocolV11GuardError(
+            "gate result MAC must be 64 lowercase hexadecimal characters"
+        )
+    supplied_mac = bytes.fromhex(mac_hex)
+    expected_mac = hmac.digest(
+        authentication_key,
+        _canonical_v11_gate_payload(payload),
+        "sha256",
+    )
+    if not hmac.compare_digest(expected_mac, supplied_mac):
+        raise ProtocolV11GuardError("gate result MAC authentication failed")
+    if payload["artifact_type"] != _V11_GATE_ARTIFACT_TYPE:
+        raise ProtocolV11GuardError("unsupported gate result artifact type")
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
+        raise ProtocolV11GuardError("unsupported gate result schema version")
+    if payload["protocol_sha256"] != protocol_hash:
+        raise ProtocolV11GuardError(
+            "gate result is stale or bound to a different protocol"
+        )
+    if payload["operation"] != "score_2025":
+        raise ProtocolV11GuardError("gate result is not bound to score_2025")
+    criteria = payload["criteria"]
+    if not isinstance(criteria, dict) or set(criteria) != _V11_GATE_CRITERION_IDS:
+        raise ProtocolV11GuardError(
+            "gate result must contain exactly all seven Protocol v1.1 success criteria"
+        )
+    if any(type(value) is not bool or not value for value in criteria.values()):
+        raise ProtocolV11GuardError(
+            "every Protocol v1.1 success criterion must be boolean true"
+        )
+
+
+def guard_protocol_v11_operation(
+    protocol_hash: str,
+    operation: str,
+    *,
+    gate_result_artifact: bytes | None = None,
+) -> None:
+    """Authorize only the frozen pre-gate checks or authenticated 2025 scoring."""
+    if (
+        not isinstance(protocol_hash, str)
+        or protocol_hash != V11_FROZEN_SEMANTIC_SHA256
+    ):
+        raise ProtocolV11GuardError(
+            "operation requires the frozen Protocol v1.1 semantic hash"
+        )
+    if not isinstance(operation, str):
+        raise ProtocolV11GuardError("operation name must be a string")
+    if operation in _V11_PRE_GATE_OPERATIONS:
+        if gate_result_artifact is not None:
+            raise ProtocolV11GuardError(
+                "pre-gate checks do not accept gate credentials"
+            )
+        return
+    if operation != "score_2025":
+        raise ProtocolV11GuardError(
+            f"unsupported Protocol v1.1 operation: {operation!r}"
+        )
+    if gate_result_artifact is None:
+        raise ProtocolV11GuardError(
+            "score_2025 requires an authenticated gate result"
+        )
+    _verify_v11_gate_result_artifact(
+        gate_result_artifact,
+        _load_v11_gate_authentication_key(),
+        protocol_hash,
     )
 
 
 def longest_missing_run(flags: Sequence[bool]) -> int:
-    """Measure packet-C5a ineligible runs on one nominal yearly grid."""
+    """Measure the frozen coverage clause's ineligible run on one yearly grid."""
     longest = 0
     current = 0
     for flag in flags:
@@ -198,7 +390,7 @@ def coverage_report(
     *,
     exclusions_by_year: Mapping[int, Sequence[str | None]] | None = None,
 ) -> CoverageReport:
-    """Compute exact packet-C5a coverage using frozen B4 grid and rendering helpers."""
+    """Compute the frozen coverage clause using B4 grid and rendering helpers."""
     if not isinstance(eligibility_by_year, Mapping) or not eligibility_by_year:
         raise ValueError("eligibility_by_year must be a non-empty mapping")
     if exclusions_by_year is not None and not isinstance(exclusions_by_year, Mapping):

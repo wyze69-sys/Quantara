@@ -12,10 +12,11 @@ from quantara.bootstrap_b4 import nominal_hours
 from quantara.protocol import FROZEN_SEMANTIC_SHA256, ProtocolValidationError, load_protocol
 from quantara.protocol_v11 import (
     EXCLUSION_REASONS,
+    V11_FROZEN_SEMANTIC_SHA256,
+    V11_FROZEN_STATUS,
     V11_HASH_EXCLUDED_KEYS,
     V11_IN_SCOPE_KEY_COUNT,
     V11_TOTAL_KEY_COUNT,
-    V11_UNASSIGNED_HASH,
     ProtocolV11DraftError,
     ProtocolV11GuardError,
     coverage_report,
@@ -92,15 +93,18 @@ def test_canonical_projection_is_independent_of_top_level_yaml_order(tmp_path: P
     assert original.canonical_projection_json == reordered.canonical_projection_json
 
 
-def test_draft_loader_exposes_no_digest_or_digest_literal() -> None:
+def test_frozen_loader_exposes_exactly_the_frozen_digest_literal() -> None:
     import quantara.protocol_v11 as module
 
     protocol = load_protocol_v11(V11_YAML_PATH)
-    assert not hasattr(protocol, "semantic_sha256")
-    assert HEX_64_RE.search(MODULE_PATH.read_text(encoding="utf-8")) is None
-    for value in vars(module).values():
-        if isinstance(value, str):
-            assert HEX_64_RE.fullmatch(value) is None
+    assert protocol.semantic_sha256 == V11_FROZEN_SEMANTIC_SHA256
+    assert V11_FROZEN_SEMANTIC_SHA256 in MODULE_PATH.read_text(encoding="utf-8")
+    digest_literals = {
+        value
+        for value in vars(module).values()
+        if isinstance(value, str) and HEX_64_RE.fullmatch(value)
+    }
+    assert digest_literals == {V11_FROZEN_SEMANTIC_SHA256}
 
 
 def test_to_dict_returns_a_detached_copy_of_the_validated_document() -> None:
@@ -108,7 +112,7 @@ def test_to_dict_returns_a_detached_copy_of_the_validated_document() -> None:
     first = protocol.to_dict()
     first["protocol_status"] = "MUTATED_BY_CALLER"
 
-    assert protocol.to_dict()["protocol_status"] == "DRAFT_UNFROZEN_SUCCESSOR"
+    assert protocol.to_dict()["protocol_status"] == V11_FROZEN_STATUS
 
 
 @pytest.mark.parametrize(
@@ -119,7 +123,7 @@ def test_to_dict_returns_a_detached_copy_of_the_validated_document() -> None:
         ("scoring_permission", "ALLOWED"),
     ),
 )
-def test_draft_state_tampering_is_rejected(
+def test_frozen_state_tampering_is_rejected(
     tmp_path: Path,
     field: str,
     value: str,
@@ -185,21 +189,21 @@ def test_duplicate_series_and_ladder_feature_are_rejected(tmp_path: Path) -> Non
         load_protocol_v11(_write_document(tmp_path, duplicate_feature))
 
 
-@pytest.mark.parametrize(
-    "operation",
-    (
+def test_frozen_guard_allows_pre_gate_checks_and_refuses_uncredentialed_scoring() -> None:
+    for operation in (
         "file_inventory",
         "cryptographic_hashes",
         "parser_compatibility",
         "expected_boundaries",
         "mechanical_corruption",
-        "score_2025",
-        "unknown_operation",
-    ),
-)
-def test_draft_guard_refuses_every_operation(operation: str) -> None:
-    with pytest.raises(ProtocolV11GuardError, match=V11_UNASSIGNED_HASH):
-        guard_protocol_v11_operation(operation)
+    ):
+        assert guard_protocol_v11_operation(
+            V11_FROZEN_SEMANTIC_SHA256, operation
+        ) is None
+    with pytest.raises(ProtocolV11GuardError):
+        guard_protocol_v11_operation(V11_FROZEN_SEMANTIC_SHA256, "score_2025")
+    with pytest.raises(ProtocolV11GuardError):
+        guard_protocol_v11_operation(V11_FROZEN_SEMANTIC_SHA256, "unknown_operation")
 
 
 def test_v1_loader_remains_isolated_from_v11() -> None:
