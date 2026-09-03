@@ -1,0 +1,20 @@
+schema: quantara.series-descriptor/v1
+series_id: binance_btc_spot_ohlcv_1m
+provider: binance_spot
+venue: binance
+market_type: spot
+provider_symbol: BTCUSDT
+object_cadence: monthly
+observation_cadence: 1m
+parser: binance_spot_kline_series_csv/v1
+canonical_value: ohlcv
+timestamp_role: interval_start
+csv_header_policy: absent
+period:
+  start: '2020-01-01'
+  end: '2024-12-31'
+  timezone: UTC
+source:
+  allowed_hosts:
+  - data.binance.vision
+legal_record: binance-spot-provider-rights.v1

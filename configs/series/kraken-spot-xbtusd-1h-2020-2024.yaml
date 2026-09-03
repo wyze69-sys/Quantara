@@ -1,0 +1,23 @@
+schema: quantara.series-descriptor/v1
+series_id: kraken_xbtusd_spot_ohlcv_1h
+provider: kraken
+venue: kraken
+market_type: spot
+provider_symbol: XBTUSD
+object_cadence: archive
+observation_cadence: 1h
+parser: kraken_ohlcvt_csv/v1
+canonical_value: ohlcvt
+timestamp_role: DOCUMENTED_INTERVAL_START
+csv_header_policy: absent
+period:
+  start: '2020-01-01'
+  end: '2024-12-31'
+  timezone: UTC
+source:
+  allowed_hosts:
+  - drive.usercontent.google.com
+  object_id: 1ptNqWYidLkhb2VAKuLCxmp2OXEfGO-AP
+  member: master_q4/XBTUSD_60.csv
+legal_record: kraken-spot-provider-rights.v1
+no_trade_intervals: omitted

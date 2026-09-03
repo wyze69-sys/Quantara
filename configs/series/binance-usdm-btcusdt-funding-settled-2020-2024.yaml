@@ -1,0 +1,20 @@
+schema: quantara.series-descriptor/v1
+series_id: btc_settled_funding
+provider: binance_usd_m_futures
+venue: binance
+market_type: perpetual
+provider_symbol: BTCUSDT
+object_cadence: monthly
+observation_cadence: per_settlement_event
+parser: binance_settled_funding_csv/v1
+canonical_value: last_funding_rate
+timestamp_role: settlement
+csv_header_policy: present
+period:
+  start: '2020-01-01'
+  end: '2024-12-31'
+  timezone: UTC
+source:
+  allowed_hosts:
+  - data.binance.vision
+legal_record: binance-usdm-provider-rights.v3

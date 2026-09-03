@@ -1,0 +1,20 @@
+schema: quantara.series-descriptor/v1
+series_id: eth_open_interest_5m
+provider: binance_futures
+venue: binance
+market_type: perpetual
+provider_symbol: ETHUSDT
+object_cadence: daily
+observation_cadence: 5m
+parser: binance_open_interest_csv/v1
+canonical_value: sum_open_interest
+timestamp_role: UNRESOLVED_CONSERVATIVE
+csv_header_policy: present
+period:
+  start: '2021-12-01'
+  end: '2024-12-31'
+  timezone: UTC
+source:
+  allowed_hosts:
+  - data.binance.vision
+legal_record: binance-usdm-provider-rights.v3
