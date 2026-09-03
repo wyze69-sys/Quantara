@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 2: Canonical Data Platform and BTC Funding Reference Slice
 
-**Status:** UNBLOCKED 2026-09-03 — D00 `ACCEPTED` and merged (PR #11, merge commit `8e1d288`). Protocol v1 frozen at `91457d3f…`, Protocol v1.1 frozen at `12dd3445…` (PR #10, `566f4c2`). IR-2026-09-03-1 resolved as a non-breach (see Incident log); D01 resumes on the existing `codex/protocol-v1-d01-series-descriptors` branch under the §6 value-blind extent-reading rule. Next action: D01 only.
+**Status:** UNBLOCKED 2026-09-03 — D00 `ACCEPTED` and merged (PR #11, merge commit `8e1d288`). D01 `ACCEPTED` and merged (PR #12, merge commit `97f4e8b`; Hermes independent audit PASS 2026-09-03 — 15 blob SHA-256s verified, 347 tests re-run clean, ruff clean, LF blobs, registry/period/header semantics independently checked, all 13 documents load through the rights-bound path). Protocol v1 frozen at `91457d3f…`, Protocol v1.1 frozen at `12dd3445…` (PR #10, `566f4c2`). IR-2026-09-03-1 resolved as a non-breach (see Incident log). Next action: D02 only.
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -365,7 +365,8 @@ remains unfinished. A green unit test alone is never COMPLETE.
 
 ## First action
 
-After D00 is accepted, execute **D01 only** and stop for Hermes audit.
+After D00 is accepted, execute **D01 only** and stop for Hermes audit. After D01 is
+accepted (2026-09-03, PR #12), execute **D02 only** and stop for Hermes audit.
 
 ## Incident log
 
