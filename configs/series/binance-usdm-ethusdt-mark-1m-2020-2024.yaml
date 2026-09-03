@@ -1,0 +1,20 @@
+schema: quantara.series-descriptor/v1
+series_id: eth_mark_price_1m
+provider: binance_futures
+venue: binance
+market_type: perpetual
+provider_symbol: ETHUSDT
+object_cadence: monthly
+observation_cadence: 1m
+parser: binance_usdm_kline_series_csv/v1
+canonical_value: ohlcv
+timestamp_role: interval_start
+csv_header_policy: absent_before_2022-12
+period:
+  start: '2020-01-01'
+  end: '2024-12-31'
+  timezone: UTC
+source:
+  allowed_hosts:
+  - data.binance.vision
+legal_record: binance-usdm-provider-rights.v3
