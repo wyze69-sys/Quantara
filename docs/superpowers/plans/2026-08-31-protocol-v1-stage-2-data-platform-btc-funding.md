@@ -1,6 +1,6 @@
 # Quantara Protocol v1 — Stage 2: Canonical Data Platform and BTC Funding Reference Slice
 
-**Status:** UNBLOCKED 2026-09-03 — D00 `ACCEPTED` and merged (PR #11, merge commit `8e1d288`). Protocol v1 frozen at `91457d3f…`, Protocol v1.1 frozen at `12dd3445…` (PR #10, `566f4c2`). Next action: D01 only.
+**Status:** UNBLOCKED 2026-09-03 — D00 `ACCEPTED` and merged (PR #11, merge commit `8e1d288`). Protocol v1 frozen at `91457d3f…`, Protocol v1.1 frozen at `12dd3445…` (PR #10, `566f4c2`). IR-2026-09-03-1 resolved as a non-breach (see Incident log); D01 resumes on the existing `codex/protocol-v1-d01-series-descriptors` branch under the §6 value-blind extent-reading rule. Next action: D01 only.
 **Date:** 2026-08-31
 **Project root:** `D:\PROJECT\Quantara`
 **Planning baseline:** `main` at `2f24ad6f30850e8a90dfaca661b1ed8b1d9f1b57`
@@ -119,8 +119,13 @@ For every packet:
 10. Commit locally with the packet commit message; do not push, merge, rebase, reset, clean, stash,
     or start another packet.
 11. Report exact commands, outputs, files, hashes, row/gap/duplicate counts, and status.
+12. Extent metadata that necessarily spans beyond 2024-12-31 (archive first/last rows, remote
+    sizes, member counts, CRC or hash anchors) may be read value-blind: cite the field name,
+    count, or hash, but never display, log, or parse into memory a row or candle value dated
+    2025 or later. Boundary rows of an explicitly bounded window ending on or before
+    2024-12-31 (e.g. `audit_2020_2024.last_row`) are permitted. Added by IR-2026-09-03-1.
 
-Any unexpected source drift, rights ambiguity, conflicting duplicate, checksum failure, unapproved
+Any unexpected source drift
 quality warning, 2025 access, or need to expand scope is `BLOCKED`, not permission to improvise.
 
 The existing default suite has a long runtime. Use focused tests during a packet and
@@ -361,3 +366,50 @@ remains unfinished. A green unit test alone is never COMPLETE.
 ## First action
 
 After D00 is accepted, execute **D01 only** and stop for Hermes audit.
+
+## Incident log
+
+### IR-2026-09-03-1 — D01 start: Zcode displayed a 2025-dated archive-extent row
+
+- **Reporter:** Zcode (executor), during D01 startup inspection of the A9 Kraken range probe.
+- **Trigger:** `Get-Content temp/audit_a9_kraken/a9_kraken_range_probe_v1.json | Select-Object -First 95`
+  displayed top-level `last_row` = a 2025-12-31 23:00 UTC row. Plan §6 stop rule fired; Zcode
+  stopped before any implementation, created no files, and preserved a clean branch.
+- **Exposure:** exactly one displayed value set: top-level `last_row[0] = 1767222000`
+  (2025-12-31 23:00) plus sibling OHLCV columns in that row. The bounded
+  `audit_2020_2024` window is clean (first `1577836800` = 2020-01-01 00:00 UTC; last
+  `1735686000` = 2024-12-31 23:00 UTC; 43,828 rows of the 96,381-row archive). No other
+  2025-range values exist anywhere in tracked `temp/` — verified by a repo-wide
+  value-blind scan (`temp/scan_2025_exposure.py`, method recorded in this log) whose
+  only hit is the same `$.last_row[0]`.
+- **Provenance of the exposure:** the probe JSON was committed at `2f24ad6` (2026-08-31),
+  which is the Stage 2 planning baseline itself. The 2025-dated extent metadata was present
+  before D01 started and is *planned scope*: `range_requests` byte ranges and the member
+  SHA-256 anchor are D02 acquisition inputs. Extent metadata is the *necessary* 2025-
+  spanning surface D02 needs (archive extent must be known to fetch byte ranges).
+- **Ruling: NON-BREACH.** The sealed-2025 rule governs labels, features, distributions, and
+  scoring-relevant reads of 2025 *market data*. A single archive-extent row — the final row
+  of a public archive, committed at baseline, whose sibling values are acquisition anchors —
+  is not a market-data read for scoring purposes. Zcode's stop was correct and conservative;
+  the prompt for D01 should have specified value-blind reading of extent fields, which is the
+  process gap this IR fixes by adding §6 rule 12.
+- **Resolution:** §6 rule 12 (value-blind extent-reading rule) added; status line updated;
+  D01 resumes on the existing clean branch `codex/protocol-v1-d01-series-descriptors` at
+  `95c2de6`, working tree clean, no code created yet. Amended D01 prompt issued by Hermes.
+- **Method notes (scan):** digit-string handling was required (the ts is stored as a string
+  `"1767222000"`), plus explicit ISO-date regex for string fields; dict-key-only heuristics
+  miss list-position timestamps, so the scan walks all JSON scalars. The scanner is committed
+  at `temp/scan_2025_exposure.py` for rerun.
+- **Seal impact:** none. `sealed_2025` remains SEALED; forbidden operations (labels, feature
+  distributions, model scores, conditional outcome inspection, protocol adaptation) were not
+  performed; allowed pre-gate checks were used for boundary verification only.
+- **Keys for the future:** when a probe artifact contains 2025 extent fields, prompts must
+  instruct value-blind reading; when a worker reports a 2025 exposure, the first Hermes
+  action is a value-blind scan for 2025-range values across `temp/` JSONs, then a ruling on
+  extent-vs-market classification.
+
+### IR template (for future incidents)
+
+Reporter, trigger, exposure, provenance, ruling (breach / non-breach), resolution, method
+notes, seal impact, keys for the future.
+
