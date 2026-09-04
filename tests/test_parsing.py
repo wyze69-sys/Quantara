@@ -14,7 +14,6 @@ from conftest import (
 from quantara.descriptor import load_descriptor
 from quantara.parsing import (
     DecimalOverflow,
-    MalformedNumeric,
     MalformedTimestamp,
     SourceHeaderMismatch,
     decode_member,
