@@ -108,8 +108,40 @@ def decode_member(data: bytes) -> str:
         raise SourceHeaderMismatch(f"member is not valid UTF-8: {exc}") from exc
 
 
+_SCIENTIFIC_PATTERN = re.compile(
+    r'([+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)[eE]([+-]?[0-9]+)'
+)
+
+
+def _expand_scientific(text: str) -> str | None:
+    """Convert scientific notation to an exact fixed-point string, or None if the
+    text is not scientific notation. No floats are used; the mantissa and exponent
+    are manipulated as strings and an int. Binance renders small funding rates as
+    e.g. 8.4E-7, which is exact decimal notation, not a float."""
+    match = _SCIENTIFIC_PATTERN.fullmatch(text)
+    if not match:
+        return None
+    mantissa, exp_str = match.groups()
+    negative = mantissa.startswith('-')
+    if mantissa and mantissa[0] in '+-':
+        mantissa = mantissa[1:]
+    int_part, _, frac_part = mantissa.partition('.')
+    digits = int_part + frac_part
+    point_pos = len(int_part) + int(exp_str)
+    if point_pos >= len(digits):
+        result = digits + '0' * (point_pos - len(digits))
+    elif point_pos <= 0:
+        result = '0.' + '0' * (-point_pos) + digits
+    else:
+        result = digits[:point_pos] + '.' + digits[point_pos:]
+    return ('-' if negative else '') + result
+
+
 def parse_numeric(text: str):
     """Parse through exact decimal arithmetic only; floats never appear."""
+    expanded = _expand_scientific(text)
+    if expanded is not None:
+        text = expanded
     if not NUMERIC_PATTERN.fullmatch(text):
         raise MalformedNumeric(f"numeric text rejected by policy: {text!r}")
     integer_part, _, fractional_part = text.partition(".")
