@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--descriptor", required=True)
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--period", default=None)
     parser.add_argument(
         "--dataset-type",
         required=False,
@@ -125,6 +126,16 @@ def main(argv: list[str] | None = None) -> int:
         return run_training_pipeline(
             descriptor_path=args.descriptor,
             data_root=args.data_root,
+            dry_run=args.dry_run,
+        )
+
+    if schema == "quantara.series-descriptor/v1":
+        from quantara.series_pipeline import run_series_pipeline
+
+        return run_series_pipeline(
+            descriptor_path=args.descriptor,
+            data_root=args.data_root,
+            period=args.period,
             dry_run=args.dry_run,
         )
 
