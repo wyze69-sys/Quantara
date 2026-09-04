@@ -136,6 +136,8 @@ class ScalarParseResult:
     distinct_rows: int
     duplicate_rows: int
     source_ordered: bool
+    duplicate_hashes: tuple[str, ...]
+    conflict_rows: int  # PARSED is always zero: conflicting attempts raise before return.
 
 
 def parse_scalar_rows(
@@ -153,6 +155,7 @@ def parse_scalar_rows(
     record = {
         'schema': 'quantara.scalar-parse-attempt/v1', 'status': 'BLOCKED',
         'source_rows': 0, 'distinct_rows': 0, 'duplicate_rows': 0,
+        'duplicate_hashes': [],
         'conflict_rows': 0, 'counts_complete': False, 'source_ordered': True,
     }
     error = ScalarParseError
@@ -202,6 +205,7 @@ def parse_scalar_rows(
                                     else OpenInterestDuplicateConflict)
                         raise conflict('nonidentical source rows share an observation key')
                     record['duplicate_rows'] += 1
+                    record['duplicate_hashes'].append(hashlib.sha256(raw).hexdigest())
                     continue
                 if funding:
                     interval = fields[1]
@@ -224,6 +228,7 @@ def parse_scalar_rows(
                 archive, digest, tuple(unique[t][1] for t in sorted(unique)),
                 record['source_rows'], record['distinct_rows'], record['duplicate_rows'],
                 record['source_ordered'],
+                tuple(record['duplicate_hashes']), record['conflict_rows'],
             )
             record.update(status='PARSED', counts_complete=True)
             return result
@@ -303,6 +308,8 @@ class KlineParseResult:
     distinct_rows: int
     duplicate_rows: int
     source_ordered: bool
+    duplicate_hashes: tuple[str, ...]
+    conflict_rows: int  # PARSED is always zero: conflicting attempts raise before return.
 
 
 def _kline_fields(raw: bytes) -> list[str]:
@@ -409,6 +416,7 @@ def parse_kline_rows(
                 archive, digest, tuple(unique[t][1] for t in sorted(unique)),
                 record['source_rows'], record['distinct_rows'], record['duplicate_rows'],
                 record['source_ordered'],
+                tuple(record['duplicate_hashes']), record['conflict_rows'],
             )
         except Exception as exc:
             record['error_type'] = type(exc).__name__
