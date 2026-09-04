@@ -6,6 +6,9 @@ raw records are compared byte-for-byte (including line endings) for duplicates.
 Only identical records deduplicate. Every other same-timestamp record blocks,
 including changes in ignored columns or in decimal spelling. No raw record or
 ratio value is retained in the parsed rows or attempt JSON.
+
+Physical grammar: UTF-8, no BOM, no quoting, and an exact ordered header.
+LF or CRLF record terminators are compared as raw bytes.
 """
 
 from __future__ import annotations
@@ -171,6 +174,8 @@ def parse_scalar_rows(
             source = io.BytesIO(data)
             if data.startswith(b'\xef\xbb\xbf'):
                 raise error('UTF-8 BOM is forbidden')
+            if b'"' in data:
+                raise error('quoting is not part of the frozen scalar grammar')
             actual_header = next(csv.reader([source.readline().decode('utf-8')], strict=True))
             if tuple(actual_header) != header:
                 raise error('source header differs from exact ordered family header')

@@ -438,3 +438,89 @@ def test_nonidentical_record_terminators_block(tmp_path):
     raw = (FUNDING+'\n'+FUNDING_ROW+'\n'+FUNDING_ROW+'\r\n').encode()
     with pytest.raises(DuplicateConflict):
         parse(tmp_path, raw=raw)
+
+
+def _assert_correction1_quote_block(tmp_path, raw, family, symbol, error):
+    with pytest.raises(error, match='^quoting is not part of the frozen scalar grammar$'):
+        parse(tmp_path, family=family, symbol=symbol, raw=raw)
+    attempt_bytes = (tmp_path/'attempt.json').read_bytes()
+    attempt = json.loads(attempt_bytes)
+    funding = family == 'funding'
+    series_id = symbol.lower()+('_settled_funding' if funding else '_open_interest_5m')
+    period = '2020-01' if funding else '2021-12-01'
+    source_family = 'fundingRate' if funding else 'metrics'
+    # Exact allowed evidence proves no source field text/value or extra key leaks.
+    assert attempt == {
+        'schema': 'quantara.scalar-parse-attempt/v1', 'status': 'BLOCKED',
+        'source_rows': 0, 'distinct_rows': 0, 'duplicate_rows': 0, 'conflict_rows': 0,
+        'counts_complete': False, 'source_ordered': True, 'series_id': series_id,
+        'period': period, 'source_file': f'{symbol}USDT-{source_family}-{period}.csv',
+        'source_sha256': hashlib.sha256(raw).hexdigest(), 'error_type': error.__name__,
+    }
+    assert raw not in attempt_bytes
+
+
+@pytest.mark.parametrize('family,error', [
+    ('funding', FundingParseError), ('oi', OpenInterestParseError),
+])
+@pytest.mark.parametrize('symbol', ['BTC', 'ETH'])
+@pytest.mark.parametrize('location', [
+    'all_header', 'one_header', 'timestamp', 'payload', 'identity', 'later_payload',
+])
+def test_correction1_rejects_quoted_member_before_field_parsing(
+    tmp_path, family, error, symbol, location,
+):
+    header = (FUNDING if family == 'funding' else OI).split(',')
+    plain = FUNDING_ROW if family == 'funding' else OI_ROW.replace('BTCUSDT', symbol+'USDT')
+    fields = plain.split(',')
+    if location == 'all_header':
+        header = [f'"{name}"' for name in header]
+    elif location == 'one_header':
+        header[0] = f'"{header[0]}"'
+    else:
+        index = {'timestamp': 0, 'payload': 2, 'identity': 1, 'later_payload': 2}[location]
+        fields[index] = f'"{fields[index]}"'
+    prefix = plain+'\n' if location == 'later_payload' else ''
+    raw = (','.join(header)+'\n'+prefix+','.join(fields)+'\n').encode()
+    _assert_correction1_quote_block(tmp_path, raw, family, symbol, error)
+
+
+@pytest.mark.parametrize('symbol', ['BTC', 'ETH'])
+@pytest.mark.parametrize('location', ['diagnostic', 'empty_ratio'])
+def test_correction1_rejects_quoted_oi_diagnostic_and_empty_ratio(tmp_path, symbol, location):
+    fields = OI_ROW.replace('BTCUSDT', symbol+'USDT').split(',')
+    if location == 'diagnostic':
+        fields[3] = f'"{fields[3]}"'
+    else:
+        fields[4] = '""'
+    raw = (OI+'\n'+','.join(fields)+'\n').encode()
+    _assert_correction1_quote_block(tmp_path, raw, 'oi', symbol, OpenInterestParseError)
+
+
+@pytest.mark.parametrize('family,error', [
+    ('funding', FundingParseError), ('oi', OpenInterestParseError),
+])
+@pytest.mark.parametrize('symbol', ['BTC', 'ETH'])
+@pytest.mark.parametrize('copies', [1, 2])
+def test_correction1_plain_lf_and_exact_duplicates_still_parse(
+    tmp_path, family, error, symbol, copies,
+):
+    header = FUNDING if family == 'funding' else OI
+    row = FUNDING_ROW if family == 'funding' else OI_ROW.replace('BTCUSDT', symbol+'USDT')
+    result, record, _ = parse(
+        tmp_path, family=family, symbol=symbol, raw=(header+'\n'+(row+'\n')*copies).encode(),
+    )
+    assert len(result.rows) == 1
+    assert record['status'] == 'PARSED'
+    assert record['counts_complete'] is True
+    assert (record['source_rows'], record['distinct_rows'], record['duplicate_rows']) == (
+        copies, 1, copies-1,
+    )
+
+
+@pytest.mark.parametrize('symbol', ['BTC', 'ETH'])
+def test_correction1_unquoted_empty_ratios_still_parse(tmp_path, symbol):
+    row = ','.join(OI_ROW.replace('BTCUSDT', symbol+'USDT').split(',')[:4])+',,,,'
+    result, record, _ = parse(tmp_path, [row], family='oi', symbol=symbol)
+    assert result.rows[0].sum_open_interest == Decimal('12345.678901234567890123')
+    assert record['status'] == 'PARSED'
