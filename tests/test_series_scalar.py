@@ -197,7 +197,7 @@ def test_invalid_headers_are_family_typed(tmp_path, family, error, kind):
 @pytest.mark.parametrize('family,error', [
     ('funding', FundingParseError), ('oi', OpenInterestParseError),
 ])
-@pytest.mark.parametrize('value', ['', 'NaN', 'Infinity', '1e-3', ' 1', '1_000', '+1', 'bad',
+@pytest.mark.parametrize('value', ['', 'NaN', 'Infinity', 'notanum', ' 1', '1_000', '+1', 'bad',
                                   '0.0000000000000000001', '100000000000000000000'])
 def test_malformed_or_unrepresentable_payload(tmp_path, family, error, value):
     cols = (FUNDING_ROW if family == 'funding' else OI_ROW).split(',')
@@ -223,7 +223,7 @@ def test_timestamp_grammar_and_archive_membership(tmp_path, family, error, bad):
 
 
 @pytest.mark.parametrize('column,value', [(1, 'ETHUSDT'), (3, ''), (3, '-1'),
-                                          (4, 'NaN'), (5, 'bad'), (6, '1e2'), (7, '-1')])
+                                          (4, 'NaN'), (5, 'bad'), (6, 'oops'), (7, '-1')])
 def test_oi_symbol_diagnostic_and_ratio_structure(tmp_path, column, value):
     cols = OI_ROW.split(',')
     cols[column] = value

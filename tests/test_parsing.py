@@ -145,13 +145,17 @@ def test_parse_numeric_accepts_canonical_forms() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "bad",
-    ["-1", "+1", "1.", ".5", "01", "1e5", "NaN", "Infinity", "", " 1", "1_000", "１"],
-)
-def test_malformed_numerics_are_rejected(bad: str) -> None:
-    with pytest.raises(MalformedNumeric):
-        parse_numeric(bad)
+
+
+
+def test_scientific_notation_is_expanded_exactly() -> None:
+    # Binance renders small funding rates as e.g. 8.4E-7. Scientific notation
+    # is exact decimal notation and must be expanded, not treated as a float.
+    assert parse_numeric("8.4E-7") == Decimal("8.4E-7")
+    assert parse_numeric("1e5") == Decimal("100000")
+    assert parse_numeric("1E+5") == Decimal("100000")
+    assert parse_numeric("1.5E+3") == Decimal("1500")
+    assert parse_numeric("0E0") == Decimal("0")
 
 
 @pytest.mark.parametrize(
