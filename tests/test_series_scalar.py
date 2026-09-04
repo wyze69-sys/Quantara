@@ -452,6 +452,7 @@ def _assert_correction1_quote_block(tmp_path, raw, family, symbol, error):
     # Exact allowed evidence proves no source field text/value or extra key leaks.
     assert attempt == {
         'schema': 'quantara.scalar-parse-attempt/v1', 'status': 'BLOCKED',
+        'duplicate_hashes': [],
         'source_rows': 0, 'distinct_rows': 0, 'duplicate_rows': 0, 'conflict_rows': 0,
         'counts_complete': False, 'source_ordered': True, 'series_id': series_id,
         'period': period, 'source_file': f'{symbol}USDT-{source_family}-{period}.csv',
