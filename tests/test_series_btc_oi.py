@@ -10,9 +10,9 @@ against data.binance.vision:
   * Some days are short (for example 2021-10-01 carries 287 snapshots), which is a
     daily-boundary warning rather than a grid failure.
 
-The consequence the pipeline must enforce: a byte-identical repeat is a *warning*, a
-same-key non-identical row is a *hard* conflict, and a warning-bearing period must not
-publish without an approval record.
+The consequence the pipeline must enforce after D10: byte-identical repeats are counted,
+hashed, and deterministically deduplicated for this series without blocking publication;
+a same-key non-identical row remains a hard conflict, and every other warning still blocks.
 """
 
 import hashlib
@@ -137,6 +137,39 @@ def test_exact_ordered_header_required(tmp_path, header):
     with pytest.raises(parsing.OpenInterestParseError, match='exact ordered family header'):
         parse(tmp_path, [row(T0)], header)
     assert json.loads((tmp_path / 'parse.json').read_text())['status'] == 'BLOCKED'
+
+
+def test_quoted_incidental_ratios_parse_for_provider_variant(tmp_path):
+    """D11: provider sometimes quotes only the four discarded ratio columns."""
+    archive = load_series_descriptor(DESCRIPTOR).archive_for(PERIOD)
+    data = (
+        ','.join(parsing.OI_HEADER) + '\n'
+        f'{stamp(T0)},{SYMBOL},1.5,2.25,"","","",""\n'
+    ).encode('ascii')
+    parsed = parsing.parse_scalar_rows(data, archive, attempt_path=tmp_path / 'parse.json')
+    assert parsed.source_rows == parsed.distinct_rows == 1
+    assert parsed.rows[0].sum_open_interest == Decimal('1.5')
+
+
+@pytest.mark.parametrize('raw_row', [
+    # Quotes may not alter the canonical timestamp, symbol, or OI fields.
+    f'"{stamp(T0)}",{SYMBOL},1.5,2.25,0.5,1.5,0.75,1.25',
+    f'{stamp(T0)},"{SYMBOL}",1.5,2.25,0.5,1.5,0.75,1.25',
+    f'{stamp(T0)},{SYMBOL},"1.5",2.25,0.5,1.5,0.75,1.25',
+    f'{stamp(T0)},{SYMBOL},1.5,"2.25",0.5,1.5,0.75,1.25',
+    f'{stamp(T0)},{SYMBOL},1.5,2.25,"0.5","1.5","0.75","1.25"',
+    # Quoting cannot smuggle delimiters or malformed partial quote syntax.
+    f'{stamp(T0)},{SYMBOL},1.5,2.25,"0.5,9",1.5,0.75,1.25',
+    f'{stamp(T0)},{SYMBOL},1.5,2.25,"0.5,1.5,0.75,1.25',
+])
+def test_quoted_oi_grammar_remains_narrow(tmp_path, raw_row):
+    archive = load_series_descriptor(DESCRIPTOR).archive_for(PERIOD)
+    data = (','.join(parsing.OI_HEADER) + '\n' + raw_row + '\n').encode('ascii')
+    with pytest.raises(parsing.OpenInterestParseError):
+        parsing.parse_scalar_rows(data, archive, attempt_path=tmp_path / 'parse.json')
+    evidence = json.loads((tmp_path / 'parse.json').read_text())
+    assert evidence['status'] == 'BLOCKED'
+    assert evidence['counts_complete'] is False
 
 
 def test_symbol_column_must_match_frozen_descriptor(tmp_path):

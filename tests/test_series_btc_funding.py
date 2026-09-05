@@ -58,6 +58,13 @@ def test_closed_descriptor_inventory_and_boundary_urls():
         assert archive.checksum_url == archive.archive_url + '.CHECKSUM'
 
 
+def test_funding_quoting_remains_forbidden(tmp_path):
+    archive = load_series_descriptor(DESCRIPTOR).archive_for('2020-01')
+    data = (','.join(parsing.FUNDING_HEADER) + f'\n{T},8,"-0.125"\n').encode('ascii')
+    with pytest.raises(parsing.FundingParseError, match='quoting'):
+        parsing.parse_scalar_rows(data, archive, attempt_path=tmp_path / 'parse.json')
+
+
 def test_exact_millisecond_jitter_and_strict_eligibility_round_trip(tmp_path):
     timestamps = (T + 1, T + 28_800_000 - 1, T + 57_600_000 + 3)
     parsed = parse(tmp_path, [(ts, 8, '-0.125') for ts in timestamps])

@@ -7,8 +7,10 @@ Only identical records deduplicate. Every other same-timestamp record blocks,
 including changes in ignored columns or in decimal spelling. No raw record or
 ratio value is retained in the parsed rows or attempt JSON.
 
-Physical grammar: UTF-8, no BOM, no quoting, and an exact ordered header.
-LF or CRLF record terminators are compared as raw bytes.
+Physical grammar: UTF-8, no BOM, and an exact ordered header. Quoting is
+forbidden except for the BTC OI v2 source variant's exact `""` tokens in
+incidental ratio columns 5-8. LF or CRLF record terminators are compared as
+raw bytes.
 """
 
 from __future__ import annotations
@@ -140,6 +142,28 @@ class ScalarParseResult:
     conflict_rows: int  # PARSED is always zero: conflicting attempts raise before return.
 
 
+OI_QUOTED_EMPTY_RATIO_PARSER = 'binance_open_interest_csv/v2_quoted_empty_ratios'
+
+
+def _oi_ratio_quoting_is_narrow(raw: bytes, fields: list[str]) -> bool:
+    """Allow only whole-field quotes in OI's four discarded ratio columns.
+
+    The provider introduced this byte-level variant on isolated days. Core identity
+    fields (timestamp, symbol, OI, OI value) remain under the unquoted grammar;
+    quoted delimiters, partial quotes, and escaped quotes remain forbidden.
+    """
+    text = raw.decode('utf-8').rstrip('\r\n')
+    tokens = text.split(',')
+    if len(tokens) != len(OI_HEADER) or len(fields) != len(OI_HEADER):
+        return False
+    if any('"' in token for token in tokens[:4]):
+        return False
+    for token, field in zip(tokens[4:], fields[4:], strict=True):
+        if '"' in token and (field or token != '""'):
+            return False
+    return True
+
+
 def parse_scalar_rows(
     data: bytes, archive: SeriesArchive, *, attempt_path: Path,
     repo_root: Path | str = _ROOT,
@@ -167,6 +191,8 @@ def parse_scalar_rows(
             error = FundingParseError if funding else OpenInterestParseError
             record.update(series_id=archive.series_id, period=archive.period)
             descriptor = SeriesDescriptor(archive.series_id)
+            descriptor_doc = descriptor.to_dict()
+            quote_variant = descriptor_doc['parser'] == OI_QUOTED_EMPTY_RATIO_PARSER
             if not descriptor.load_rights(repo_root).permits('normalize_internal'):
                 raise error('normalization rights gate is closed')
             if type(data) is not bytes:
@@ -177,15 +203,27 @@ def parse_scalar_rows(
             source = io.BytesIO(data)
             if data.startswith(b'\xef\xbb\xbf'):
                 raise error('UTF-8 BOM is forbidden')
-            if b'"' in data:
+            header_raw = source.readline()
+            if b'"' in header_raw:
                 raise error('quoting is not part of the frozen scalar grammar')
-            actual_header = next(csv.reader([source.readline().decode('utf-8')], strict=True))
+            actual_header = next(csv.reader([header_raw.decode('utf-8')], strict=True))
             if tuple(actual_header) != header:
                 raise error('source header differs from exact ordered family header')
             start, end = _bounds(archive)
+            body = source.readlines()
+            # Preserve D03's fail-before-consumption evidence boundary: scan quote
+            # shape across the whole member before any row counters or values move.
+            for raw in body:
+                if b'"' not in raw:
+                    continue
+                if funding or not quote_variant:
+                    raise error('quoting is not part of the frozen scalar grammar')
+                quoted_fields = next(csv.reader([raw.decode('utf-8')], strict=True))
+                if not _oi_ratio_quoting_is_narrow(raw, quoted_fields):
+                    raise error('quoting is not part of the frozen scalar grammar')
             unique: dict[int, tuple[bytes, ScalarSourceRow]] = {}
             previous = None
-            for raw in source:
+            for raw in body:
                 record['source_rows'] += 1
                 fields = next(csv.reader([raw.decode('utf-8')], strict=True))
                 if len(fields) != len(header):

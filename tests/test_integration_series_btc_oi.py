@@ -131,6 +131,28 @@ def test_last_frozen_day_publishes_and_reruns_to_verified_no_op(tmp_path):
     assert after['commit'] == current['commit']
 
 
+def test_quoted_ratio_provider_day_publishes(tmp_path):
+    """2021-12-30: quoted incidental ratios parse; OI identity remains authenticated."""
+    period = '2021-12-30'
+    descriptor, archive, data_root, exit_code, record = acquire(tmp_path, period)
+    assert exit_code == 0
+    assert record['terminal_state'] == 'PUBLISHED'
+    assert record['quality_state'] == 'PASS'
+
+    lane = data_root / 'datasets/series' / descriptor.series_id / period
+    current = read_and_verify_current(lane, lane)
+    graph = verify_commit_graph(lane, lane / 'commits' / current['commit'])
+    member, parsed = reparse(archive, data_root, descriptor, period, tmp_path, graph)
+    assert b'"' in member
+    assert parsed.source_rows == parsed.distinct_rows == 288
+    assert parsed.duplicate_rows == parsed.conflict_rows == 0
+    assert parsed.source_ordered
+    assert sha(member) == graph['parser_input_sha256']
+    assert evaluate_series_quality(
+        parsed, canonical.build_scalar_rows(parsed),
+    ).state == 'PASS'
+
+
 def test_first_frozen_day_deduplicates_and_publishes(tmp_path):
     """2020-09-01: exact repeats are audited, removed, and never self-approved."""
     period = '2020-09-01'

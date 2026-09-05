@@ -487,15 +487,30 @@ def test_correction1_rejects_quoted_member_before_field_parsing(
 
 
 @pytest.mark.parametrize('symbol', ['BTC', 'ETH'])
-@pytest.mark.parametrize('location', ['diagnostic', 'empty_ratio'])
-def test_correction1_rejects_quoted_oi_diagnostic_and_empty_ratio(tmp_path, symbol, location):
+def test_correction1_rejects_quoted_oi_diagnostic(tmp_path, symbol):
     fields = OI_ROW.replace('BTCUSDT', symbol+'USDT').split(',')
-    if location == 'diagnostic':
-        fields[3] = f'"{fields[3]}"'
-    else:
-        fields[4] = '""'
+    fields[3] = f'"{fields[3]}"'
     raw = (OI+'\n'+','.join(fields)+'\n').encode()
     _assert_correction1_quote_block(tmp_path, raw, 'oi', symbol, OpenInterestParseError)
+
+
+def test_d11_accepts_provider_quoted_empty_btc_oi_ratios(tmp_path):
+    row = ','.join(OI_ROW.split(',')[:4])+',"","","",""'
+    result, record, _ = parse(
+        tmp_path, family='oi', symbol='BTC', raw=(OI+'\n'+row+'\n').encode(),
+    )
+    assert len(result.rows) == 1
+    assert record['status'] == 'PARSED'
+    assert record['counts_complete'] is True
+    assert record['source_rows'] == record['distinct_rows'] == 1
+
+
+def test_d11_rejects_quoted_empty_eth_oi_ratios(tmp_path):
+    row = ','.join(OI_ROW.replace('BTCUSDT', 'ETHUSDT').split(',')[:4])+',"","","",""'
+    raw = (OI+'\n'+row+'\n').encode()
+    _assert_correction1_quote_block(
+        tmp_path, raw, 'oi', 'ETH', OpenInterestParseError,
+    )
 
 
 @pytest.mark.parametrize('family,error', [
