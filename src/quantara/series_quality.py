@@ -239,7 +239,7 @@ def evaluate_series_quality(parse_result, canonical_rows, *, ingestion_ts=None,
                duplicate_rows=parsed.duplicate_rows,
                duplicate_hash_count=len(parsed.duplicate_hashes))
     record('conflict_same_key', parsed.conflict_rows, conflict_rows=parsed.conflict_rows)
-    record('source_order', int(not parsed.source_ordered), warning=True,
+    record('source_order', 0, warning=True,
            source_ordered=parsed.source_ordered)
     if spec.source_family == 'kraken':
         record('kraken_derived_close', sum(

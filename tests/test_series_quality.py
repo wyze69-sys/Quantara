@@ -193,7 +193,10 @@ def test_conflict_is_terminal(q, tmp_path, series):
 def test_source_order_warning(q, tmp_path):
     parsed, rows, _, _ = sample(tmp_path, times=[T + 28800000, T])
     f = finding(q.evaluate_series_quality(parsed, rows), 'source_order')
-    assert (f.outcome, f.severity, f.count) == ('warn', 'warning', 1)
+    # D12: source_order never blocks. The parser sorts output deterministically,
+    # so source ordering is informational only. Count is always 0 (pass).
+    assert (f.outcome, f.severity, f.count) == ('pass', 'warning', 0)
+    assert f.evidence['source_ordered'] is False
 
 
 @pytest.mark.parametrize('tampered', [False, True])
