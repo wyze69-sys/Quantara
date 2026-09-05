@@ -12,12 +12,14 @@ import pytest
 
 from conftest import VALID_DESCRIPTOR_YAML, write_text
 from quantara.acquisition import (
+    MAX_ATTEMPTS,
     Acquirer,
     ChecksumMismatch,
     DownloadFailed,
     InvalidChecksumDocument,
     NonAllowlistedHost,
     parse_checksum_document,
+    transport_retry_kind,
 )
 from quantara.descriptor import load_descriptor
 
@@ -160,6 +162,100 @@ def test_deterministic_failures_are_never_retried(tmp_path: Path, descriptor) ->
     with pytest.raises(DownloadFailed):
         make(tmp_path, descriptor, httpx.MockTransport(not_found_handler)).acquire()
     assert len(calls) == 1
+
+
+# D09: retry eligibility is decided by exception type, not by message wording.
+# F-S01B-1 was a real 60-period backfill failure: httpx raises
+# RemoteProtocolError("Server disconnected without sending a response.") when a
+# server drops the connection, whose message contains no "reset", so the previous
+# substring test gave it zero retries.
+@pytest.mark.parametrize(
+    ("exc", "kind"),
+    [
+        (httpx.RemoteProtocolError("Server disconnected without sending a response."),
+         "dropped_connection"),
+        (httpx.RemoteProtocolError("connection reset by peer"), "dropped_connection"),
+        (httpx.ConnectError("connection refused"), "dropped_connection"),
+        (httpx.ConnectTimeout("timed out"), "connect_timeout"),
+        (httpx.ReadTimeout("timed out"), "connect_timeout"),
+        (httpx.PoolTimeout("pool exhausted"), "connect_timeout"),
+        (httpx.ReadError("connection reset"), "connection_reset"),
+    ],
+)
+def test_transient_transport_failures_retry_regardless_of_message(
+    tmp_path: Path, descriptor, exc: Exception, kind: str,
+) -> None:
+    state = {"zip_calls": 0}
+
+    def flaky_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(".CHECKSUM"):
+            return httpx.Response(200, text=CHECKSUM_DOC)
+        state["zip_calls"] += 1
+        if state["zip_calls"] == 1:
+            raise exc
+        return httpx.Response(200, content=ARCHIVE_BYTES)
+
+    evidence = make(tmp_path, descriptor, httpx.MockTransport(flaky_handler)).acquire()
+    assert evidence.zip_sha256 == ARCHIVE_SHA
+    assert state["zip_calls"] == 2, "a transient transport failure must be retried"
+    assert any(r.kind == kind for r in evidence.retry_evidence)
+
+
+def test_persistent_dropped_connection_exhausts_max_attempts(
+    tmp_path: Path, descriptor,
+) -> None:
+    calls: list[int] = []
+
+    def dropping_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(".CHECKSUM"):
+            return httpx.Response(200, text=CHECKSUM_DOC)
+        calls.append(1)
+        raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+
+    acquirer = make(tmp_path, descriptor, httpx.MockTransport(dropping_handler))
+    with pytest.raises(DownloadFailed):
+        acquirer.acquire()
+    assert len(calls) == MAX_ATTEMPTS
+    assert sum(r.kind == "dropped_connection" for r in acquirer.retry_evidence) == MAX_ATTEMPTS
+
+
+def test_unrecognised_transport_error_is_still_not_retried(
+    tmp_path: Path, descriptor,
+) -> None:
+    """Widening eligibility must not turn every transport error into a retry."""
+    for exc in (
+        httpx.UnsupportedProtocol("scheme not supported"),
+        httpx.ProxyError("bad proxy"),
+        httpx.ReadError("some other read problem"),
+    ):
+        calls: list[int] = []
+
+        def unsupported_handler(
+            request: httpx.Request, exc=exc, calls=calls,
+        ) -> httpx.Response:
+            if request.url.path.endswith(".CHECKSUM"):
+                return httpx.Response(200, text=CHECKSUM_DOC)
+            calls.append(1)
+            raise exc
+
+        acquirer = make(tmp_path / type(exc).__name__, descriptor,
+                        httpx.MockTransport(unsupported_handler))
+        with pytest.raises(DownloadFailed):
+            acquirer.acquire()
+        assert len(calls) == 1, f"{type(exc).__name__} must not be retried"
+        assert acquirer.retry_evidence == []
+
+
+def test_series_and_dataset_acquirers_share_one_retry_classifier() -> None:
+    """F-S01B-1 existed twice: both call sites must use the same function."""
+    from quantara import series_acquisition
+
+    assert series_acquisition.transport_retry_kind is transport_retry_kind
+    assert transport_retry_kind(
+        httpx.RemoteProtocolError("Server disconnected without sending a response.")
+    ) == "dropped_connection"
+    assert transport_retry_kind(httpx.UnsupportedProtocol("nope")) is None
+    assert transport_retry_kind(ValueError("not a transport error")) is None
 
 
 def test_redirect_to_non_allowlisted_host_hard_fails(

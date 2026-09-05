@@ -41,6 +41,7 @@ from quantara.acquisition import (
     NonAllowlistedHost,
     RetryEvidence,
     parse_checksum_document,
+    transport_retry_kind,
 )
 from quantara.archive import (
     MAX_COMPRESSION_RATIO,
@@ -639,13 +640,14 @@ class SeriesAcquirer(Acquirer):
                                 raise DownloadFailed('body length differs from frozen byte range')
                             return path
             except httpx.TransportError as exc:
-                retryable = isinstance(exc, (
-                    httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout,
-                )) or 'reset' in str(exc).lower()
+                # Shared classifier: eligibility follows the exception type, never the
+                # message wording. See F-S01B-1 — a dropped connection surfaces as
+                # RemoteProtocolError with no "reset" in its text and was never retried.
+                kind = transport_retry_kind(exc)
                 self.requests[-1]['transport_error'] = type(exc).__name__
-                if not retryable:
+                if kind is None:
                     raise DownloadFailed('nonretryable transport failure') from exc
-                self.retry_evidence.append(RetryEvidence('transport', type(exc).__name__))
+                self.retry_evidence.append(RetryEvidence(kind, type(exc).__name__))
             if attempt < MAX_ATTEMPTS - 1:
                 self._backoff(attempt)
         raise DownloadFailed(f'exhausted {MAX_ATTEMPTS} attempts; no source fallback')
