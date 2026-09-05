@@ -43,6 +43,7 @@ __all__ = [
     "QuarantineRecord",
     "parse_checksum_document",
     "quarantine",
+    "transport_retry_kind",
 ]
 
 MAX_ATTEMPTS = 3
@@ -133,9 +134,30 @@ class AcquisitionEvidence:
 
 _ELIGIBLE_TIMEOUTS = (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout)
 
+# Transient transport classes. A dropped connection is transient regardless of how
+# the underlying library words the message: RemoteProtocolError covers "Server
+# disconnected without sending a response", ConnectError covers refused/unreachable
+# attempts that succeed on retry. Classification is by exception type, never by
+# substring-matching a message, so wording changes cannot silently disable retries.
+_ELIGIBLE_TRANSPORT = (httpx.RemoteProtocolError, httpx.ConnectError)
 
-def _is_connection_reset(exc: BaseException) -> bool:
-    return isinstance(exc, httpx.TransportError) and "reset" in str(exc).lower()
+
+def transport_retry_kind(exc: BaseException) -> str | None:
+    """Name the retry-eligible transport class, or None for a deterministic error.
+
+    Complete classifier for every retry-eligible transport failure, so a caller
+    with one combined ``except httpx.TransportError`` handler behaves the same as
+    one with a separate timeout clause.
+    """
+    if not isinstance(exc, httpx.TransportError):
+        return None
+    if isinstance(exc, _ELIGIBLE_TIMEOUTS):
+        return "connect_timeout"
+    if isinstance(exc, _ELIGIBLE_TRANSPORT):
+        return "dropped_connection"
+    # Retain the historical reset path for TransportError subclasses outside the
+    # eligible set; some backends surface a reset without a dedicated class.
+    return "connection_reset" if "reset" in str(exc).lower() else None
 
 
 class Acquirer:
@@ -279,10 +301,9 @@ class Acquirer:
                     self._backoff(attempt)
                     continue
             except httpx.TransportError as exc:
-                if _is_connection_reset(exc):
-                    self.retry_evidence.append(
-                        RetryEvidence("connection_reset", str(exc))
-                    )
+                kind = transport_retry_kind(exc)
+                if kind is not None:
+                    self.retry_evidence.append(RetryEvidence(kind, str(exc)))
                     last_eligible = exc
                     if attempt < MAX_ATTEMPTS - 1:
                         self._backoff(attempt)
