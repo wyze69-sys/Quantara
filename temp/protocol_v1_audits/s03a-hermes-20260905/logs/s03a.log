@@ -1,0 +1,7 @@
+EXPECTED_FILES 60
+SAMPLE_FILES ['BTCUSDT-1m-2020-01.zip', 'BTCUSDT-1m-2022-07.zip', 'BTCUSDT-1m-2024-12.zip']
+VERIFIED BTCUSDT-1m-2020-01.zip: rows=44611 distinct=44611 dupes=0 conflicts=0
+VERIFIED BTCUSDT-1m-2022-07.zip: rows=43200 distinct=43200 dupes=0 conflicts=0
+VERIFIED BTCUSDT-1m-2024-12.zip: rows=44640 distinct=44640 dupes=0 conflicts=0
+AUDIT_WRITTEN
+S03A_EXIT=0

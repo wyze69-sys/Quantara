@@ -1,0 +1,15 @@
+{
+  "conflict_rows": 0,
+  "counts_complete": true,
+  "distinct_rows": 44640,
+  "duplicate_hashes": [],
+  "duplicate_rows": 0,
+  "period": "2024-01",
+  "schema": "quantara.kline-parse-attempt/v1",
+  "series_id": "btc_mark_price_1m",
+  "source_file": "BTCUSDT-1m-2024-01.csv",
+  "source_ordered": true,
+  "source_rows": 44640,
+  "source_sha256": "6102ddaa58ca66691137de20d04f801e006b445f79c17191c1fe55a341acc667",
+  "status": "PARSED"
+}
