@@ -1,0 +1,11 @@
+ALL_PERIODS 1583
+Traceback (most recent call last):
+  File "D:\PROJECT\Quantara\temp\protocol_v1_audits\s02c-hermes-20260905\run_publication.py", line 251, in <module>
+    main()
+  File "D:\PROJECT\Quantara\temp\protocol_v1_audits\s02c-hermes-20260905\run_publication.py", line 199, in main
+    preflight(descriptor, data_root)
+  File "D:\PROJECT\Quantara\temp\protocol_v1_audits\s02c-hermes-20260905\run_publication.py", line 77, in preflight
+    assert descriptor.series_id not in existing, (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: series lane already exists in production: btc_open_interest_5m
+PUBLICATION_EXIT=1

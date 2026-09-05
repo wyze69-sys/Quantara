@@ -1,0 +1,24 @@
+{
+  "conflict_rows": 0,
+  "counts_complete": true,
+  "distinct_rows": 284,
+  "duplicate_hashes": [
+    "3b45df66d7d9a5672a42b32b2c7041fb3bd1d116ae192a73b9c73cc108a0a3ea",
+    "7e123c10ac026a26da8b055152bfb28d0c5627ef6c1f8a15e28ff5d20d114538",
+    "94fbb2b2c9bcb5e69163fb58f105e7254763d5e2e3aacb21e15d50b13bc7c9ef",
+    "6a77ca70a422c97acc0140f3995f276288217c12066b1229dc1af23c39dcb1ea",
+    "863816feeb5098c813dcd487c66d8b6c9d13fa0b5919bcab95036d63ff9ce588",
+    "e6287a9faedab90421b25c51c807230decd9851030db0ccad5869f7574afa1df",
+    "6e076912d52dac7c79f4a6a3f7f1cad494187aff293b2221bbcf9fd9684831e4",
+    "d96091d9d118fb6693b7525757d4d81725cc2e0b8ad7e4c936fa1f9caae2f4eb"
+  ],
+  "duplicate_rows": 8,
+  "period": "2021-05-21",
+  "schema": "quantara.scalar-parse-attempt/v1",
+  "series_id": "btc_open_interest_5m",
+  "source_file": "BTCUSDT-metrics-2021-05-21.csv",
+  "source_ordered": true,
+  "source_rows": 292,
+  "source_sha256": "7c8d981d8bec15b1ab978d00ab955cca1be47df64755688753d879f02b579d25",
+  "status": "PARSED"
+}

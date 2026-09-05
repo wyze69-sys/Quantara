@@ -1,0 +1,15 @@
+{
+  "conflict_rows": 0,
+  "counts_complete": true,
+  "distinct_rows": 288,
+  "duplicate_hashes": [],
+  "duplicate_rows": 0,
+  "period": "2022-09-29",
+  "schema": "quantara.scalar-parse-attempt/v1",
+  "series_id": "btc_open_interest_5m",
+  "source_file": "BTCUSDT-metrics-2022-09-29.csv",
+  "source_ordered": true,
+  "source_rows": 288,
+  "source_sha256": "7b08292797e7b32940765ee3f01ac008257f918f4820f87c32a77ffd8d5f01ce",
+  "status": "PARSED"
+}
