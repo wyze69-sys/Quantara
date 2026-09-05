@@ -18,7 +18,7 @@ No stage may start until the previous stage is accepted.
    - Packets P00–P02.
    - Freezes scientific semantics and 2025 guardrails before implementation.
 2. `docs/superpowers/plans/2026-08-31-protocol-v1-stage-2-data-platform-btc-funding.md`
-   - Packets D00–D07 and S01-A/B/C.
+   - Packets D00–D08 and S01-A/B/C.
    - Proves shared architecture against one complete real source before scaling.
 3. `docs/superpowers/plans/2026-08-31-protocol-v1-stage-3-remaining-series.md`
    - Packets S02-A/B/C through S13-A/B/C.
@@ -36,4 +36,4 @@ publication graph, and protocol compliance. Only Hermes can return ACCEPTED.
 
 ## Next routing state
 
-Stage 1 is accepted. No execution prompt is active in this index. Stage 2 is in progress. Authorized 2026-09-03: Protocol v1.1 is frozen (PR #10, merge `566f4c2`). D00–D07 are accepted and merged (PR #11 `8e1d288`, PR #12 `97f4e8b`, PR #13 `fdbb0e3`, PR #14 `69405b3`, PR #15 `0f5152c`, PR #16 `1dc1457`, PR #17 `830dcbc`, PR #18 `e095d39`); the shared data-platform layer is complete. Give Zcode **S01-A only** from `2026-08-31-protocol-v1-stage-2-data-platform-btc-funding.md`. Per the successor master plan's post-C5 decision of record, Stage 2 packets no longer use a per-packet worktree: work in `D:\PROJECT\Quantara` on a dedicated feature branch with `git status --short` empty before starting; commit locally, do not push or merge, and stop for Hermes audit.
+Stage 1 is accepted. No execution prompt is active in this index. Stage 2 is in progress. Authorized 2026-09-03: Protocol v1.1 is frozen (PR #10, merge `566f4c2`). D00–D08 are accepted and merged (PR #11 `8e1d288`, PR #12 `97f4e8b`, PR #13 `fdbb0e3`, PR #14 `69405b3`, PR #15 `0f5152c`, PR #16 `1dc1457`, PR #17 `830dcbc`, PR #18 `e095d39`, PR #19 `831a56f`); the shared data-platform layer is complete. Give Zcode **S01-A only** from `2026-08-31-protocol-v1-stage-2-data-platform-btc-funding.md`. Per the successor master plan's post-C5 decision of record, Stage 2 packets no longer use a per-packet worktree: work in `D:\PROJECT\Quantara` on a dedicated feature branch with `git status --short` empty before starting; commit locally, do not push or merge, and stop for Hermes audit.
