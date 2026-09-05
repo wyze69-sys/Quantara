@@ -220,9 +220,24 @@ def evaluate_series_quality(parse_result, canonical_rows, *, ingestion_ts=None,
             invalid += not valid
         record('kline_interval_invariants', invalid, checked_rows=len(rows), native_step_ms=step)
 
-    record('duplicate_exact_bytes', parsed.duplicate_rows, warning=True,
-           source_rows=parsed.source_rows, distinct_rows=parsed.distinct_rows,
-           duplicate_rows=parsed.duplicate_rows, duplicate_hash_count=len(parsed.duplicate_hashes))
+    # D10: BTC OI provider archives before 2021-05-21 repeat whole rows
+    # byte-for-byte. Parsing already deduplicates only exact bytes; any differing
+    # same-key row remains a hard conflict above. Preserve the duplicate count and
+    # hashes as audited evidence without turning information-neutral repetition
+    # into a publication warning for this one reviewed series. Do not generalise
+    # the disposition to another series without its own source audit.
+    if parsed.archive.series_id == 'btc_open_interest_5m':
+        findings.append(Finding(
+            'duplicate_exact_bytes', 'pass', 'warning', parsed.duplicate_rows,
+            {'source_rows': parsed.source_rows, 'distinct_rows': parsed.distinct_rows,
+             'duplicate_rows': parsed.duplicate_rows,
+             'duplicate_hash_count': len(parsed.duplicate_hashes)},
+        ))
+    else:
+        record('duplicate_exact_bytes', parsed.duplicate_rows, warning=True,
+               source_rows=parsed.source_rows, distinct_rows=parsed.distinct_rows,
+               duplicate_rows=parsed.duplicate_rows,
+               duplicate_hash_count=len(parsed.duplicate_hashes))
     record('conflict_same_key', parsed.conflict_rows, conflict_rows=parsed.conflict_rows)
     record('source_order', int(not parsed.source_ordered), warning=True,
            source_ordered=parsed.source_ordered)

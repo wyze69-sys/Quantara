@@ -1,6 +1,10 @@
 # btc_open_interest_5m — source contract and boundary acceptance (S02-A)
 
 **Status:** COMPLETE
+**Correction D10:** F-S02A-1 is CLOSED. Exact-byte repeats for this reviewed series
+are preserved as counted and hashed informational evidence but no longer block deterministic
+deduplication. Missing native slots and all hard failures remain blocking. See
+`docs/superpowers/plans/2026-09-05-protocol-v1-d10-btc-oi-exact-duplicate-disposition.md`.
 **Series:** `btc_open_interest_5m` (Binance USD-M futures BTCUSDT metrics, 5-minute open-interest snapshots)
 **Descriptor:** `configs/series/binance-usdm-btcusdt-open-interest-2020-09-2024.yaml`
 **Frozen window:** 2020-09-01 … 2024-12-31, 1583 daily objects
@@ -41,7 +45,8 @@ tampered snapshot stamp are all rejected by `validate_scalar_row`.
 
 ## Finding F-S02A-1 — the early archive repeats every row
 
-**Severity:** warning (quality state `WARN`), **State:** OPEN, **Disposition:** deferred to S02-B
+**Severity at S02-A:** warning (`WARN`), **State:** CLOSED by D10,
+**Disposition:** exact-byte repeats are informational for `btc_open_interest_5m` only
 
 Between 2020-09-01 and 2021-05-20 the provider CSV contains every row twice,
 byte-for-byte identical: 576 source rows carrying 288 distinct `create_time` values. From
@@ -58,10 +63,11 @@ Two properties make this a warning rather than a hard failure:
 - Every retained stamp is on the native 5-minute grid, so deduplication recovers exactly
   288 canonical rows for a full doubled day with no interpolation.
 
-The pipeline therefore stops rather than publishing: roughly the first eight months of this
-series cannot be published unattended. That is the designed behaviour for a warning-bearing
-period, and S02-A deliberately does not change it. Deciding whether an exact-byte repeat is
-acceptable once deduplicated is an approval decision, recorded in S02-B.
+The S02-A pipeline therefore stopped rather than publishing, which was the designed
+behaviour before a disposition existed. D10 closes that finding narrowly: exact-byte
+repetition is now informational for this series after deterministic deduplication. Days
+with missing native slots still stop on `oi_daily_boundary`; same-key different-byte rows
+remain hard failures.
 
 A second, unrelated shape also warns: some days carry fewer than 288 snapshots
 (2021-10-01 has 287). The missing slot is enumerated exactly and never filled.
@@ -142,8 +148,10 @@ deselected by default). The single warning is pre-existing, from a ZIP fixture i
 ## What S02-A does not establish
 
 - The series is not published. Only the throwaway boundary roots hold objects.
-- Only 5 of 1583 days were acquired. A full inventory is S02-B, which is also where the
-  duplicate disposition and any approval record belong.
-- F-S02A-1 remains OPEN. No approval record exists, and none was fabricated.
+- Only 5 of 1583 days were acquired. A full inventory remains S02-B; it must enumerate
+  every missing native slot and any additional source variants without changing this narrow
+  exact-duplicate disposition.
+- F-S02A-1 is closed by D10 for exact-byte repeats only. This is a reviewed quality
+  disposition, not an approval record and not a wildcard for other findings.
 - Whether other Binance metrics series share the doubling is untested; each frozen series
   gets its own probe rather than an assumption inherited from this one.
