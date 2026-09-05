@@ -6,7 +6,7 @@ market_type: perpetual
 provider_symbol: BTCUSDT
 object_cadence: daily
 observation_cadence: 5m
-parser: binance_open_interest_csv/v1
+parser: binance_open_interest_csv/v2_quoted_empty_ratios
 canonical_value: sum_open_interest
 timestamp_role: UNRESOLVED_CONSERVATIVE
 csv_header_policy: present

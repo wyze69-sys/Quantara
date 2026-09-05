@@ -57,7 +57,13 @@ class _Series:
     rights_provider: str
 
 
-def _usdm(symbol: str, family: str, start: str = "2020-01-01") -> _Series:
+def _usdm(
+    symbol: str,
+    family: str,
+    start: str = "2020-01-01",
+    *,
+    parser_override: str | None = None,
+) -> _Series:
     """Build registry constants only; never called with document values."""
     if family == "fundingRate":
         provider = "binance_usd_m_futures"
@@ -79,7 +85,8 @@ def _usdm(symbol: str, family: str, start: str = "2020-01-01") -> _Series:
         header = "absent_before_2022-01" if family == "klines" else "absent_before_2022-12"
     return _Series(
         provider, "binance", "perpetual", symbol, family, cadence, observation,
-        parser, value, timestamp, header, start, "binance-usdm-provider-rights.v3", "binance",
+        parser_override or parser, value, timestamp, header, start,
+        "binance-usdm-provider-rights.v3", "binance",
     )
 
 
@@ -88,7 +95,10 @@ def _usdm(symbol: str, family: str, start: str = "2020-01-01") -> _Series:
 # A1/A2/A7/A8 and the corrected A3/A4 source audits; Kraken identity comes from A9.
 SERIES_REGISTRY = MappingProxyType({
     "btc_settled_funding": _usdm("BTCUSDT", "fundingRate"),
-    "btc_open_interest_5m": _usdm("BTCUSDT", "metrics", "2020-09-01"),
+    "btc_open_interest_5m": _usdm(
+        "BTCUSDT", "metrics", "2020-09-01",
+        parser_override="binance_open_interest_csv/v2_quoted_empty_ratios",
+    ),
     "btc_mark_price_1m": _usdm("BTCUSDT", "markPriceKlines"),
     "btc_index_price_1m": _usdm("BTCUSDT", "indexPriceKlines"),
     "btc_native_premium_1m": _usdm("BTCUSDT", "premiumIndexKlines"),
