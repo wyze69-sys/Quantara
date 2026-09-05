@@ -13,7 +13,7 @@ from quantara.publication import object_path, read_and_verify_current, verify_co
 from quantara.series_descriptor import load_series_descriptor
 from quantara.series_parsing import parse_scalar_rows
 from quantara.series_pipeline import _storage_root, run_series_pipeline
-from quantara.series_quality import evaluate_series_quality, proposed_approval_payload
+from quantara.series_quality import evaluate_series_quality
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,24 +131,21 @@ def test_last_frozen_day_publishes_and_reruns_to_verified_no_op(tmp_path):
     assert after['commit'] == current['commit']
 
 
-def test_first_frozen_day_is_doubled_and_blocks_without_approval(tmp_path):
-    """2020-09-01: every row appears twice byte-identically, so quality is WARN."""
+def test_first_frozen_day_deduplicates_and_publishes(tmp_path):
+    """2020-09-01: exact repeats are audited, removed, and never self-approved."""
     period = '2020-09-01'
     descriptor, archive, data_root, exit_code, record = acquire(tmp_path, period)
-    # A warning-bearing period is a deliberate stop, not a failure.
-    assert exit_code == 2
-    assert record['terminal_state'] == 'BLOCKED'
-    assert record['quality_state'] == 'WARN'
-    assert record['finding_ids'] == ['duplicate_exact_bytes']
-    # A quality stop is not an error: no exception type is recorded.
-    assert 'error_type' not in record
-    # Nothing was published and no pointer exists.
-    assert not list(data_root.rglob('current.json'))
-    assert not list(data_root.rglob('COMMITTED'))
+    assert exit_code == 0
+    assert record['terminal_state'] == 'PUBLISHED'
+    assert record['quality_state'] == 'PASS'
+    assert record['finding_ids'] == []
 
-    # The staged parse evidence still proves the exact duplicate shape.
-    parsed = parse_scalar_rows(
-        _staged_member(record, archive), archive, attempt_path=tmp_path / 'reparse.json')
+    lane = data_root / 'datasets/series' / descriptor.series_id / period
+    current = read_and_verify_current(lane, lane)
+    graph = verify_commit_graph(lane, lane / 'commits' / current['commit'])
+    assert graph['quality_state'] == 'PASS'
+    member, parsed = reparse(archive, data_root, descriptor, period, tmp_path, graph)
+    assert hashlib.sha256(member).hexdigest() == graph['parser_input_sha256']
     assert parsed.source_rows == 576
     assert parsed.distinct_rows == 288
     assert parsed.duplicate_rows == 288
@@ -161,18 +158,54 @@ def test_first_frozen_day_is_doubled_and_blocks_without_approval(tmp_path):
     assert all(row.event_ts % STEP == 0 for row in rows)
 
     report = evaluate_series_quality(parsed, rows)
-    assert report.state == 'WARN'
+    assert report.state == 'PASS'
+    assert report.identity() == graph['quality_identity']
     duplicate, = [f for f in report.findings if f.check_id == 'duplicate_exact_bytes']
-    assert duplicate.outcome == 'warn' and duplicate.count == 288
+    assert duplicate.outcome == 'pass' and duplicate.count == 288
+    assert duplicate.evidence['duplicate_hash_count'] == 288
     grid, = [f for f in report.findings if f.check_id == 'oi_snapshot_grid']
     boundary, = [f for f in report.findings if f.check_id == 'oi_daily_boundary']
     assert grid.outcome == 'pass', 'a doubled day is still fully on-grid'
     assert boundary.outcome == 'pass', 'all 288 slots are present'
 
-    proposal = proposed_approval_payload(report)
-    assert proposal['authorized'] is False
-    assert proposal['approver'] == 'PLACEHOLDER'
-    assert proposal['quality_identity_sha256'] == report.identity()
+    transport = BoundaryTransport(archive)
+    try:
+        assert run_series_pipeline(
+            DESCRIPTOR, data_root, period=period, transport=transport,
+        ) == 0
+    finally:
+        transport.close()
+    assert transport.requests == [], 'dispositioned duplicate rerun must not re-download'
+    states = sorted(
+        json.loads(path.read_bytes())['terminal_state']
+        for path in (data_root / 'attempts').glob('*.json')
+    )
+    assert states == ['PUBLISHED', 'VERIFIED_NO_OP']
+    assert read_and_verify_current(lane, lane)['commit'] == current['commit']
+
+
+def test_transition_day_still_blocks_on_missing_slots(tmp_path):
+    """2021-05-21 mixes 8 exact repeats with 4 missing slots; only the gap blocks."""
+    period = '2021-05-21'
+    descriptor, archive, data_root, exit_code, record = acquire(tmp_path, period)
+    assert exit_code == 2
+    assert record['terminal_state'] == 'BLOCKED'
+    assert record['quality_state'] == 'WARN'
+    assert record['finding_ids'] == ['oi_daily_boundary']
+    assert not list(data_root.rglob('current.json'))
+
+    parsed = parse_scalar_rows(
+        _staged_member(record, archive), archive, attempt_path=tmp_path / 'reparse.json')
+    assert parsed.source_rows == 292
+    assert parsed.distinct_rows == 284
+    assert parsed.duplicate_rows == 8
+    assert parsed.conflict_rows == 0
+    report = evaluate_series_quality(parsed, canonical.build_scalar_rows(parsed))
+    duplicate, = [f for f in report.findings if f.check_id == 'duplicate_exact_bytes']
+    boundary, = [f for f in report.findings if f.check_id == 'oi_daily_boundary']
+    assert duplicate.outcome == 'pass' and duplicate.count == 8
+    assert boundary.outcome == 'warn' and boundary.count == 4
+    assert report.state == 'WARN'
 
 
 def _staged_member(record, archive):

@@ -28,6 +28,7 @@ import pytest
 
 from quantara import series_canonical as canonical
 from quantara import series_parsing as parsing
+from quantara.publication import object_path, read_and_verify_current, verify_commit_graph
 from quantara.series_descriptor import SeriesArchive, SeriesDescriptorError, load_series_descriptor
 from quantara.series_pipeline import run_series_pipeline
 from quantara.series_quality import evaluate_series_quality, proposed_approval_payload
@@ -155,6 +156,36 @@ def test_byte_identical_repeat_deduplicates_and_is_hashed(tmp_path):
     assert len(parsed.duplicate_hashes) == parsed.duplicate_rows
 
 
+def test_oi_exact_duplicates_are_audited_but_do_not_block(tmp_path):
+    """Exact duplicate bytes carry no conflicting information after deterministic dedupe."""
+    records = []
+    for index in range(288):
+        exact = row(T0 + index * STEP)
+        records.extend((exact, exact))
+    parsed = parse(tmp_path, records)
+    report = evaluate_series_quality(parsed, canonical.build_scalar_rows(parsed))
+    duplicate, = [f for f in report.findings if f.check_id == 'duplicate_exact_bytes']
+    assert duplicate.count == 288
+    assert duplicate.outcome == 'pass'
+    assert duplicate.severity == 'warning'
+    assert report.state == 'PASS'
+
+    from dataclasses import replace
+
+    unique = parse(tmp_path, records[::2], name='unique.json')
+    duplicated_rows = canonical.build_scalar_rows(parsed)
+    unique_rows = canonical.build_scalar_rows(unique)
+    # Economic rows are equal once raw-source provenance is normalized.
+    normalized = tuple(replace(r, source_sha256=unique.source_sha256) for r in duplicated_rows)
+    assert normalized == unique_rows
+    # Canonical identity still binds the exact provider bytes; it must not pretend
+    # that the doubled and hypothetical clean source files were the same object.
+    assert (
+        canonical.scalar_content_hash(duplicated_rows)
+        != canonical.scalar_content_hash(unique_rows)
+    )
+
+
 @pytest.mark.parametrize('different', [
     row(T0, oi='1.50'),        # same numeric value, different bytes
     row(T0, oi='1.6'),
@@ -263,17 +294,19 @@ def test_full_clean_day_passes_with_no_findings(tmp_path):
     assert [f.check_id for f in report.findings if f.outcome != 'pass'] == []
 
 
-def test_warning_bearing_period_proposes_but_never_authorizes(tmp_path):
-    """A doubled day warns; the proposal carries no approval authority."""
-    parsed = parse(tmp_path, [row(T0), row(T0)] + [
-        row(T0 + index * STEP) for index in range(1, 288)])
+def test_short_period_proposes_but_never_authorizes(tmp_path):
+    """A missing native slot still warns; the proposal carries no authority."""
+    parsed = parse(tmp_path, [row(T0 + index * STEP) for index in range(287)])
     report = evaluate_series_quality(parsed, canonical.build_scalar_rows(parsed))
     assert report.state == 'WARN'
+    boundary, = [f for f in report.findings if f.check_id == 'oi_daily_boundary']
+    assert boundary.outcome == 'warn' and boundary.count == 1
     duplicate, = [f for f in report.findings if f.check_id == 'duplicate_exact_bytes']
-    assert duplicate.outcome == 'warn' and duplicate.count == 1
+    assert duplicate.outcome == 'pass' and duplicate.count == 0
     proposal = proposed_approval_payload(report)
     assert proposal['authorized'] is False
     assert proposal['approver'] == 'PLACEHOLDER'
+    assert [f['check_id'] for f in proposal['proposed_findings']] == ['oi_daily_boundary']
     assert proposal['quality_identity_sha256'] == report.identity()
 
 
@@ -342,8 +375,8 @@ def test_provider_checksum_corruption_prevents_parse_and_publication(tmp_path):
     assert not list(tmp_path.rglob('COMMITTED'))
 
 
-def test_warning_bearing_day_blocks_publication_without_approval(tmp_path):
-    """The S02 headline: a doubled day is WARN, so the pipeline must not publish it."""
+def test_exact_duplicate_day_publishes_with_audited_count(tmp_path):
+    """Exact-byte repeats are deterministically removed; no warning self-approval occurs."""
     archive = load_series_descriptor(DESCRIPTOR).archive_for(PERIOD)
     doubled = []
     for index in range(288):
@@ -361,14 +394,23 @@ def test_warning_bearing_day_blocks_publication_without_approval(tmp_path):
     assert run_series_pipeline(
         DESCRIPTOR, tmp_path, period=PERIOD, transport=httpx.MockTransport(handler),
         sleeper=lambda _: None,
-    ) == 2
-    record = json.loads(next((tmp_path / 'attempts').glob('*.json')).read_text())
-    assert record['terminal_state'] == 'BLOCKED'
-    assert record['quality_state'] == 'WARN'
-    assert record['finding_ids'] == ['duplicate_exact_bytes']
-    # Nothing was published and no pointer was written.
-    assert not list(tmp_path.rglob('current.json'))
-    assert not list(tmp_path.rglob('COMMITTED'))
+    ) == 0
+    attempt = json.loads(next((tmp_path / 'attempts').glob('*.json')).read_text())
+    assert attempt['terminal_state'] == 'PUBLISHED'
+    assert attempt['quality_state'] == 'PASS'
+    assert attempt['finding_ids'] == []
+    pointers = list(tmp_path.rglob('current.json'))
+    commits = list(tmp_path.rglob('COMMITTED'))
+    assert len(pointers) == len(commits) == 1
+    lane = pointers[0].parent
+    current = read_and_verify_current(lane, lane)
+    manifest = verify_commit_graph(lane, lane / 'commits' / current['commit'])
+    report_path = object_path(lane, 'normalized', manifest['artifacts']['quality_report'])
+    report = json.loads(report_path.read_text())
+    duplicate, = [f for f in report['findings'] if f['check_id'] == 'duplicate_exact_bytes']
+    assert duplicate['outcome'] == 'pass'
+    assert duplicate['count'] == 288
+    assert duplicate['evidence']['duplicate_hash_count'] == 288
 
 
 def test_clean_day_publishes_and_reruns_to_verified_no_op(tmp_path):

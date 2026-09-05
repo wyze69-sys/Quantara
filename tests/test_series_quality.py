@@ -163,7 +163,9 @@ def test_tampered_kline_invariants(q, tmp_path, change):
     assert report.state == 'FAIL'
 
 
-@pytest.mark.parametrize('series', ['btc_settled_funding', 'btc_open_interest_5m', SPOT, KRAKEN])
+@pytest.mark.parametrize(
+    'series', ['btc_settled_funding', 'eth_open_interest_5m', SPOT, KRAKEN],
+)
 def test_duplicate_evidence_warns(q, tmp_path, series):
     parsed, rows, _, _ = sample(tmp_path, series, duplicate=True)
     report = q.evaluate_series_quality(parsed, rows)
